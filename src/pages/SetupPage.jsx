@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import {
   MIN_ADMIN_PASSWORD_LENGTH,
+  rotateLocalAdminPassword,
   validatePasswordUpdate,
 } from '../lib/auth.mjs';
 import {
@@ -23,7 +24,10 @@ export default function SetupPage({
   onBackendChanged,
   onSignOut,
 }) {
-  const [url, setUrl] = useState(backend.health?.url ?? '');
+  const isCloud = backend.mode === 'cloud';
+  const [url, setUrl] = useState(
+    isCloud ? (backend.health?.url ?? '') : '',
+  );
   const [anonKey, setAnonKey] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -41,7 +45,9 @@ export default function SetupPage({
       saveRuntimeSupabaseConfig({ url, anonKey });
       setAnonKey('');
       onBackendChanged();
-      setStatusMsg('Updated Authority Supabase endpoint.');
+      setStatusMsg(
+        'Connected Cloud Authority Supabase endpoint. Sign in with your Supabase admin user if prompted.',
+      );
     } catch (err) {
       setErrorMsg(
         err instanceof Error ? err.message : 'Invalid configuration.',
@@ -50,9 +56,12 @@ export default function SetupPage({
   };
 
   const handleDisconnectEndpoint = async () => {
-    await onSignOut?.();
+    if (isCloud && backend.supabase?.auth) {
+      await backend.supabase.auth.signOut().catch(() => {});
+    }
     clearRuntimeSupabaseConfig();
     onBackendChanged();
+    setStatusMsg('Disconnected Cloud endpoint. Running on Local Admin Vault.');
   };
 
   const handlePasswordChange = async (e) => {
@@ -71,10 +80,17 @@ export default function SetupPage({
 
     setBusy(true);
     try {
-      const { error } = await backend.supabase.auth.updateUser({
-        password: check.password,
-      });
-      if (error) throw error;
+      if (isCloud) {
+        const { error } = await backend.supabase.auth.updateUser({
+          password: check.password,
+        });
+        if (error) throw error;
+      } else {
+        await rotateLocalAdminPassword({
+          password: check.password,
+          confirmPassword,
+        });
+      }
       setNewPassword('');
       setConfirmPassword('');
       setStatusMsg('Operator password rotated cleanly.');
@@ -118,7 +134,87 @@ export default function SetupPage({
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {/* Card 1: Authenticated Admin Session & Password Rotation */}
+        {/* Card 1: Post-Login Cloud Supabase Connection */}
+        <section className="console-panel rounded-2xl p-6">
+          <div className="flex items-center gap-2.5">
+            <span
+              style={{
+                backgroundColor: 'var(--info-soft)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-sky-400"
+            >
+              <Database className="h-4 w-4" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold">
+                {isCloud
+                  ? 'Connected Cloud Supabase Authority'
+                  : 'Connect Cloud Supabase Authority'}
+              </h2>
+              <p style={{ color: 'var(--text-muted)' }} className="text-xs">
+                Zero-trust guard refuses <code className="font-mono">service_role</code>{' '}
+                and <code className="font-mono">sb_secret_</code> keys.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveConnection} className="mt-5 space-y-4">
+            <div>
+              <label
+                style={{ color: 'var(--text-secondary)' }}
+                className="block text-xs font-medium"
+              >
+                Authority Supabase Project URL
+              </label>
+              <input
+                type="url"
+                required
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://your-authority-ref.supabase.co"
+                className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 font-mono text-xs"
+              />
+            </div>
+
+            <div>
+              <label
+                style={{ color: 'var(--text-secondary)' }}
+                className="block text-xs font-medium"
+              >
+                Public Publishable / Anon Key
+              </label>
+              <input
+                type="password"
+                required
+                value={anonKey}
+                onChange={(e) => setAnonKey(e.target.value)}
+                placeholder="sb_publishable_..."
+                className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 font-mono text-xs"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="submit"
+                className="console-btn-primary rounded-lg px-4 py-2 text-xs"
+              >
+                {isCloud ? 'Update Cloud Endpoint' : 'Connect Authority Endpoint'}
+              </button>
+              {backend.isRuntimeConfigured ? (
+                <button
+                  type="button"
+                  onClick={handleDisconnectEndpoint}
+                  className="console-btn-secondary rounded-lg px-3.5 py-2 text-xs font-medium"
+                >
+                  Disconnect Cloud Endpoint
+                </button>
+              ) : null}
+            </div>
+          </form>
+        </section>
+
+        {/* Card 2: Authenticated Admin Session & Password Rotation */}
         <section className="console-panel rounded-2xl p-6">
           <div className="flex items-center gap-2.5">
             <span
@@ -135,9 +231,9 @@ export default function SetupPage({
                 Authenticated Operator Session
               </h2>
               <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                Verified immutable{' '}
-                <code className="font-mono">app_metadata.role = &quot;admin&quot;</code>{' '}
-                claim.
+                {isCloud
+                  ? 'Verified Cloud Supabase app_metadata.role = "admin" claim.'
+                  : 'Verified PBKDF2-SHA256 Local Operator Vault session.'}
               </p>
             </div>
           </div>
@@ -146,7 +242,7 @@ export default function SetupPage({
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-400">
                 <ShieldCheck className="h-3.5 w-3.5" />
-                AUTHORIZED ADMIN
+                {isCloud ? 'CLOUD ADMIN VERIFIED' : 'LOCAL ADMIN VERIFIED'}
               </span>
               <span style={{ color: 'var(--text-muted)' }} className="text-[10.5px]">
                 role={user?.app_metadata?.role ?? 'admin'}
@@ -221,90 +317,12 @@ export default function SetupPage({
             </div>
           </form>
         </section>
-
-        {/* Card 2: Cloud Authority Endpoint */}
-        <section className="console-panel rounded-2xl p-6">
-          <div className="flex items-center gap-2.5">
-            <span
-              style={{
-                backgroundColor: 'var(--info-soft)',
-                border: '1px solid rgba(56, 189, 248, 0.3)',
-              }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-sky-400"
-            >
-              <Database className="h-4 w-4" />
-            </span>
-            <div>
-              <h2 className="text-sm font-semibold">
-                Cloud Supabase Authority Endpoint
-              </h2>
-              <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                Zero-trust guard refuses <code className="font-mono">service_role</code>{' '}
-                and <code className="font-mono">sb_secret_</code> credentials.
-              </p>
-            </div>
-          </div>
-
-          <form onSubmit={handleSaveConnection} className="mt-5 space-y-4">
-            <div>
-              <label
-                style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
-              >
-                Authority Supabase Project URL
-              </label>
-              <input
-                type="url"
-                required
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://your-authority-ref.supabase.co"
-                className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 font-mono text-xs"
-              />
-            </div>
-
-            <div>
-              <label
-                style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
-              >
-                Publishable / Anon Key
-              </label>
-              <input
-                type="password"
-                required
-                value={anonKey}
-                onChange={(e) => setAnonKey(e.target.value)}
-                placeholder="sb_publishable_..."
-                className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 font-mono text-xs"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <button
-                type="submit"
-                className="console-btn-primary rounded-lg px-4 py-2 text-xs"
-              >
-                Update Endpoint
-              </button>
-              {backend.isRuntimeConfigured ? (
-                <button
-                  type="button"
-                  onClick={handleDisconnectEndpoint}
-                  className="console-btn-secondary rounded-lg px-3.5 py-2 text-xs font-medium"
-                >
-                  Clear Runtime Endpoint &amp; Lock
-                </button>
-              ) : null}
-            </div>
-          </form>
-        </section>
       </div>
 
       {/* Bootstrap SQL Reference */}
       <section className="console-code overflow-hidden rounded-2xl">
         <div className="border-b border-slate-800 px-5 py-3 font-mono text-xs font-semibold text-slate-200">
-          SQL Bootstrap — Provision Additional Admin Operators (Authority SQL Editor)
+          SQL Bootstrap — Provision Cloud Admin Operators (Authority SQL Editor)
         </div>
         <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-emerald-300">{`-- 1. Create the operator user under Authentication -> Users in your Supabase Dashboard.
 -- 2. Grant immutable admin standing (never use mutable user_metadata):

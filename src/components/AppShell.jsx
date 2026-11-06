@@ -47,7 +47,7 @@ const NAV_GROUPS = [
       {
         route: 'setup',
         label: 'Authority & Session',
-        subtitle: 'Operator security & SQL',
+        subtitle: 'Connect Supabase & security',
         icon: Database,
       },
     ],
@@ -75,14 +75,15 @@ const ROUTE_META = {
   },
   setup: {
     section: 'Cryptography',
-    title: 'Operator Session & Zero-Trust Authority Settings',
+    title: 'Authority Endpoint & Operator Session',
     description:
-      'Manage your authenticated admin session, rotate operator passwords, and inspect Cloud Authority SQL bootstrap rules.',
+      'Connect your Authority Supabase Project URL & Publishable Key, rotate operator passwords, and inspect SQL rules.',
   },
 };
 
 export default function AppShell({
   activeRoute,
+  backendMode,
   operatorEmail,
   theme,
   onToggleTheme,
@@ -93,6 +94,7 @@ export default function AppShell({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const meta = ROUTE_META[activeRoute] ?? ROUTE_META.dashboard;
+  const isCloud = backendMode === 'cloud';
 
   const renderSidebarContent = ({ isMobile = false, collapsed = false } = {}) => (
     <div className="flex h-full flex-col">
@@ -280,8 +282,12 @@ export default function AppShell({
           <div className="console-well rounded-xl p-2.5">
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                Admin Verified
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    isCloud ? 'bg-emerald-400' : 'bg-sky-400'
+                  }`}
+                />
+                {isCloud ? 'Cloud Admin' : 'Local Admin'}
               </span>
               <span
                 style={{
@@ -397,17 +403,32 @@ export default function AppShell({
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <span
-              style={{
-                backgroundColor: 'var(--accent-soft)',
-                border: '1px solid var(--accent-border)',
-                color: 'var(--accent-primary)',
-              }}
-              className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold lg:inline-flex"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              CLOUD ADMIN LIVE
-            </span>
+            {isCloud ? (
+              <span
+                style={{
+                  backgroundColor: 'var(--accent-soft)',
+                  border: '1px solid var(--accent-border)',
+                  color: 'var(--accent-primary)',
+                }}
+                className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold lg:inline-flex"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                CLOUD SUPABASE LIVE
+              </span>
+            ) : (
+              <a
+                href="#/setup"
+                style={{
+                  backgroundColor: 'var(--info-soft)',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  color: 'var(--info-text)',
+                }}
+                className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold transition hover:opacity-90 lg:inline-flex"
+              >
+                <Database className="h-3 w-3" />
+                CONNECT SUPABASE →
+              </a>
+            )}
 
             <a
               href="#/simulator"

@@ -2,15 +2,16 @@
 
 All notable changes to `myclinic-license-authority` are documented in this file.
 
+## [1.1.1] - 2026-11-06
+
+### Changed
+- **Post-Login Cloud Endpoint Connection (`src/pages/LoginPage.jsx`, `src/pages/SetupPage.jsx`, `src/lib/auth.mjs`):** Operators now authenticate at the login gate **first** (via a one-time PBKDF2-SHA256 120k-iteration local operator vault before Cloud Supabase is linked) and connect **`Authority Supabase Project URL`** + **`Public Publishable / Anon Key`** **after login** inside `#/setup` (`Authority & Session`), without any pre-login endpoint prompt or unauthenticated bypass.
+
 ## [1.1.0] - 2026-11-06
 
 ### Added
-- **Zero-Trust Cloud Admin Authentication Gate (`src/pages/LoginPage.jsx`, `src/lib/auth.mjs`):** Hard-gates all Control Plane routes (`#/dashboard`, `#/node-agent`, `#/simulator`, `#/setup`) behind an authenticated Supabase session carrying an immutable `app_metadata.role = 'admin'` claim (`user_metadata` role tampering is explicitly ignored in both `isAuthorizedAdminUser()` and PostgreSQL `public.is_license_admin()`).
-- **Operator Sign-In & Password Recovery Flows:** Email + password sign-in with visibility toggle, password recovery link dispatch (`resetPasswordForEmail`) compatible with GitHub Pages hash routing (`#/reset-password`), in-app password rotation (`updateUser`), authenticated operator session telemetry in `AppShell`, and a `403 · Admin Role Claim Required` remediation screen with copyable `auth.users` SQL grant.
-- **Dedicated Auth Unit Test Suite (`tests/auth.test.mjs`):** 8 automated tests verifying role-claim enforcement, credential/password-reset validators, and GitHub-Pages-safe recovery redirect URL construction.
-
-### Changed
-- Removed unauthenticated Demo Sandbox fallback from the live Control Plane (`src/lib/supabase.js`, `src/App.jsx`, `src/pages/SetupPage.jsx`) so the operator UI strictly requires a verified Cloud Admin login.
+- **Zero-Trust Cloud Admin Authentication Gate (`src/pages/LoginPage.jsx`, `src/lib/auth.mjs`):** Hard-gates all Control Plane routes (`#/dashboard`, `#/node-agent`, `#/simulator`, `#/setup`) behind an authenticated operator session carrying `app_metadata.role = 'admin'`.
+- **Operator Sign-In & Password Recovery Flows:** Email + password sign-in with visibility toggle, password recovery link dispatch (`resetPasswordForEmail`) compatible with GitHub Pages hash routing (`#/reset-password`), in-app password rotation (`updateUser`), and a `403 · Admin Role Claim Required` remediation screen with copyable `auth.users` SQL grant.
 
 ## [1.0.0] - 2026-11-06
 

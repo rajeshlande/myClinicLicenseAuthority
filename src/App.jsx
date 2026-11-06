@@ -4,6 +4,8 @@ import AppShell from './components/AppShell.jsx';
 import {
   detectRecoveryFlowFromUrl,
   isAuthorizedAdminUser,
+  readLocalAdminSession,
+  signOutLocalAdminSession,
 } from './lib/auth.mjs';
 import { resolveAuthorityBackend } from './lib/supabase.js';
 import {
@@ -29,7 +31,10 @@ function readCurrentRoute() {
 export default function App() {
   const [route, setRoute] = useState(readCurrentRoute);
   const [backend, setBackend] = useState(resolveAuthorityBackend);
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(() => {
+    const initialBackend = resolveAuthorityBackend();
+    return initialBackend.mode === 'local' ? readLocalAdminSession() : null;
+  });
   const [authLoading, setAuthLoading] = useState(
     () => resolveAuthorityBackend().mode === 'cloud',
   );
@@ -57,7 +62,7 @@ export default function App() {
 
   useEffect(() => {
     if (backend.mode !== 'cloud' || !backend.supabase?.auth) {
-      setSession(null);
+      setSession(readLocalAdminSession());
       setAuthLoading(false);
       return undefined;
     }
@@ -100,7 +105,11 @@ export default function App() {
   }, [backend]);
 
   const refreshBackend = useCallback(() => {
-    setBackend(resolveAuthorityBackend());
+    const next = resolveAuthorityBackend();
+    setBackend(next);
+    if (next.mode === 'local') {
+      setSession(readLocalAdminSession());
+    }
   }, []);
 
   const handleToggleTheme = useCallback(() => {
@@ -119,8 +128,10 @@ export default function App() {
   }, []);
 
   const handleSignOut = useCallback(async () => {
-    if (backend.supabase?.auth) {
+    if (backend.mode === 'cloud' && backend.supabase?.auth) {
       await backend.supabase.auth.signOut();
+    } else {
+      signOutLocalAdminSession();
     }
     setSession(null);
     setRecoveryMode(false);
@@ -151,9 +162,8 @@ export default function App() {
   }
 
   const isAuthorized =
-    backend.mode === 'cloud' &&
     isAuthorizedAdminUser(session?.user) &&
-    !recoveryMode;
+    !(backend.mode === 'cloud' && recoveryMode);
 
   if (!isAuthorized) {
     return (
@@ -175,6 +185,7 @@ export default function App() {
   return (
     <AppShell
       activeRoute={route}
+      backendMode={backend.mode}
       operatorEmail={session?.user?.email ?? ''}
       theme={theme}
       onToggleTheme={handleToggleTheme}

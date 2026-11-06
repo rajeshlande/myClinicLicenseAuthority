@@ -11,7 +11,7 @@
 [![React 19](https://img.shields.io/badge/React-19.3-61dafb.svg?logo=react&logoColor=black)](package.json)
 [![Vite 8](https://img.shields.io/badge/Vite-8.3-646cff.svg?logo=vite&logoColor=white)](vite.config.js)
 [![Cryptography: RS256](https://img.shields.io/badge/JWT-RS256%202048--bit-3b82f6.svg)](docs/SECURITY.md)
-[![Tests: 24 Passing](https://img.shields.io/badge/Tests-24%20Passing-10b981.svg)](tests/)
+[![Tests: 25 Passing](https://img.shields.io/badge/Tests-25%20Passing-10b981.svg)](tests/)
 [![GitHub Pages Ready](https://img.shields.io/badge/GitHub%20Pages-Ready-222222.svg?logo=githubpages)](.github/workflows/pages.yml)
 
 [Quick Start](#installation) · [Connect with `myClinic`](#step-by-step-connecting-both-web-apps) · [API Reference](#local-validator-api-reference) · [Security Policy](SECURITY.md) · [Contributing](CONTRIBUTING.md)
@@ -98,7 +98,7 @@ npm install
 npm run dev
 ```
 
-Open **`http://localhost:5173`** — the **Zero-Trust Admin Gate** will prompt you to connect your Authority Supabase URL + Publishable Key (or read `.env.local`) and sign in with an operator account carrying `app_metadata.role = "admin"`.
+Open **`http://localhost:5173`** — initialize or sign in with your operator credentials at the **Admin Gate** first, then connect your **`Authority Supabase Project URL`** and **`Public Publishable / Anon Key`** anytime after login under **`#/setup` (`Authority & Session`)** (or via `.env.local`).
 
 ---
 

@@ -1,32 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
+import { createDemoAuthority } from './demo-store.mjs';
 import { inspectSupabaseConfig } from './health.mjs';
 
-const STORAGE_CONFIG_KEY = 'myclinic.authority.supabase.endpoint';
+const RUNTIME_CONFIG_KEY = 'myclinic_authority_supabase_config_v1';
 
-let cachedClientKey = '';
-let cachedSupabaseClient = null;
+const localAuthority = createDemoAuthority();
+let cachedCloudClient = null;
+let cachedCloudSignature = '';
 
-function getOrCreateSupabaseClient(url, anonKey) {
-  const key = `${url}|${anonKey}`;
-  if (cachedSupabaseClient && cachedClientKey === key) {
-    return cachedSupabaseClient;
-  }
-  cachedClientKey = key;
-  cachedSupabaseClient = createClient(url, anonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  });
-  return cachedSupabaseClient;
-}
-
-function readRuntimeOverride() {
+function readRuntimeConfig() {
   try {
-    const raw =
-      globalThis.localStorage?.getItem(STORAGE_CONFIG_KEY) ??
-      globalThis.sessionStorage?.getItem(STORAGE_CONFIG_KEY);
+    const raw = window.localStorage.getItem(RUNTIME_CONFIG_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -34,65 +18,78 @@ function readRuntimeOverride() {
 }
 
 export function saveRuntimeSupabaseConfig({ url, anonKey }) {
-  const check = inspectSupabaseConfig({ url, anonKey });
-  if (!check.ok || check.mode !== 'cloud') {
-    throw new Error(
-      check.reason || 'Enter a valid https://<project>.supabase.co URL and public anon key.',
-    );
+  const check = inspectSupabaseConfig({
+    VITE_SUPABASE_URL: url,
+    VITE_SUPABASE_ANON_KEY: anonKey,
+  });
+  if (check.mode !== 'cloud') {
+    throw new Error(check.reason);
   }
-  const serialized = JSON.stringify({ url: check.url, anonKey: check.anonKey });
-  try {
-    globalThis.localStorage?.setItem(STORAGE_CONFIG_KEY, serialized);
-  } catch {
-    globalThis.sessionStorage?.setItem(STORAGE_CONFIG_KEY, serialized);
-  }
+  window.localStorage.setItem(
+    RUNTIME_CONFIG_KEY,
+    JSON.stringify({ url: check.url, anonKey: check.anonKey }),
+  );
   return check;
 }
 
 export function clearRuntimeSupabaseConfig() {
-  try {
-    globalThis.localStorage?.removeItem(STORAGE_CONFIG_KEY);
-    globalThis.sessionStorage?.removeItem(STORAGE_CONFIG_KEY);
-  } catch {
-    // Ignore storage removal errors
-  }
+  window.localStorage.removeItem(RUNTIME_CONFIG_KEY);
+  cachedCloudClient = null;
+  cachedCloudSignature = '';
 }
 
-export function hasBuildTimeSupabaseConfig() {
-  return Boolean(
-    import.meta.env?.VITE_SUPABASE_URL?.trim() &&
-      import.meta.env?.VITE_SUPABASE_ANON_KEY?.trim(),
-  );
+function getOrCreateCloudClient(url, anonKey) {
+  const signature = `${url}::${anonKey}`;
+  if (cachedCloudClient && cachedCloudSignature === signature) {
+    return cachedCloudClient;
+  }
+  cachedCloudSignature = signature;
+  cachedCloudClient = createClient(url, anonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
+  return cachedCloudClient;
 }
 
 /**
- * Resolves the Cloud Supabase Authority backend.
- * Zero-trust rule: never falls back to an unauthenticated demo store in the UI;
- * unconfigured deployments remain locked at the authentication gate until connected.
+ * Resolves the Authority data backend.
+ * Note: Both `'cloud'` and `'local'` modes remain strictly gated behind
+ * operator authentication in `App.jsx` (`LoginPage.jsx`); `'local'` allows the
+ * operator to sign in first and connect `Authority Supabase Project URL` +
+ * `Public Publishable / Anon Key` after login under `#/setup`.
  */
 export function resolveAuthorityBackend() {
-  const runtime = readRuntimeOverride();
-  const url = runtime?.url ?? import.meta.env?.VITE_SUPABASE_URL ?? '';
-  const anonKey =
-    runtime?.anonKey ?? import.meta.env?.VITE_SUPABASE_ANON_KEY ?? '';
+  const runtime = readRuntimeConfig();
+  const envCheck = inspectSupabaseConfig(
+    runtime
+      ? {
+          VITE_SUPABASE_URL: runtime.url,
+          VITE_SUPABASE_ANON_KEY: runtime.anonKey,
+        }
+      : import.meta.env,
+  );
 
-  const health = inspectSupabaseConfig({ url, anonKey });
-
-  if (health.ok && health.mode === 'cloud') {
+  if (envCheck.mode === 'cloud') {
+    const client = getOrCreateCloudClient(envCheck.url, envCheck.anonKey);
     return {
       mode: 'cloud',
-      isRuntimeConfigured: Boolean(runtime?.url),
-      health,
-      supabase: getOrCreateSupabaseClient(health.url, health.anonKey),
-      verifyUrl: `${health.url}/functions/v1/verify-license`,
+      health: envCheck,
+      supabase: client,
+      localAuthority,
+      verifyUrl: `${envCheck.url}/functions/v1/verify-license`,
+      isRuntimeConfigured: Boolean(runtime),
     };
   }
 
   return {
-    mode: 'unconfigured',
-    isRuntimeConfigured: false,
-    health,
-    supabase: null,
+    mode: 'local',
+    health: envCheck,
+    supabase: localAuthority.client,
+    localAuthority,
     verifyUrl: '',
+    isRuntimeConfigured: false,
   };
 }
