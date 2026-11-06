@@ -4,6 +4,7 @@ import {
   Database,
   KeyRound,
   LayoutDashboard,
+  LogOut,
   Menu,
   Moon,
   PanelLeftClose,
@@ -45,8 +46,8 @@ const NAV_GROUPS = [
       },
       {
         route: 'setup',
-        label: 'Authority & SQL Setup',
-        subtitle: 'Supabase Auth & Schema v1',
+        label: 'Authority & Session',
+        subtitle: 'Operator security & SQL',
         icon: Database,
       },
     ],
@@ -74,18 +75,19 @@ const ROUTE_META = {
   },
   setup: {
     section: 'Cryptography',
-    title: 'Cloud Authority & Zero-Trust Configuration',
+    title: 'Operator Session & Zero-Trust Authority Settings',
     description:
-      'Connect your vendor Supabase project, authenticate admin operators, or reset the interactive Demo Sandbox.',
+      'Manage your authenticated admin session, rotate operator passwords, and inspect Cloud Authority SQL bootstrap rules.',
   },
 };
 
 export default function AppShell({
   activeRoute,
-  backendMode,
+  operatorEmail,
   theme,
   onToggleTheme,
   onQuickIssueLicense,
+  onSignOut,
   children,
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -259,56 +261,64 @@ export default function AppShell({
         ))}
       </nav>
 
-      {/* Bottom Telemetry Status Card */}
+      {/* Bottom Authenticated Admin Profile & Sign Out */}
       <div
         style={{ borderTop: '1px solid var(--border-subtle)' }}
-        className={collapsed ? 'p-2' : 'p-2.5'}
+        className={collapsed ? 'space-y-1.5 p-2' : 'space-y-2 p-2.5'}
       >
-        <a
-          href="#/setup"
-          title={`Authority Engine: ${backendMode === 'cloud' ? 'Cloud Supabase' : 'Demo Sandbox'}`}
-          onClick={() => isMobile && setMobileNavOpen(false)}
-          className={`console-well block rounded-xl ${
-            collapsed ? 'flex items-center justify-center p-2.5' : 'p-2.5'
-          } transition hover:opacity-95`}
-        >
-          {collapsed ? (
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                backendMode === 'cloud' ? 'bg-emerald-400' : 'bg-amber-400'
-              }`}
-            />
-          ) : (
-            <>
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold">
-                  <span
-                    className={`h-2 w-2 rounded-full ${
-                      backendMode === 'cloud' ? 'bg-emerald-400' : 'bg-amber-400'
-                    }`}
-                  />
-                  {backendMode === 'cloud' ? 'Cloud Live' : 'Demo Sandbox'}
-                </span>
-                <span
-                  style={{
-                    backgroundColor: 'var(--accent-soft)',
-                    color: 'var(--accent-primary)',
-                  }}
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[9.5px] font-semibold"
-                >
-                  <ShieldCheck className="h-2.5 w-2.5" />
-                  RS256
-                </span>
-              </div>
-              <p
-                style={{ color: 'var(--text-muted)' }}
-                className="mt-1 font-mono text-[10px]"
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={onSignOut}
+            title={`Sign out (${operatorEmail})`}
+            aria-label="Sign out"
+            className="console-btn-secondary flex h-9 w-full items-center justify-center rounded-lg"
+          >
+            <LogOut className="h-4 w-4 text-rose-400" />
+          </button>
+        ) : (
+          <div className="console-well rounded-xl p-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                Admin Verified
+              </span>
+              <span
+                style={{
+                  backgroundColor: 'var(--accent-soft)',
+                  color: 'var(--accent-primary)',
+                }}
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[9.5px] font-semibold"
               >
-                v{APP_VERSION} · Schema v{SCHEMA_VERSION} · 7d TTL
-              </p>
-            </>
-          )}
-        </a>
+                <ShieldCheck className="h-2.5 w-2.5" />
+                RS256
+              </span>
+            </div>
+            <p
+              style={{ color: 'var(--text-secondary)' }}
+              className="mt-1 truncate font-mono text-[10.5px]"
+              title={operatorEmail}
+            >
+              {operatorEmail}
+            </p>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span
+                style={{ color: 'var(--text-muted)' }}
+                className="font-mono text-[9.5px]"
+              >
+                v{APP_VERSION} · Schema v{SCHEMA_VERSION}
+              </span>
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="console-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[10px] font-medium"
+              >
+                <LogOut className="h-3 w-3 text-rose-400" />
+                Sign out
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -318,7 +328,7 @@ export default function AppShell({
       style={{ backgroundColor: 'var(--bg-canvas)', color: 'var(--text-primary)' }}
       className="flex min-h-screen w-full overflow-x-clip"
     >
-      {/* Persistent Sticky Flex Sidebar Rail (Visible from md: 768px+) */}
+      {/* Persistent Sticky Flex Sidebar Rail */}
       <aside
         style={{
           backgroundColor: 'var(--bg-rail)',
@@ -388,27 +398,15 @@ export default function AppShell({
 
           <div className="flex shrink-0 items-center gap-2">
             <span
-              style={
-                backendMode === 'cloud'
-                  ? {
-                      backgroundColor: 'var(--accent-soft)',
-                      border: '1px solid var(--accent-border)',
-                      color: 'var(--accent-primary)',
-                    }
-                  : {
-                      backgroundColor: 'var(--warn-soft)',
-                      border: '1px solid rgba(245, 158, 11, 0.35)',
-                      color: 'var(--warn-text)',
-                    }
-              }
+              style={{
+                backgroundColor: 'var(--accent-soft)',
+                border: '1px solid var(--accent-border)',
+                color: 'var(--accent-primary)',
+              }}
               className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold lg:inline-flex"
             >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  backendMode === 'cloud' ? 'bg-emerald-400' : 'bg-amber-400'
-                }`}
-              />
-              {backendMode === 'cloud' ? 'LIVE AUTHORITY' : 'DEMO SANDBOX'}
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              CLOUD ADMIN LIVE
             </span>
 
             <a
@@ -444,6 +442,17 @@ export default function AppShell({
               ) : (
                 <Moon className="h-4 w-4 text-slate-600" />
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={onSignOut}
+              title={`Sign out (${operatorEmail})`}
+              aria-label="Sign out"
+              className="console-btn-secondary inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium"
+            >
+              <LogOut className="h-3.5 w-3.5 text-rose-400" />
+              <span className="hidden sm:inline">Sign out</span>
             </button>
           </div>
         </header>

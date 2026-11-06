@@ -11,7 +11,7 @@
 [![React 19](https://img.shields.io/badge/React-19.3-61dafb.svg?logo=react&logoColor=black)](package.json)
 [![Vite 8](https://img.shields.io/badge/Vite-8.3-646cff.svg?logo=vite&logoColor=white)](vite.config.js)
 [![Cryptography: RS256](https://img.shields.io/badge/JWT-RS256%202048--bit-3b82f6.svg)](docs/SECURITY.md)
-[![Tests: 20 Passing](https://img.shields.io/badge/Tests-20%20Passing-10b981.svg)](tests/)
+[![Tests: 24 Passing](https://img.shields.io/badge/Tests-24%20Passing-10b981.svg)](tests/)
 [![GitHub Pages Ready](https://img.shields.io/badge/GitHub%20Pages-Ready-222222.svg?logo=githubpages)](.github/workflows/pages.yml)
 
 [Quick Start](#installation) · [Connect with `myClinic`](#step-by-step-connecting-both-web-apps) · [API Reference](#local-validator-api-reference) · [Security Policy](SECURITY.md) · [Contributing](CONTRIBUTING.md)
@@ -53,7 +53,8 @@
 - **7-Day Offline Capability Resilience:** Customer `myClinic` hosts sync every 6 hours via `node-cron`, cache verified tokens atomically (`0600` permissions), survive multi-day internet outages, and block cross-machine `.license_cache` cloning via SHA-256 `machine_fingerprint` binding.
 - **In-Browser RS256 Key Studio & Phone-Home Lab (`#/simulator`):** Generate 2048-bit RSA keypairs via WebCrypto, simulate cloud heartbeats, and inspect/verify capability JWT claims directly in the browser.
 - **Turnkey `myClinic` Gateway (`server/node-host.mjs`):** Serves `myClinic/dist` directly behind an `<1 ms` offline RS256 middleware gate (`HTTP 402 Payment Required` when invalid) or exposes `/api/license/status` for side-by-side web apps.
-- **GitHub Pages & Demo Mode Ready:** Relative `./` asset paths, hash routing, PWA service worker, and automatic fallback to an interactive client-side **Demo Sandbox** whenever `VITE_SUPABASE_URL` is unset.
+- **Zero-Trust Cloud Admin Login Gate (`LoginPage.jsx`):** Blocks all Control Plane routes (`#/dashboard`, `#/node-agent`, `#/simulator`, `#/setup`) until a real Supabase operator signs in with an immutable `app_metadata.role = "admin"` claim — no self-service Sign-Up tab and no unauthenticated Demo bypass. Includes Forgot/Reset Password recovery (`#/reset-password`) and in-session password rotation.
+- **GitHub Pages Ready:** Relative `./` asset paths, hash routing, PWA service worker, and runtime Authority endpoint binding when `VITE_SUPABASE_URL` is configured post-build.
 
 ---
 
@@ -86,9 +87,9 @@ Before setting up both web apps, ensure you have:
 
 ## Installation
 
-### 1. Instant Local Evaluation (Zero Cloud Setup — Demo Sandbox)
+### 1. Local Development Setup
 
-Clone the repository, install dependencies, and start the Control Room immediately in interactive **Demo Mode**:
+Clone the repository, install dependencies, and start the Control Plane dev server:
 
 ```bash
 git clone https://github.com/<your-org>/myclinic-license-authority.git
@@ -97,7 +98,7 @@ npm install
 npm run dev
 ```
 
-Open **`http://localhost:5173`** to provision demo subscriptions, test kill-switches, mint RS256 tokens in `#/simulator`, and generate customer `docker-compose.yml` manifests in `#/node-agent`.
+Open **`http://localhost:5173`** — the **Zero-Trust Admin Gate** will prompt you to connect your Authority Supabase URL + Publishable Key (or read `.env.local`) and sign in with an operator account carrying `app_metadata.role = "admin"`.
 
 ---
 
@@ -156,7 +157,7 @@ npm run preview
 
 ## Usage
 
-1. **Authenticate (`#/setup`):** Sign in with your `ops@yourdomain.com` admin account and verify the green **Cloud Authority Active** badge.
+1. **Authenticate at the Admin Gate:** Sign in with your `ops@yourdomain.com` operator credentials (created in Supabase Dashboard `Authentication → Users` with `app_metadata.role = "admin"`). Use **Forgot password?** if you need a recovery link, or rotate your password anytime under **`#/setup`**.
 2. **Issue a License (`#/dashboard`):** Fill out **Customer Email**, **Plan Tier** (`solo`, `growth`, or `chain`), **Max Hardware Nodes**, **Expiration Date**, and **Billing / PO Notes** (supports `**bold**`, `*italic*`, `` `code` ``, and `- list` stamps), then click **Provision Subscription & Key**. Copy the 32-character hex **`LICENSE_KEY`**.
 3. **Manage Fleet & Hardware Locks (`#/dashboard`):** Click **Nodes** on any license to view or revoke individual `machine_fingerprint` bindings, or click **Kill / Enable** to suspend or restore token renewals immediately.
 4. **Simulate & Inspect Tokens (`#/simulator`):** Test WebCrypto RS256 key generation, Edge heartbeat payloads, and offline signature/fingerprint checks.
