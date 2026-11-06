@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Node ${{ matrix.node }} · tests + build + audit
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 26]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install
+        run: |
+          node -v
+          npm -v
+          npm ci --no-audit --no-fund
+
+      - name: Unit & cryptographic tests
+        run: npm test
+
+      - name: Build (relative base)
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - name: GitHub Pages readiness
+        run: npm run check:pages
+
+      - name: Build from a repository sub-path
+        run: VITE_BASE=/myclinic-license-authority/ npm run build && VITE_BASE=/myclinic-license-authority/ npm run check:pages
+
+      - name: Contributing & skill standards
+        run: npm run check:contributing
+
+      - name: Security checklist
+        run: npm run test:security
+
+      - name: Dependency audit (high+)
+        run: npm audit --audit-level=high

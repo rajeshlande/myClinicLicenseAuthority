@@ -1,0 +1,53 @@
+{
+  "name": "myclinic-license-authority",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Central Asymmetric RS256 Subscription Management & Phone-Home Hardware Lock Authority for self-hosted myClinic deployments.",
+  "engines": {
+    "node": ">=22.22.0",
+    "npm": ">=10.9.0"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "build:pages": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "test": "node scripts/run-tests.mjs",
+    "check:pages": "node scripts/check-pages.mjs",
+    "check:contributing": "node scripts/check-contributing.mjs",
+    "test:security": "node scripts/security-check.mjs",
+    "verify": "npm test && npm run build && npm run check:pages && npm run check:contributing",
+    "audit:deps": "node scripts/check-contributing.mjs --only deps --online",
+    "audit:security": "node scripts/check-contributing.mjs --online --strict",
+    "keygen": "node scripts/generate-keypair.mjs",
+    "start:validator": "node server/node-host.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^1.70.0",
+    "node-cron": "^4.6.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.4",
+    "@vitejs/plugin-react": "^6.2.1",
+    "tailwindcss": "^4.3.4",
+    "vite": "^8.3.6"
+  },
+  "keywords": [
+    "myclinic",
+    "licensing",
+    "rs256",
+    "supabase",
+    "on-premises",
+    "docker",
+    "hardware-lock",
+    "react"
+  ],
+  "license": "MIT",
+  "packageManager": "npm@12.2.2"
+}

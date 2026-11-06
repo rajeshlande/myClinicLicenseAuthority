@@ -1,0 +1,106 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 26 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install npm 12.2.2
+        run: npm install -g npm@12.2.2 --no-audit --no-fund
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run unit tests & contributing checks
+        run: |
+          npm test
+          npm run check:contributing
+
+      - name: Build
+        env:
+          VITE_BASE: ${{ vars.VITE_BASE }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run build
+
+      - name: Check GitHub Pages readiness
+        run: npm run check:pages
+
+      - name: Verify build secret safety
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_BASE: ${{ vars.VITE_BASE }}
+        run: |
+          set -uo pipefail
+          if [ -z "${VITE_SUPABASE_URL:-}" ] || [ -z "${VITE_SUPABASE_ANON_KEY:-}" ]; then
+            echo "::warning title=Demo mode::VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set as repository secrets, so this Pages deploy runs in Interactive Demo Mode."
+          else
+            echo "::notice title=Supabase configured::Cloud Supabase secrets reached the build."
+          fi
+
+          status=0
+          case "${VITE_SUPABASE_URL:-}" in
+            *abc.supabase.co*|*YOUR-PROJECT*|*your-project*)
+              echo "::error title=Placeholder Supabase URL::VITE_SUPABASE_URL contains a placeholder value."
+              status=1
+              ;;
+          esac
+
+          if [ -n "${VITE_SUPABASE_ANON_KEY:-}" ] && grep -qiE 'sb_secret|service_role' <<< "${VITE_SUPABASE_ANON_KEY}"; then
+            echo "::error title=Secret key in bundle::VITE_SUPABASE_ANON_KEY looks like a privileged key. Use the public anon/publishable key only."
+            status=1
+          fi
+
+          if ! ls dist/assets/*.js >/dev/null 2>&1; then
+            echo "::error title=Empty bundle::dist/assets contains no JavaScript."
+            status=1
+          fi
+
+          if [ "$status" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Add 404 fallback
+        run: cp dist/index.html dist/404.html
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,8 @@
+name: Security note (DO NOT post vulnerabilities here)
+description: Reminder to use private vulnerability reporting
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Stop — do not report security vulnerabilities in a public issue.**
+        Please use the **Security** tab → **Report a vulnerability** private advisory workflow as documented in `SECURITY.md`.

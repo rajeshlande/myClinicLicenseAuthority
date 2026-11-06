@@ -1,0 +1,11 @@
+node_modules/
+dist/
+keys/
+.env
+.env.*
+!.env.example
+.license_cache*
+*.pem
+*.log
+*.bundle
+.DS_Store

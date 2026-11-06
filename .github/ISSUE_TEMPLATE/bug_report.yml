@@ -1,0 +1,24 @@
+name: Bug report
+description: Report a reproducible defect in the Control Room, SQL schema, Edge validator, or local middleware
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Clear description of the unexpected behaviour (never include private keys or customer credentials).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / Commit
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
