@@ -13,7 +13,7 @@ All modules of the **myClinic Subscription Management & Asymmetric RS256 Validat
 | `supabase/schema.sql` | **Single source-of-truth SQL schema** (idempotent `BEGIN...COMMIT`, `subscriptions`, `licenses`, `activated_machines`, `admin_license_view`, `create_subscription_with_license()`, `enforce_max_machines_limit()` row-locked trigger, admin RLS). |
 | `supabase/schema-tests.sql` | Transactional scratch-DB verification suite (`ROLLBACK` on exit). |
 | `supabase/functions/verify-license/index.ts` | Deno Edge Function holding `LICENSE_PRIVATE_KEY` (PKCS#8) to verify standing, bind hardware locks, and sign 7-day RS256 JWTs. |
-| `src/lib/*.mjs` | Pure, zero-DOM, lower-case domain & WebCrypto libraries shared across UI and tests (`entitlements.mjs`, `notes.mjs`, `crypto-rs256.mjs`, `health.mjs`, `demo-store.mjs`). |
+| `src/lib/*.mjs` | Pure, zero-DOM, lower-case domain & WebCrypto libraries shared across UI and tests (`auth.mjs`, `entitlements.mjs`, `notes.mjs`, `crypto-rs256.mjs`, `health.mjs`, `pages-client-validator.mjs`, `theme.mjs`). |
 | `src/pages/*.jsx` & `src/components/*.jsx` | `PascalCase.jsx` hash-routed React 19 + Tailwind 4 Control Room (`EntitlementsPage`, `ValidatorLabPage`, `NodeAgentPage`, `SetupPage`). Works both in Cloud Supabase mode and static GitHub Pages Demo Mode. |
 | `server/license-middleware.mjs` & `server/node-host.mjs` | Express 5 + `jsonwebtoken` + `node-cron` distributed on-premises validator holding ONLY `LICENSE_PUBLIC_KEY` (SPKI) and enforcing HTTP `402 Payment Required`. |
 | `.claude/skills/security-audit/` | Vendored verbatim [Cloudflare `security-audit` skill](https://github.com/cloudflare/security-audit-skill) (MIT). **Never edit files inside this directory.** |

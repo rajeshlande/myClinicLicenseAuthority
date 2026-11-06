@@ -4,8 +4,6 @@ import AppShell from './components/AppShell.jsx';
 import {
   detectRecoveryFlowFromUrl,
   isAuthorizedAdminUser,
-  readLocalAdminSession,
-  signOutLocalAdminSession,
 } from './lib/auth.mjs';
 import { resolveAuthorityBackend } from './lib/supabase.js';
 import {
@@ -31,12 +29,12 @@ function readCurrentRoute() {
 export default function App() {
   const [route, setRoute] = useState(readCurrentRoute);
   const [backend, setBackend] = useState(resolveAuthorityBackend);
-  const [session, setSession] = useState(() => {
-    const initialBackend = resolveAuthorityBackend();
-    return initialBackend.mode === 'local' ? readLocalAdminSession() : null;
-  });
+  const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(
-    () => resolveAuthorityBackend().mode === 'cloud',
+    () => resolveAuthorityBackend().configured,
+  );
+  const [isOnline, setIsOnline] = useState(
+    () => globalThis.navigator?.onLine !== false,
   );
   const [recoveryMode, setRecoveryMode] = useState(() =>
     detectRecoveryFlowFromUrl(),
@@ -60,9 +58,35 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  // Auto-reconnect Supabase session refresh whenever internet connectivity resumes
   useEffect(() => {
-    if (backend.mode !== 'cloud' || !backend.supabase?.auth) {
-      setSession(readLocalAdminSession());
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (backend.supabase?.auth) {
+        backend.supabase.auth.startAutoRefresh?.();
+        backend.supabase.auth
+          .getSession()
+          .then(({ data }) => {
+            if (data?.session) setSession(data.session);
+          })
+          .catch(() => {});
+      }
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      backend.supabase?.auth?.stopAutoRefresh?.();
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [backend]);
+
+  useEffect(() => {
+    if (!backend.configured || !backend.supabase?.auth) {
+      setSession(null);
       setAuthLoading(false);
       return undefined;
     }
@@ -105,11 +129,7 @@ export default function App() {
   }, [backend]);
 
   const refreshBackend = useCallback(() => {
-    const next = resolveAuthorityBackend();
-    setBackend(next);
-    if (next.mode === 'local') {
-      setSession(readLocalAdminSession());
-    }
+    setBackend(resolveAuthorityBackend());
   }, []);
 
   const handleToggleTheme = useCallback(() => {
@@ -128,10 +148,8 @@ export default function App() {
   }, []);
 
   const handleSignOut = useCallback(async () => {
-    if (backend.mode === 'cloud' && backend.supabase?.auth) {
+    if (backend.supabase?.auth) {
       await backend.supabase.auth.signOut();
-    } else {
-      signOutLocalAdminSession();
     }
     setSession(null);
     setRecoveryMode(false);
@@ -153,7 +171,7 @@ export default function App() {
       className="flex min-h-screen items-center justify-center text-xs font-medium"
     >
       <Loader2 className="mr-2 h-4 w-4 animate-spin text-emerald-400" />
-      Verifying zero-trust operator session...
+      Auto-connecting to Cloud Supabase Authority...
     </div>
   );
 
@@ -162,8 +180,9 @@ export default function App() {
   }
 
   const isAuthorized =
+    backend.configured &&
     isAuthorizedAdminUser(session?.user) &&
-    !(backend.mode === 'cloud' && recoveryMode);
+    !recoveryMode;
 
   if (!isAuthorized) {
     return (
@@ -171,6 +190,7 @@ export default function App() {
         <LoginPage
           backend={backend}
           session={session}
+          isOnline={isOnline}
           recoveryMode={recoveryMode}
           theme={theme}
           onToggleTheme={handleToggleTheme}
@@ -185,7 +205,7 @@ export default function App() {
   return (
     <AppShell
       activeRoute={route}
-      backendMode={backend.mode}
+      isOnline={isOnline}
       operatorEmail={session?.user?.email ?? ''}
       theme={theme}
       onToggleTheme={handleToggleTheme}
@@ -214,6 +234,7 @@ export default function App() {
           <SetupPage
             backend={backend}
             session={session}
+            isOnline={isOnline}
             onBackendChanged={refreshBackend}
             onSignOut={handleSignOut}
           />

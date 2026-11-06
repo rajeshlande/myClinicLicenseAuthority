@@ -51,35 +51,22 @@ export default function ValidatorLabPage({ backend }) {
     e.preventDefault();
     setSimBusy(true);
     try {
-      if (backend.mode === 'cloud') {
-        const res = await fetch(backend.verifyUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: backend.health.anonKey,
-          },
-          body: JSON.stringify({
-            license_key: simKey.trim().toUpperCase(),
-            machine_fingerprint: simFingerprint.trim(),
-          }),
-        });
-        const body = await res.json().catch(() => ({}));
-        setSimResult({ status: res.status, body });
-        if (body.token) {
-          setVerifyTokenInput(body.token);
-          setVerifyFpInput(simFingerprint.trim());
-        }
-      } else {
-        const outcome = await backend.localAuthority.verifyLicenseSimulated({
-          license_key: simKey,
-          machine_fingerprint: simFingerprint,
-        });
-        setSimResult(outcome);
-        if (outcome.body?.token) {
-          setVerifyTokenInput(outcome.body.token);
-          setVerifyPubKeyInput(outcome.publicKeyPem);
-          setVerifyFpInput(simFingerprint.trim());
-        }
+      const res = await fetch(backend.verifyUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: backend.health.anonKey,
+        },
+        body: JSON.stringify({
+          license_key: simKey.trim().toUpperCase(),
+          machine_fingerprint: simFingerprint.trim(),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      setSimResult({ status: res.status, body });
+      if (body.token) {
+        setVerifyTokenInput(body.token);
+        setVerifyFpInput(simFingerprint.trim());
       }
     } catch (err) {
       setSimResult({

@@ -3,6 +3,8 @@ import {
   AlertCircle,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Eye,
   EyeOff,
@@ -15,25 +17,26 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sun,
+  TriangleAlert,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import {
   MIN_ADMIN_PASSWORD_LENGTH,
-  bootstrapLocalAdminOperator,
   buildPasswordRecoveryRedirectUrl,
-  getLocalOperatorInfo,
-  hasLocalAdminOperator,
+  formatAuthErrorMessage,
   isAuthorizedAdminUser,
-  signInLocalAdminOperator,
   validateAdminCredentials,
   validatePasswordUpdate,
   validateRecoveryEmail,
 } from '../lib/auth.mjs';
-import { clearRuntimeSupabaseConfig } from '../lib/supabase.js';
+import { saveRuntimeSupabaseConfig } from '../lib/supabase.js';
 import { APP_VERSION, SCHEMA_VERSION } from '../lib/version.js';
 
 export default function LoginPage({
   backend,
   session,
+  isOnline,
   recoveryMode,
   theme,
   onToggleTheme,
@@ -41,19 +44,20 @@ export default function LoginPage({
   onSessionRefreshed,
   onRecoveryCompleted,
 }) {
-  const isCloudMode = backend.mode === 'cloud';
-  const localInitialized = hasLocalAdminOperator();
-  const localOperator = getLocalOperatorInfo();
+  const configured = Boolean(backend.configured);
 
   const [view, setView] = useState('signin'); // 'signin' | 'forgot'
+  const [showEnvQuickConnect, setShowEnvQuickConnect] = useState(false);
 
-  const [email, setEmail] = useState(() => localOperator?.email ?? '');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   const [newPassword, setNewPassword] = useState('');
   const [newConfirmPassword, setNewConfirmPassword] = useState('');
+
+  const [quickUrl, setQuickUrl] = useState('');
+  const [quickAnonKey, setQuickAnonKey] = useState('');
 
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -61,7 +65,7 @@ export default function LoginPage({
   const [copiedSql, setCopiedSql] = useState(false);
 
   const signedInNonAdmin =
-    isCloudMode &&
+    configured &&
     Boolean(session?.user) &&
     !isAuthorizedAdminUser(session.user);
 
@@ -70,35 +74,24 @@ export default function LoginPage({
     return `update auth.users\nset raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb\nwhere email = '${targetEmail.replace(/'/g, "''")}';`;
   }, [session?.user?.email]);
 
-  const handleBootstrapLocalAdmin = async (e) => {
-    e.preventDefault();
-    setErrorMsg('');
-    setStatusMsg('');
-    setBusy(true);
-    try {
-      const localSession = await bootstrapLocalAdminOperator({
-        email,
-        password,
-        confirmPassword,
-      });
-      setPassword('');
-      setConfirmPassword('');
-      onSessionRefreshed(localSession);
-    } catch (err) {
-      setErrorMsg(
-        err instanceof Error
-          ? err.message
-          : 'Unable to initialize operator login.',
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const handleSignIn = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     setStatusMsg('');
+
+    if (!configured || !backend.supabase?.auth) {
+      setErrorMsg(
+        'Cloud Supabase credentials (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY) are required to sign in.',
+      );
+      return;
+    }
+
+    if (!isOnline) {
+      setErrorMsg(
+        'Internet connection is offline. Reconnect to authenticate against Cloud Supabase.',
+      );
+      return;
+    }
 
     const check = validateAdminCredentials({ email, password });
     if (!check.ok) {
@@ -108,31 +101,34 @@ export default function LoginPage({
 
     setBusy(true);
     try {
-      if (isCloudMode) {
-        const { data, error } =
-          await backend.supabase.auth.signInWithPassword({
-            email: check.email,
-            password: check.password,
-          });
-        if (error) throw error;
-        setPassword('');
-        onSessionRefreshed(data.session ?? null);
-      } else {
-        const localSession = await signInLocalAdminOperator({
-          email: check.email,
-          password: check.password,
-        });
-        setPassword('');
-        onSessionRefreshed(localSession);
-      }
+      const { data, error } = await backend.supabase.auth.signInWithPassword({
+        email: check.email,
+        password: check.password,
+      });
+      if (error) throw error;
+      setPassword('');
+      onSessionRefreshed(data.session ?? null);
     } catch (err) {
-      setErrorMsg(
-        err instanceof Error
-          ? err.message
-          : 'Authentication failed. Verify your operator email and password.',
-      );
+      setErrorMsg(formatAuthErrorMessage(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleQuickConnectEndpoint = (e) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setStatusMsg('');
+    try {
+      saveRuntimeSupabaseConfig({ url: quickUrl, anonKey: quickAnonKey });
+      setQuickAnonKey('');
+      setShowEnvQuickConnect(false);
+      onBackendChanged();
+      setStatusMsg('Connected to Cloud Supabase over HTTPS. Sign in below.');
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error ? err.message : 'Invalid Supabase configuration.',
+      );
     }
   };
 
@@ -159,11 +155,7 @@ export default function LoginPage({
         `If ${check.email} is a registered operator, a password recovery link has been dispatched.`,
       );
     } catch (err) {
-      setErrorMsg(
-        err instanceof Error
-          ? err.message
-          : 'Unable to dispatch password reset email.',
-      );
+      setErrorMsg(formatAuthErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -198,9 +190,7 @@ export default function LoginPage({
       }
       onRecoveryCompleted();
     } catch (err) {
-      setErrorMsg(
-        err instanceof Error ? err.message : 'Unable to update password.',
-      );
+      setErrorMsg(formatAuthErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -220,9 +210,7 @@ export default function LoginPage({
         );
       }
     } catch (err) {
-      setErrorMsg(
-        err instanceof Error ? err.message : 'Failed to refresh session.',
-      );
+      setErrorMsg(formatAuthErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -245,15 +233,6 @@ export default function LoginPage({
     } catch {
       // Clipboard API unavailable in restricted iframe contexts.
     }
-  };
-
-  const handleSwitchBackToLocalVault = async () => {
-    if (backend.supabase?.auth) {
-      await backend.supabase.auth.signOut().catch(() => {});
-    }
-    clearRuntimeSupabaseConfig();
-    onSessionRefreshed(null);
-    onBackendChanged();
   };
 
   return (
@@ -284,24 +263,38 @@ export default function LoginPage({
               style={{ color: 'var(--text-muted)' }}
               className="block font-mono text-[10px]"
             >
-              ZERO-TRUST RS256 CONTROL PLANE
+              CLOUD RS256 CONTROL PLANE
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <span
-            style={{
-              backgroundColor: 'var(--bg-elevated)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-secondary)',
-            }}
-            className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10.5px] sm:inline-flex"
+            style={
+              isOnline && configured
+                ? {
+                    backgroundColor: 'var(--accent-soft)',
+                    border: '1px solid var(--accent-border)',
+                    color: 'var(--accent-primary)',
+                  }
+                : {
+                    backgroundColor: 'var(--warn-soft)',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    color: 'var(--warn-text)',
+                  }
+            }
+            className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold sm:inline-flex"
           >
-            <Lock className="h-3 w-3 text-emerald-400" />
-            {isCloudMode
-              ? 'CLOUD SUPABASE AUTH'
-              : 'ADMIN GATE · CONNECT SUPABASE AFTER LOGIN'}
+            {isOnline ? (
+              <Wifi className="h-3 w-3" />
+            ) : (
+              <WifiOff className="h-3 w-3" />
+            )}
+            {!isOnline
+              ? 'INTERNET OFFLINE'
+              : configured
+                ? 'CLOUD AUTO-CONNECTED'
+                : 'AWAITING SUPABASE ENV'}
           </span>
 
           <button
@@ -324,9 +317,101 @@ export default function LoginPage({
         </div>
       </header>
 
-      {/* Main Centered Authentication Card */}
+      {/* Main Centered Cloud Authentication Card */}
       <main className="mx-auto my-8 w-full max-w-md">
         <div className="console-panel rounded-2xl p-6 sm:p-7">
+          {!isOnline ? (
+            <div
+              style={{
+                backgroundColor: 'var(--warn-soft)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                color: 'var(--warn-text)',
+              }}
+              className="mb-5 flex items-start gap-2.5 rounded-xl px-3.5 py-2.5 text-xs"
+            >
+              <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Waiting for internet connection. Cloud Supabase authentication
+                will resume automatically once online.
+              </span>
+            </div>
+          ) : null}
+
+          {!configured ? (
+            <div
+              style={{
+                backgroundColor: 'var(--warn-soft)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                color: 'var(--warn-text)',
+              }}
+              className="mb-5 rounded-xl px-3.5 py-3 text-xs"
+            >
+              <div className="flex items-start gap-2.5">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="min-w-0 flex-1 leading-relaxed">
+                  <strong className="block font-semibold">
+                    Supabase secrets not detected on this build
+                  </strong>
+                  <span>
+                    Set <code className="font-mono">VITE_SUPABASE_URL</code> and{' '}
+                    <code className="font-mono">VITE_SUPABASE_ANON_KEY</code> in{' '}
+                    <code className="font-mono">.env.local</code> or GitHub
+                    Repository Secrets so Sign-In auto-connects over the
+                    internet.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowEnvQuickConnect((v) => !v)}
+                    className="mt-2 inline-flex items-center gap-1 font-mono text-[10.5px] font-semibold underline"
+                  >
+                    {showEnvQuickConnect ? (
+                      <>
+                        Hide browser endpoint override{' '}
+                        <ChevronUp className="h-3 w-3" />
+                      </>
+                    ) : (
+                      <>
+                        Connect URL &amp; Key in browser now{' '}
+                        <ChevronDown className="h-3 w-3" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {showEnvQuickConnect ? (
+                <form
+                  onSubmit={handleQuickConnectEndpoint}
+                  style={{ borderTop: '1px solid rgba(245, 158, 11, 0.25)' }}
+                  className="mt-3 space-y-2.5 pt-3"
+                >
+                  <input
+                    type="url"
+                    required
+                    value={quickUrl}
+                    onChange={(e) => setQuickUrl(e.target.value)}
+                    placeholder="https://your-project-ref.supabase.co"
+                    className="console-input w-full rounded-lg px-3 py-1.5 font-mono text-xs"
+                  />
+                  <input
+                    type="password"
+                    required
+                    value={quickAnonKey}
+                    onChange={(e) => setQuickAnonKey(e.target.value)}
+                    placeholder="sb_publishable_... or anon key"
+                    className="console-input w-full rounded-lg px-3 py-1.5 font-mono text-xs"
+                  />
+                  <button
+                    type="submit"
+                    className="console-btn-primary w-full rounded-lg px-3 py-1.5 text-xs"
+                  >
+                    Save &amp; Auto-Connect Cloud Supabase
+                  </button>
+                </form>
+              ) : null}
+            </div>
+          ) : null}
+
           {errorMsg ? (
             <div
               style={{
@@ -356,7 +441,7 @@ export default function LoginPage({
           ) : null}
 
           {/* STATE 1: Cloud Password Recovery Flow */}
-          {isCloudMode && recoveryMode ? (
+          {configured && recoveryMode ? (
             <div>
               <div className="flex items-center gap-2 font-mono text-[10.5px] font-semibold tracking-wider text-emerald-400 uppercase">
                 <ShieldCheck className="h-3.5 w-3.5" />
@@ -415,14 +500,14 @@ export default function LoginPage({
 
                 <button
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || !isOnline}
                   className="console-btn-primary w-full rounded-lg px-4 py-2.5 text-xs disabled:opacity-50"
                 >
                   {busy ? 'Updating Password...' : 'Save Password & Enter Console'}
                 </button>
               </form>
             </div>
-          ) : /* STATE 2: Cloud Signed-In Non-Admin (403 Missing Claim) */ signedInNonAdmin ? (
+          ) : /* STATE 2: Signed-In Non-Admin (403 Missing Claim) */ signedInNonAdmin ? (
             <div>
               <div
                 style={{ color: 'var(--danger-text)' }}
@@ -473,7 +558,7 @@ export default function LoginPage({
               <div className="mt-5 flex flex-col gap-2 sm:flex-row">
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !isOnline}
                   onClick={handleRecheckRole}
                   className="console-btn-primary inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs disabled:opacity-50"
                 >
@@ -492,8 +577,7 @@ export default function LoginPage({
                 </button>
               </div>
             </div>
-          ) : /* STATE 3: Cloud Forgot Password */ isCloudMode &&
-            view === 'forgot' ? (
+          ) : /* STATE 3: Forgot Password */ view === 'forgot' ? (
             <div>
               <div className="flex items-center gap-2 font-mono text-[10.5px] font-semibold tracking-wider text-sky-400 uppercase">
                 <Mail className="h-3.5 w-3.5" />
@@ -506,8 +590,8 @@ export default function LoginPage({
                 style={{ color: 'var(--text-secondary)' }}
                 className="mt-1 text-xs leading-relaxed"
               >
-                Enter your registered operator email to receive a one-time
-                Supabase password recovery link.
+                Enter your registered Cloud Supabase operator email to receive a
+                one-time password recovery link.
               </p>
 
               <form onSubmit={handleSendPasswordReset} className="mt-5 space-y-4">
@@ -521,17 +605,18 @@ export default function LoginPage({
                   <input
                     type="email"
                     required
+                    disabled={!configured}
                     autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="ops@yourdomain.com"
-                    className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 text-xs"
+                    className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 text-xs disabled:opacity-50"
                   />
                 </div>
 
                 <button
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || !configured || !isOnline}
                   className="console-btn-primary w-full rounded-lg px-4 py-2.5 text-xs disabled:opacity-50"
                 >
                   {busy ? 'Sending Recovery Link...' : 'Send Recovery Email'}
@@ -542,164 +627,34 @@ export default function LoginPage({
                   onClick={() => {
                     setErrorMsg('');
                     setStatusMsg('');
-                    setView('signin');
+                    setView('forgot' === view ? 'signin' : 'forgot');
                   }}
                   className="console-btn-secondary w-full rounded-lg px-4 py-2 text-xs font-medium"
                 >
-                  Back to Admin Sign-In
-                </button>
-              </form>
-            </div>
-          ) : /* STATE 4: First-Run Local Operator Initialization (before Supabase connected) */ !isCloudMode &&
-            !localInitialized ? (
-            <div>
-              <div className="flex items-center gap-2 font-mono text-[10.5px] font-semibold tracking-wider text-emerald-400 uppercase">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                First-Run Admin Setup · PBKDF2-SHA256
-              </div>
-              <h1 className="mt-1.5 text-lg font-semibold tracking-tight">
-                Create Operator Login
-              </h1>
-              <p
-                style={{ color: 'var(--text-secondary)' }}
-                className="mt-1 text-xs leading-relaxed"
-              >
-                Initialize your master operator login first. You can connect
-                your{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>
-                  Authority Supabase Project URL
-                </strong>{' '}
-                and{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>
-                  Public Publishable / Anon Key
-                </strong>{' '}
-                anytime after signing in under{' '}
-                <code className="font-mono">Authority &amp; Session</code>.
-              </p>
-
-              <form
-                onSubmit={handleBootstrapLocalAdmin}
-                className="mt-5 space-y-4"
-              >
-                <div>
-                  <label
-                    style={{ color: 'var(--text-secondary)' }}
-                    className="block text-xs font-medium"
-                  >
-                    Operator Email
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    autoComplete="username"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="ops@yourdomain.com"
-                    className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    style={{ color: 'var(--text-secondary)' }}
-                    className="block text-xs font-medium"
-                  >
-                    Master Password (min {MIN_ADMIN_PASSWORD_LENGTH} characters)
-                  </label>
-                  <div className="relative mt-1.5">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      minLength={MIN_ADMIN_PASSWORD_LENGTH}
-                      autoComplete="new-password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Minimum 10 characters"
-                      className="console-input w-full rounded-lg py-2 pr-9 pl-3.5 text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((v) => !v)}
-                      aria-label={
-                        showPassword ? 'Hide password' : 'Show password'
-                      }
-                      style={{ color: 'var(--text-muted)' }}
-                      className="absolute inset-y-0 right-2.5 flex items-center"
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-3.5 w-3.5" />
-                      ) : (
-                        <Eye className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label
-                    style={{ color: 'var(--text-secondary)' }}
-                    className="block text-xs font-medium"
-                  >
-                    Confirm Master Password
-                  </label>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    minLength={MIN_ADMIN_PASSWORD_LENGTH}
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Repeat master password"
-                    className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 text-xs"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="console-btn-primary flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs disabled:opacity-50"
-                >
-                  <Lock className="h-3.5 w-3.5" />
-                  {busy
-                    ? 'Encrypting Vault & Signing In...'
-                    : 'Initialize Admin & Sign In'}
+                  Back to Operator Sign-In
                 </button>
               </form>
             </div>
           ) : (
-            /* STATE 5: Primary Operator Sign-In (No Sign-Up Tab) */
+            /* STATE 4: Default Cloud Operator Sign-In (Zero Local Accounts, Zero Demo) */
             <div>
               <div className="flex items-center gap-2 font-mono text-[10.5px] font-semibold tracking-wider text-emerald-400 uppercase">
                 <ShieldCheck className="h-3.5 w-3.5" />
-                {isCloudMode
-                  ? 'Cloud Authority Access'
-                  : 'Authorized Operator Access'}
+                Cloud Authority Sign-In
               </div>
               <h1 className="mt-1.5 text-lg font-semibold tracking-tight">
-                Operator Sign-In
+                Sign in to myClinic Authority
               </h1>
               <p
                 style={{ color: 'var(--text-secondary)' }}
                 className="mt-1 text-xs leading-relaxed"
               >
-                {isCloudMode ? (
-                  <>
-                    Sign in with your Supabase operator account carrying{' '}
-                    <code className="font-mono">
-                      app_metadata.role = &quot;admin&quot;
-                    </code>
-                    .
-                  </>
-                ) : (
-                  <>
-                    Sign in to unlock the Control Plane. Connect your{' '}
-                    <strong style={{ color: 'var(--text-primary)' }}>
-                      Supabase Project URL &amp; Publishable Key
-                    </strong>{' '}
-                    anytime after login under{' '}
-                    <code className="font-mono">Authority &amp; Session</code>.
-                  </>
-                )}
+                Authenticate over HTTPS with your Cloud Supabase operator
+                account carrying{' '}
+                <code className="font-mono">
+                  app_metadata.role = &quot;admin&quot;
+                </code>
+                .
               </p>
 
               <form onSubmit={handleSignIn} className="mt-5 space-y-4">
@@ -713,11 +668,12 @@ export default function LoginPage({
                   <input
                     type="email"
                     required
+                    disabled={!configured}
                     autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="ops@yourdomain.com"
-                    className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 text-xs"
+                    className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 text-xs disabled:opacity-50"
                   />
                 </div>
 
@@ -729,38 +685,39 @@ export default function LoginPage({
                     >
                       Password
                     </label>
-                    {isCloudMode ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setErrorMsg('');
-                          setStatusMsg('');
-                          setView('forgot');
-                        }}
-                        className="text-[11px] font-medium text-emerald-400 hover:underline"
-                      >
-                        Forgot password?
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      disabled={!configured}
+                      onClick={() => {
+                        setErrorMsg('');
+                        setStatusMsg('');
+                        setView('forgot');
+                      }}
+                      className="text-[11px] font-medium text-emerald-400 hover:underline disabled:opacity-50"
+                    >
+                      Forgot password?
+                    </button>
                   </div>
                   <div className="relative mt-1.5">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
+                      disabled={!configured}
                       autoComplete="current-password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Enter operator password"
-                      className="console-input w-full rounded-lg py-2 pr-9 pl-3.5 text-xs"
+                      className="console-input w-full rounded-lg py-2 pr-9 pl-3.5 text-xs disabled:opacity-50"
                     />
                     <button
                       type="button"
+                      disabled={!configured}
                       onClick={() => setShowPassword((v) => !v)}
                       aria-label={
                         showPassword ? 'Hide password' : 'Show password'
                       }
                       style={{ color: 'var(--text-muted)' }}
-                      className="absolute inset-y-0 right-2.5 flex items-center"
+                      className="absolute inset-y-0 right-2.5 flex items-center disabled:opacity-40"
                     >
                       {showPassword ? (
                         <EyeOff className="h-3.5 w-3.5" />
@@ -773,7 +730,7 @@ export default function LoginPage({
 
                 <button
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || !configured || !isOnline}
                   className="console-btn-primary flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs disabled:opacity-50"
                 >
                   <Lock className="h-3.5 w-3.5" />
@@ -781,28 +738,21 @@ export default function LoginPage({
                 </button>
               </form>
 
-              <div
-                style={{ borderTop: '1px solid var(--border-subtle)' }}
-                className="mt-5 flex items-center justify-between gap-2 pt-4 font-mono text-[10.5px]"
-              >
-                <span
-                  style={{ color: 'var(--text-muted)' }}
-                  className="truncate"
+              {configured ? (
+                <div
+                  style={{ borderTop: '1px solid var(--border-subtle)' }}
+                  className="mt-5 flex items-center justify-between gap-2 pt-4 font-mono text-[10.5px]"
                 >
-                  {isCloudMode
-                    ? backend.health?.url
-                    : 'Local PBKDF2-SHA256 Vault · Cloud connect post-login'}
-                </span>
-                {isCloudMode && backend.isRuntimeConfigured ? (
-                  <button
-                    type="button"
-                    onClick={handleSwitchBackToLocalVault}
-                    className="shrink-0 text-sky-400 hover:underline"
+                  <span
+                    style={{ color: 'var(--text-muted)' }}
+                    className="truncate"
+                    title={backend.health?.url}
                   >
-                    Use Local Vault
-                  </button>
-                ) : null}
-              </div>
+                    {backend.health?.url}
+                  </span>
+                  <span className="shrink-0 text-emerald-400">PKCE · TLS</span>
+                </div>
+              ) : null}
             </div>
           )}
         </div>
@@ -816,7 +766,7 @@ export default function LoginPage({
         <span>
           myClinic License Authority v{APP_VERSION} · Schema v{SCHEMA_VERSION}
         </span>
-        <span>Zero Self-Signup · Connect Supabase Post-Login</span>
+        <span>Cloud Accounts Only · No Local / Demo Bypass</span>
       </footer>
     </div>
   );

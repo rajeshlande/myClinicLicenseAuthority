@@ -1,8 +1,10 @@
 /**
- * Zero-Trust Supabase Configuration Inspector (`src/lib/health.mjs`).
+ * Zero-Trust Cloud Supabase Configuration Inspector (`src/lib/health.mjs`).
  *
- * Refuses placeholder URLs and strictly blocks `service_role` or `sb_secret_`
- * credentials from ever running inside a browser bundle.
+ * Accepts either `{ url, anonKey }` or Vite environment objects
+ * (`{ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY }`), refuses placeholder hosts,
+ * and strictly blocks `service_role` or `sb_secret_` credentials from ever
+ * running inside a browser bundle.
  */
 
 function decodeJwtRoleClaim(maybeJwt) {
@@ -20,15 +22,18 @@ function decodeJwtRoleClaim(maybeJwt) {
   }
 }
 
-export function inspectSupabaseConfig({ url = '', anonKey = '' } = {}) {
-  const cleanUrl = String(url ?? '').trim();
-  const cleanKey = String(anonKey ?? '').trim();
+export function inspectSupabaseConfig(input = {}) {
+  const rawUrl = input?.url ?? input?.VITE_SUPABASE_URL ?? '';
+  const rawKey = input?.anonKey ?? input?.VITE_SUPABASE_ANON_KEY ?? '';
+  const cleanUrl = String(rawUrl).trim();
+  const cleanKey = String(rawKey).trim();
 
   if (!cleanUrl && !cleanKey) {
     return {
-      ok: true,
-      mode: 'demo',
-      reason: 'Running in offline/Pages demo mode with pre-seeded clinic contracts.',
+      ok: false,
+      mode: 'unconfigured',
+      reason:
+        'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local or GitHub Repository Secrets to auto-connect to Cloud Supabase.',
     };
   }
 
@@ -36,18 +41,20 @@ export function inspectSupabaseConfig({ url = '', anonKey = '' } = {}) {
     return {
       ok: false,
       mode: 'invalid',
-      reason: 'Both VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set together.',
+      reason:
+        'Both VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set together.',
     };
   }
 
   if (
-    /YOUR-PROJECT|abc\.supabase\.co|example\.com/i.test(cleanUrl) ||
+    /YOUR-PROJECT|your-project|abc\.supabase\.co|example\.com/i.test(cleanUrl) ||
     !/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(cleanUrl)
   ) {
     return {
       ok: false,
       mode: 'invalid',
-      reason: 'Supabase URL must be a real https://<project-ref>.supabase.co endpoint.',
+      reason:
+        'Supabase URL must be a real https://<project-ref>.supabase.co endpoint.',
     };
   }
 
@@ -69,6 +76,6 @@ export function inspectSupabaseConfig({ url = '', anonKey = '' } = {}) {
     mode: 'cloud',
     url: cleanUrl.replace(/\/+$/, ''),
     anonKey: cleanKey,
-    reason: 'Connected to cloud Supabase authority.',
+    reason: 'Auto-connected to Cloud Supabase Authority.',
   };
 }

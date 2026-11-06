@@ -26,7 +26,6 @@ export const ALLOWED_DEV_DEPENDENCIES = [
 
 export const SECRET_SCAN_SKIP = [
   'package-lock.json',
-  'src/lib/demo-store.mjs',
   'tests/',
   'supabase/schema-tests.sql',
   '.claude/skills/security-audit/',

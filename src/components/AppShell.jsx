@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   Sun,
   Terminal,
+  Wifi,
+  WifiOff,
   X,
 } from 'lucide-react';
 import { APP_VERSION, SCHEMA_VERSION } from '../lib/version.js';
@@ -47,7 +49,7 @@ const NAV_GROUPS = [
       {
         route: 'setup',
         label: 'Authority & Session',
-        subtitle: 'Connect Supabase & security',
+        subtitle: 'Health test & security',
         icon: Database,
       },
     ],
@@ -75,15 +77,15 @@ const ROUTE_META = {
   },
   setup: {
     section: 'Cryptography',
-    title: 'Authority Endpoint & Operator Session',
+    title: 'Cloud Authority Diagnostics & Operator Session',
     description:
-      'Connect your Authority Supabase Project URL & Publishable Key, rotate operator passwords, and inspect SQL rules.',
+      'Run live Supabase REST/schema health checks, rotate operator passwords, and inspect Cloud Authority SQL rules.',
   },
 };
 
 export default function AppShell({
   activeRoute,
-  backendMode,
+  isOnline,
   operatorEmail,
   theme,
   onToggleTheme,
@@ -94,7 +96,6 @@ export default function AppShell({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const meta = ROUTE_META[activeRoute] ?? ROUTE_META.dashboard;
-  const isCloud = backendMode === 'cloud';
 
   const renderSidebarContent = ({ isMobile = false, collapsed = false } = {}) => (
     <div className="flex h-full flex-col">
@@ -263,7 +264,7 @@ export default function AppShell({
         ))}
       </nav>
 
-      {/* Bottom Authenticated Admin Profile & Sign Out */}
+      {/* Bottom Authenticated Cloud Admin Profile & Sign Out */}
       <div
         style={{ borderTop: '1px solid var(--border-subtle)' }}
         className={collapsed ? 'space-y-1.5 p-2' : 'space-y-2 p-2.5'}
@@ -284,10 +285,10 @@ export default function AppShell({
               <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold">
                 <span
                   className={`h-2 w-2 rounded-full ${
-                    isCloud ? 'bg-emerald-400' : 'bg-sky-400'
+                    isOnline ? 'bg-emerald-400' : 'bg-amber-400'
                   }`}
                 />
-                {isCloud ? 'Cloud Admin' : 'Local Admin'}
+                Cloud Admin
               </span>
               <span
                 style={{
@@ -403,32 +404,29 @@ export default function AppShell({
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {isCloud ? (
-              <span
-                style={{
-                  backgroundColor: 'var(--accent-soft)',
-                  border: '1px solid var(--accent-border)',
-                  color: 'var(--accent-primary)',
-                }}
-                className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold lg:inline-flex"
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                CLOUD SUPABASE LIVE
-              </span>
-            ) : (
-              <a
-                href="#/setup"
-                style={{
-                  backgroundColor: 'var(--info-soft)',
-                  border: '1px solid rgba(56, 189, 248, 0.35)',
-                  color: 'var(--info-text)',
-                }}
-                className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold transition hover:opacity-90 lg:inline-flex"
-              >
-                <Database className="h-3 w-3" />
-                CONNECT SUPABASE →
-              </a>
-            )}
+            <span
+              style={
+                isOnline
+                  ? {
+                      backgroundColor: 'var(--accent-soft)',
+                      border: '1px solid var(--accent-border)',
+                      color: 'var(--accent-primary)',
+                    }
+                  : {
+                      backgroundColor: 'var(--warn-soft)',
+                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      color: 'var(--warn-text)',
+                    }
+              }
+              className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold lg:inline-flex"
+            >
+              {isOnline ? (
+                <Wifi className="h-3 w-3" />
+              ) : (
+                <WifiOff className="h-3 w-3" />
+              )}
+              {isOnline ? 'CLOUD SUPABASE LIVE' : 'RECONNECTING...'}
+            </span>
 
             <a
               href="#/simulator"

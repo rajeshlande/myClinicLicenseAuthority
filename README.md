@@ -11,7 +11,7 @@
 [![React 19](https://img.shields.io/badge/React-19.3-61dafb.svg?logo=react&logoColor=black)](package.json)
 [![Vite 8](https://img.shields.io/badge/Vite-8.3-646cff.svg?logo=vite&logoColor=white)](vite.config.js)
 [![Cryptography: RS256](https://img.shields.io/badge/JWT-RS256%202048--bit-3b82f6.svg)](docs/SECURITY.md)
-[![Tests: 25 Passing](https://img.shields.io/badge/Tests-25%20Passing-10b981.svg)](tests/)
+[![Tests: 23 Passing](https://img.shields.io/badge/Tests-23%20Passing-10b981.svg)](tests/)
 [![GitHub Pages Ready](https://img.shields.io/badge/GitHub%20Pages-Ready-222222.svg?logo=githubpages)](.github/workflows/pages.yml)
 
 [Quick Start](#installation) · [Connect with `myClinic`](#step-by-step-connecting-both-web-apps) · [API Reference](#local-validator-api-reference) · [Security Policy](SECURITY.md) · [Contributing](CONTRIBUTING.md)
@@ -53,8 +53,8 @@
 - **7-Day Offline Capability Resilience:** Customer `myClinic` hosts sync every 6 hours via `node-cron`, cache verified tokens atomically (`0600` permissions), survive multi-day internet outages, and block cross-machine `.license_cache` cloning via SHA-256 `machine_fingerprint` binding.
 - **In-Browser RS256 Key Studio & Phone-Home Lab (`#/simulator`):** Generate 2048-bit RSA keypairs via WebCrypto, simulate cloud heartbeats, and inspect/verify capability JWT claims directly in the browser.
 - **Turnkey `myClinic` Gateway (`server/node-host.mjs`):** Serves `myClinic/dist` directly behind an `<1 ms` offline RS256 middleware gate (`HTTP 402 Payment Required` when invalid) or exposes `/api/license/status` for side-by-side web apps.
-- **Zero-Trust Cloud Admin Login Gate (`LoginPage.jsx`):** Blocks all Control Plane routes (`#/dashboard`, `#/node-agent`, `#/simulator`, `#/setup`) until a real Supabase operator signs in with an immutable `app_metadata.role = "admin"` claim — no self-service Sign-Up tab and no unauthenticated Demo bypass. Includes Forgot/Reset Password recovery (`#/reset-password`) and in-session password rotation.
-- **GitHub Pages Ready:** Relative `./` asset paths, hash routing, PWA service worker, and runtime Authority endpoint binding when `VITE_SUPABASE_URL` is configured post-build.
+- **Zero-Trust Cloud Admin Login Gate (`LoginPage.jsx`):** Auto-connects over HTTPS to Cloud Supabase via `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (PKCE flow, identical secret pattern to `myClinic`) and blocks all Control Plane routes until an operator signs in with an immutable `app_metadata.role = "admin"` claim — zero local accounts, zero self-service Sign-Up tab, and zero offline/demo bypass.
+- **GitHub Pages Ready:** Relative `./` asset paths, hash routing, PWA service worker, and automated GitHub Actions Pages deployment injecting `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` repository secrets.
 
 ---
 
@@ -98,7 +98,7 @@ npm install
 npm run dev
 ```
 
-Open **`http://localhost:5173`** — initialize or sign in with your operator credentials at the **Admin Gate** first, then connect your **`Authority Supabase Project URL`** and **`Public Publishable / Anon Key`** anytime after login under **`#/setup` (`Authority & Session`)** (or via `.env.local`).
+Open **`http://localhost:5173`** — with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` configured in `.env.local` (or GitHub Repository Secrets on Pages), the Control Plane auto-connects over the internet to Cloud Supabase and presents the **Cloud Operator Sign-In** screen (`app_metadata.role = "admin"`, zero local accounts).
 
 ---
 

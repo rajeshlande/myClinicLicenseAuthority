@@ -1,35 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  bootstrapLocalAdminOperator,
   buildPasswordRecoveryRedirectUrl,
   detectRecoveryFlowFromUrl,
-  hasLocalAdminOperator,
+  formatAuthErrorMessage,
   isAuthorizedAdminUser,
-  readLocalAdminSession,
-  rotateLocalAdminPassword,
-  signInLocalAdminOperator,
-  signOutLocalAdminSession,
   validateAdminCredentials,
   validatePasswordUpdate,
   validateRecoveryEmail,
 } from '../src/lib/auth.mjs';
-
-function createMemoryStorage() {
-  const map = new Map();
-  return {
-    getItem: (k) => (map.has(k) ? map.get(k) : null),
-    setItem: (k, v) => map.set(k, String(v)),
-    removeItem: (k) => map.delete(k),
-  };
-}
 
 test('isAuthorizedAdminUser requires app_metadata.role === admin and ignores user_metadata', () => {
   assert.equal(isAuthorizedAdminUser(null), false);
   assert.equal(isAuthorizedAdminUser(undefined), false);
   assert.equal(isAuthorizedAdminUser({}), false);
 
-  // Privilege escalation attempt via user_metadata must be rejected
   assert.equal(
     isAuthorizedAdminUser({
       id: 'user-1',
@@ -40,7 +25,6 @@ test('isAuthorizedAdminUser requires app_metadata.role === admin and ignores use
     false,
   );
 
-  // Authenticated non-admin operator must be rejected
   assert.equal(
     isAuthorizedAdminUser({
       id: 'user-2',
@@ -50,7 +34,6 @@ test('isAuthorizedAdminUser requires app_metadata.role === admin and ignores use
     false,
   );
 
-  // Immutable app_metadata.role === 'admin' must be accepted
   assert.equal(
     isAuthorizedAdminUser({
       id: 'user-3',
@@ -61,7 +44,7 @@ test('isAuthorizedAdminUser requires app_metadata.role === admin and ignores use
   );
 });
 
-test('credential, password reset, and recovery URL helpers validate strictly', () => {
+test('credential, password reset, error formatting, and recovery URL helpers validate strictly', () => {
   assert.equal(
     validateAdminCredentials({ email: 'not-an-email', password: 'secretPassword1' }).ok,
     false,
@@ -99,6 +82,15 @@ test('credential, password reset, and recovery URL helpers validate strictly', (
     true,
   );
 
+  assert.match(
+    formatAuthErrorMessage(new Error('Invalid login credentials')),
+    /do not match an operator account/i,
+  );
+  assert.match(
+    formatAuthErrorMessage(new Error('Failed to fetch')),
+    /Cannot reach Cloud Supabase/i,
+  );
+
   assert.equal(
     buildPasswordRecoveryRedirectUrl(
       'https://org.github.io/myclinic-license-authority/?foo=1#/dashboard',
@@ -117,74 +109,4 @@ test('credential, password reset, and recovery URL helpers validate strictly', (
     detectRecoveryFlowFromUrl({ hash: '#/dashboard', search: '' }),
     false,
   );
-});
-
-test('PBKDF2 local operator vault bootstraps once, authenticates, rotates password, and blocks re-signup', async () => {
-  const storage = createMemoryStorage();
-  assert.equal(hasLocalAdminOperator(storage), false);
-  assert.equal(readLocalAdminSession(storage), null);
-
-  const initialSession = await bootstrapLocalAdminOperator({
-    email: 'OPS@MyClinic.io',
-    password: 'InitialMasterPassword#2026',
-    confirmPassword: 'InitialMasterPassword#2026',
-    storage,
-  });
-  assert.equal(hasLocalAdminOperator(storage), true);
-  assert.equal(isAuthorizedAdminUser(initialSession.user), true);
-  assert.equal(initialSession.user.email, 'ops@myclinic.io');
-
-  // Second bootstrap attempt must fail (no self-service sign-up tab)
-  await assert.rejects(() =>
-    bootstrapLocalAdminOperator({
-      email: 'intruder@example.com',
-      password: 'AnotherPassword#2026',
-      confirmPassword: 'AnotherPassword#2026',
-      storage,
-    }),
-  );
-
-  // Sign out clears active session
-  signOutLocalAdminSession(storage);
-  assert.equal(readLocalAdminSession(storage), null);
-
-  // Wrong password fails
-  await assert.rejects(() =>
-    signInLocalAdminOperator({
-      email: 'ops@myclinic.io',
-      password: 'WrongPassword#2026',
-      storage,
-    }),
-  );
-
-  // Correct password succeeds
-  const signedIn = await signInLocalAdminOperator({
-    email: 'ops@myclinic.io',
-    password: 'InitialMasterPassword#2026',
-    storage,
-  });
-  assert.equal(isAuthorizedAdminUser(signedIn.user), true);
-
-  // Rotate password and verify old password no longer works
-  await rotateLocalAdminPassword({
-    password: 'RotatedMasterPassword#2027',
-    confirmPassword: 'RotatedMasterPassword#2027',
-    storage,
-  });
-  signOutLocalAdminSession(storage);
-
-  await assert.rejects(() =>
-    signInLocalAdminOperator({
-      email: 'ops@myclinic.io',
-      password: 'InitialMasterPassword#2026',
-      storage,
-    }),
-  );
-
-  const afterRotate = await signInLocalAdminOperator({
-    email: 'ops@myclinic.io',
-    password: 'RotatedMasterPassword#2027',
-    storage,
-  });
-  assert.equal(isAuthorizedAdminUser(afterRotate.user), true);
 });

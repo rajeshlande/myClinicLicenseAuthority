@@ -12,18 +12,26 @@ function buildFakeJwtWithRole(role) {
   return `${toB64Url({ alg: 'HS256' })}.${toB64Url({ role })}.sig`;
 }
 
-test('inspectSupabaseConfig defaults to demo mode when unset and accepts anon keys', () => {
-  const demo = inspectSupabaseConfig({});
-  assert.equal(demo.ok, true);
-  assert.equal(demo.mode, 'demo');
+test('inspectSupabaseConfig reports unconfigured when unset and accepts both url/anonKey and VITE_ env keys', () => {
+  const unset = inspectSupabaseConfig({});
+  assert.equal(unset.ok, false);
+  assert.equal(unset.mode, 'unconfigured');
 
-  const cloud = inspectSupabaseConfig({
+  const cloudDirect = inspectSupabaseConfig({
     url: 'https://projref123.supabase.co/',
     anonKey: 'sb_publishable_safe_public_key_value',
   });
-  assert.equal(cloud.ok, true);
-  assert.equal(cloud.mode, 'cloud');
-  assert.equal(cloud.url, 'https://projref123.supabase.co');
+  assert.equal(cloudDirect.ok, true);
+  assert.equal(cloudDirect.mode, 'cloud');
+  assert.equal(cloudDirect.url, 'https://projref123.supabase.co');
+
+  const cloudViteEnv = inspectSupabaseConfig({
+    VITE_SUPABASE_URL: 'https://projref456.supabase.co/',
+    VITE_SUPABASE_ANON_KEY: 'sb_publishable_vite_env_public_key',
+  });
+  assert.equal(cloudViteEnv.ok, true);
+  assert.equal(cloudViteEnv.mode, 'cloud');
+  assert.equal(cloudViteEnv.url, 'https://projref456.supabase.co');
 });
 
 test('inspectSupabaseConfig refuses placeholder URLs and privileged secret keys', () => {

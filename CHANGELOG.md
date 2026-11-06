@@ -2,15 +2,19 @@
 
 All notable changes to `myclinic-license-authority` are documented in this file.
 
-## [1.1.1] - 2026-11-06
+## [1.2.0] - 2026-11-06
+
+### Fixed
+- **Cloud Supabase Auto-Connection Inspector (`src/lib/health.mjs`, `src/lib/supabase.js`):** Fixed `inspectSupabaseConfig()` to accept both `{ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY }` (`import.meta.env`) and `{ url, anonKey }`, resolving the bug where valid Cloud Supabase credentials fell through to `"Running in offline/Pages demo mode with pre-seeded clinic contracts."`.
 
 ### Changed
-- **Post-Login Cloud Endpoint Connection (`src/pages/LoginPage.jsx`, `src/pages/SetupPage.jsx`, `src/lib/auth.mjs`):** Operators now authenticate at the login gate **first** (via a one-time PBKDF2-SHA256 120k-iteration local operator vault before Cloud Supabase is linked) and connect **`Authority Supabase Project URL`** + **`Public Publishable / Anon Key`** **after login** inside `#/setup` (`Authority & Session`), without any pre-login endpoint prompt or unauthenticated bypass.
+- **Cloud-Only Internet Auto-Connect, Zero Local Accounts, Zero Demo Contracts:** Removed `src/lib/demo-store.mjs`, `tests/demo-store.test.mjs`, and all client-side local operator accounts. The web app now auto-connects over HTTPS to Cloud Supabase on boot via `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (matching `rajeshlande/myClinic` PKCE auth), monitors live `online`/`offline` network state to auto-resume token refresh, and enforces `app_metadata.role = "admin"` exclusively against Cloud Supabase.
+- **Added Live Cloud Connection Self-Test (`src/pages/SetupPage.jsx`) & Cache Bust (`public/sw.js`):** Added REST API + `public.app_schema_version()` live verification inside `#/setup` and bumped the PWA shell cache (`myclinic-authority-shell-v2`).
 
 ## [1.1.0] - 2026-11-06
 
 ### Added
-- **Zero-Trust Cloud Admin Authentication Gate (`src/pages/LoginPage.jsx`, `src/lib/auth.mjs`):** Hard-gates all Control Plane routes (`#/dashboard`, `#/node-agent`, `#/simulator`, `#/setup`) behind an authenticated operator session carrying `app_metadata.role = 'admin'`.
+- **Zero-Trust Cloud Admin Authentication Gate (`src/pages/LoginPage.jsx`, `src/lib/auth.mjs`):** Hard-gates all Control Plane routes (`#/dashboard`, `#/node-agent`, `#/simulator`, `#/setup`) behind an authenticated Supabase operator session carrying `app_metadata.role = 'admin'`.
 - **Operator Sign-In & Password Recovery Flows:** Email + password sign-in with visibility toggle, password recovery link dispatch (`resetPasswordForEmail`) compatible with GitHub Pages hash routing (`#/reset-password`), in-app password rotation (`updateUser`), and a `403 · Admin Role Claim Required` remediation screen with copyable `auth.users` SQL grant.
 
 ## [1.0.0] - 2026-11-06

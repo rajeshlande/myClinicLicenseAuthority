@@ -56,9 +56,9 @@ jobs:
         run: |
           set -uo pipefail
           if [ -z "${VITE_SUPABASE_URL:-}" ] || [ -z "${VITE_SUPABASE_ANON_KEY:-}" ]; then
-            echo "::warning title=Demo mode::VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set as repository secrets, so this Pages deploy runs in Interactive Demo Mode."
+            echo "::warning title=Supabase unconfigured::VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set as repository secrets. Add both under Settings -> Secrets and variables -> Actions so Operator Sign-In auto-connects to Cloud Supabase."
           else
-            echo "::notice title=Supabase configured::Cloud Supabase secrets reached the build."
+            echo "::notice title=Supabase configured::Cloud Supabase secrets reached the build — Operator Sign-In will auto-connect on boot."
           fi
 
           status=0
