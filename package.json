@@ -1,7 +1,7 @@
 {
   "name": "myclinic-license-authority",
   "private": true,
-  "version": "1.5.0",
+  "version": "1.5.1",
   "type": "module",
   "description": "Central Asymmetric RS256 Subscription Management & Phone-Home Hardware Lock Authority for self-hosted myClinic deployments.",
   "engines": {
@@ -21,6 +21,7 @@
     "audit:deps": "node scripts/check-contributing.mjs --only deps --online",
     "audit:security": "node scripts/check-contributing.mjs --online --strict",
     "keygen": "node scripts/generate-keypair.mjs",
+    "deploy:signer": "node scripts/deploy-signer.mjs",
     "start:validator": "node server/node-host.mjs"
   },
   "dependencies": {

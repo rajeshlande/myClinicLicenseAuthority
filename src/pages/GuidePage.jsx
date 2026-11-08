@@ -10,13 +10,17 @@ import {
   Copy,
   Database,
   ExternalLink,
+  FileCode2,
   FlaskConical,
+  Globe,
   HelpCircle,
   KeyRound,
   Plus,
   ShieldCheck,
   Sparkles,
+  Terminal,
 } from 'lucide-react';
+import verifyLicenseScriptSource from '../../supabase/functions/verify-license/index.ts?raw';
 import ErrorAlert from '../components/ErrorAlert.jsx';
 import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import { generateRsaKeyPairPem } from '../lib/crypto-rs256.mjs';
@@ -109,7 +113,8 @@ export function GuidePage({
   const [dbCheckResult, setDbCheckResult] = useState(null);
   const [dbCheckError, setDbCheckError] = useState(null);
 
-  // Step 2 in-browser keygen state
+  // Step 2 in-browser keygen & deploy mode state
+  const [step2Mode, setStep2Mode] = useState('dashboard'); // 'dashboard' | 'script' | 'cli'
   const [keyBusy, setKeyBusy] = useState(false);
   const [generatedKeys, setGeneratedKeys] = useState(null);
   const [keyError, setKeyError] = useState(null);
@@ -256,6 +261,19 @@ export function GuidePage({
       'npx supabase functions deploy verify-license --no-verify-jwt',
     ].join('\n');
   }, [generatedKeys, projectRef]);
+
+  const oneLineDeployScript = useMemo(
+    () =>
+      projectRef === 'YOUR_AUTHORITY_PROJECT_REF'
+        ? 'npx supabase login\nnpm run deploy:signer -- --project-ref YOUR_AUTHORITY_PROJECT_REF'
+        : `npx supabase login\nnpm run deploy:signer -- --project-ref ${projectRef}`,
+    [projectRef],
+  );
+
+  const dashboardFunctionsUrl =
+    projectRef !== 'YOUR_AUTHORITY_PROJECT_REF'
+      ? `https://supabase.com/dashboard/project/${projectRef}/functions`
+      : 'https://supabase.com/dashboard';
 
   return (
     <div className="space-y-6">
@@ -473,9 +491,10 @@ export function GuidePage({
                 style={{ color: 'var(--text-secondary)' }}
                 className="mt-1 text-xs leading-relaxed"
               >
-                Generate a 2048-bit RSA keypair below (or run <code className="font-mono">npm run keygen</code>).
-                Store <strong>LICENSE_PRIVATE_KEY</strong> strictly inside Supabase Edge Function
-                secrets; give clinics only <strong>LICENSE_PUBLIC_KEY</strong>.
+                Click <strong>1. Generate RS256 Keypair</strong> below, then deploy{' '}
+                <code className="font-mono">verify-license</code> either{' '}
+                <strong>directly in the Supabase Dashboard (no terminal needed)</strong>, via our
+                one-command script, or with Supabase CLI.
               </p>
             </div>
           </div>
@@ -491,74 +510,332 @@ export function GuidePage({
           </button>
         </div>
 
+        {/* Deployment Method Tabs */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <div
+            style={{
+              backgroundColor: 'var(--bg-well)',
+              border: '1px solid var(--border-subtle)',
+            }}
+            className="inline-flex flex-wrap rounded-xl p-1"
+          >
+            {[
+              {
+                id: 'dashboard',
+                label: 'Option A · Supabase Dashboard Script (No Terminal)',
+                icon: Globe,
+              },
+              {
+                id: 'script',
+                label: 'Option B · Automated Script (npm run deploy:signer)',
+                icon: FileCode2,
+              },
+              {
+                id: 'cli',
+                label: 'Option C · Manual CLI (Terminal)',
+                icon: Terminal,
+              },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const active = step2Mode === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setStep2Mode(tab.id)}
+                  style={
+                    active
+                      ? {
+                          backgroundColor: 'var(--accent-soft)',
+                          border: '1px solid var(--accent-border)',
+                          color: 'var(--text-primary)',
+                        }
+                      : {
+                          color: 'var(--text-secondary)',
+                          border: '1px solid transparent',
+                        }
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition"
+                >
+                  <Icon className="h-3.5 w-3.5 text-emerald-400" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {step2Mode === 'dashboard' ? (
+            <a
+              href={dashboardFunctionsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+            >
+              Open Supabase Edge Functions
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          ) : null}
+        </div>
+
         {keyError ? (
           <div className="mt-4">
             <ErrorAlert error={keyError} context="Keypair generation failed" />
           </div>
         ) : null}
 
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="console-code overflow-hidden rounded-xl">
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-              <span className="font-mono text-[11px] text-slate-300">
-                2. Deploy Authority Signer (Terminal)
-              </span>
-              <button
-                type="button"
-                onClick={() => handleCopy('edge-deploy', edgeDeployCommands)}
-                className="inline-flex items-center gap-1 rounded bg-slate-800 px-2.5 py-1 font-mono text-[11px] text-slate-200 hover:bg-slate-700"
+        {step2Mode === 'dashboard' ? (
+          <div className="mt-4 space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-well)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+                className="space-y-2 rounded-xl p-3.5 text-xs"
               >
-                {copiedId === 'edge-deploy' ? (
-                  <>
-                    <Check className="h-3 w-3 text-emerald-400" /> Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3 w-3" /> Copy Commands
-                  </>
-                )}
-              </button>
-            </div>
-            <pre className="max-h-44 overflow-auto p-3.5 font-mono text-[11px] text-slate-200">
-              {edgeDeployCommands}
-            </pre>
-          </div>
+                <p className="font-semibold text-emerald-400">
+                  2a. Add Secret in Supabase Dashboard
+                </p>
+                <p style={{ color: 'var(--text-secondary)' }} className="leading-relaxed">
+                  Open <strong>Edge Functions → Secrets</strong>, create secret{' '}
+                  <code className="font-mono">LICENSE_PRIVATE_KEY</code>, and paste the private key:
+                </p>
+                <button
+                  type="button"
+                  disabled={!generatedKeys}
+                  onClick={() =>
+                    handleCopy('dash-priv-key', generatedKeys?.privateKeyEnv || '')
+                  }
+                  className="console-btn-secondary inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-[11px] font-semibold disabled:opacity-40"
+                >
+                  {copiedId === 'dash-priv-key' ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied LICENSE_PRIVATE_KEY
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5" />
+                      {generatedKeys
+                        ? 'Copy LICENSE_PRIVATE_KEY'
+                        : 'Click "1. Generate RS256 Keypair" first'}
+                    </>
+                  )}
+                </button>
+              </div>
 
-          <div className="console-code overflow-hidden rounded-xl">
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-              <span className="font-mono text-[11px] text-emerald-300">
-                3. Public Key for myClinic (VITE_LICENSE_PUBLIC_KEY)
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  handleCopy(
-                    'pub-key',
-                    generatedKeys?.publicKeyEnv ||
-                      'Generate a keypair first (or run `npm run keygen`)',
-                  )
-                }
-                disabled={!generatedKeys}
-                className="inline-flex items-center gap-1 rounded bg-slate-800 px-2.5 py-1 font-mono text-[11px] text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-well)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+                className="space-y-2 rounded-xl p-3.5 text-xs"
               >
-                {copiedId === 'pub-key' ? (
-                  <>
-                    <Check className="h-3 w-3 text-emerald-400" /> Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3 w-3" /> Copy Public Key
-                  </>
-                )}
-              </button>
+                <p className="font-semibold text-emerald-400">
+                  2b. Paste Function Script in Browser Editor
+                </p>
+                <p style={{ color: 'var(--text-secondary)' }} className="leading-relaxed">
+                  Click <strong>Deploy a new function → Via Editor</strong>, name it{' '}
+                  <code className="font-mono">verify-license</code>, turn <strong>OFF</strong>{' '}
+                  <em>&quot;Verify JWT&quot;</em>, and paste this script:
+                </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopy('verify-license-ts', verifyLicenseScriptSource)
+                  }
+                  className="console-btn-primary inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-[11px] font-semibold"
+                >
+                  {copiedId === 'verify-license-ts' ? (
+                    <>
+                      <Check className="h-3.5 w-3.5" /> Copied verify-license Script!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5" /> Copy verify-license Script (index.ts)
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-well)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+                className="space-y-2 rounded-xl p-3.5 text-xs"
+              >
+                <p className="font-semibold text-emerald-400">
+                  2c. Save Public Key for myClinic
+                </p>
+                <p style={{ color: 'var(--text-secondary)' }} className="leading-relaxed">
+                  Keep this SPKI public key handy for Step 4 (<code className="font-mono">VITE_LICENSE_PUBLIC_KEY</code> &amp;{' '}
+                  <code className="font-mono">LICENSE_PUBLIC_KEY</code>):
+                </p>
+                <button
+                  type="button"
+                  disabled={!generatedKeys}
+                  onClick={() =>
+                    handleCopy('dash-pub-key', generatedKeys?.publicKeyEnv || '')
+                  }
+                  className="console-btn-secondary inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-[11px] font-semibold disabled:opacity-40"
+                >
+                  {copiedId === 'dash-pub-key' ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied Public Key
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5" />
+                      {generatedKeys
+                        ? 'Copy LICENSE_PUBLIC_KEY'
+                        : 'Click "1. Generate RS256 Keypair" first'}
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-            <pre className="max-h-44 overflow-auto p-3.5 font-mono text-[11px] text-emerald-200/90">
-              {generatedKeys
-                ? generatedKeys.publicKeyEnv
-                : 'Click "1. Generate RS256 Keypair" above to generate a fresh SPKI public key in browser memory.'}
-            </pre>
+
+            <div className="console-code overflow-hidden rounded-xl">
+              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
+                <span className="font-mono text-[11px] text-slate-300">
+                  Supabase Dashboard → Edge Functions → Via Editor → Function name: verify-license (JWT verification OFF)
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopy('verify-license-ts-preview', verifyLicenseScriptSource)
+                  }
+                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2.5 py-1 font-mono text-[11px] text-slate-200 hover:bg-slate-700"
+                >
+                  {copiedId === 'verify-license-ts-preview' ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" /> Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" /> Copy Full Script
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="max-h-48 overflow-auto p-3.5 font-mono text-[11px] text-emerald-200/90">
+                {verifyLicenseScriptSource}
+              </pre>
+            </div>
           </div>
-        </div>
+        ) : step2Mode === 'script' ? (
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="console-code overflow-hidden rounded-xl">
+              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
+                <span className="font-mono text-[11px] text-slate-300">
+                  Automated One-Command Deployer (scripts/deploy-signer.mjs)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleCopy('one-line-script', oneLineDeployScript)}
+                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2.5 py-1 font-mono text-[11px] text-slate-200 hover:bg-slate-700"
+                >
+                  {copiedId === 'one-line-script' ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" /> Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" /> Copy Script Command
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="max-h-44 overflow-auto p-3.5 font-mono text-[11px] text-emerald-200">
+                {oneLineDeployScript}
+              </pre>
+            </div>
+
+            <div
+              style={{
+                backgroundColor: 'var(--bg-well)',
+                border: '1px solid var(--border-subtle)',
+                color: 'var(--text-secondary)',
+              }}
+              className="space-y-2 rounded-xl p-4 text-xs leading-relaxed"
+            >
+              <p style={{ color: 'var(--text-primary)' }} className="font-semibold">
+                What <code className="font-mono">npm run deploy:signer</code> automates:
+              </p>
+              <p>
+                1) Auto-detects your project ref from <code className="font-mono">.env.local</code> (or{' '}
+                <code className="font-mono">--project-ref</code>), 2) generates a 2048-bit RS256
+                keypair into gitignored <code className="font-mono">keys/</code> if none exists yet,
+                3) uploads <code className="font-mono">LICENSE_PRIVATE_KEY</code> to Supabase Secrets,
+                and 4) deploys <code className="font-mono">verify-license --no-verify-jwt</code> and
+                prints your <code className="font-mono">VITE_LICENSE_PUBLIC_KEY</code>.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="console-code overflow-hidden rounded-xl">
+              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
+                <span className="font-mono text-[11px] text-slate-300">
+                  2. Manual Supabase CLI Commands (Terminal)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleCopy('edge-deploy', edgeDeployCommands)}
+                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2.5 py-1 font-mono text-[11px] text-slate-200 hover:bg-slate-700"
+                >
+                  {copiedId === 'edge-deploy' ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" /> Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" /> Copy Commands
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="max-h-44 overflow-auto p-3.5 font-mono text-[11px] text-slate-200">
+                {edgeDeployCommands}
+              </pre>
+            </div>
+
+            <div className="console-code overflow-hidden rounded-xl">
+              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
+                <span className="font-mono text-[11px] text-emerald-300">
+                  3. Public Key for myClinic (VITE_LICENSE_PUBLIC_KEY)
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopy(
+                      'pub-key',
+                      generatedKeys?.publicKeyEnv ||
+                        'Generate a keypair first (or run `npm run keygen`)',
+                    )
+                  }
+                  disabled={!generatedKeys}
+                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2.5 py-1 font-mono text-[11px] text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+                >
+                  {copiedId === 'pub-key' ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" /> Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" /> Copy Public Key
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="max-h-44 overflow-auto p-3.5 font-mono text-[11px] text-emerald-200/90">
+                {generatedKeys
+                  ? generatedKeys.publicKeyEnv
+                  : 'Click "1. Generate RS256 Keypair" above to generate a fresh SPKI public key in browser memory.'}
+              </pre>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* STEP 3 */}
@@ -729,8 +1006,9 @@ export function GuidePage({
             </strong>
             <p className="mt-1">
               Set <code className="font-mono">AUTHORITY_VERIFY_URL</code>,{' '}
-              <code className="font-mono">CLINIC_LICENSE_KEY</code>, and{' '}
-              <code className="font-mono">CLINIC_ORIGIN</code> on the clinic&apos;s Supabase project.
+              <code className="font-mono">LICENSE_KEY</code>,{' '}
+              <code className="font-mono">LICENSE_PUBLIC_KEY</code>, and{' '}
+              <code className="font-mono">MYCLINIC_ORIGINS</code> on the clinic&apos;s Supabase project.
             </p>
           </li>
           <li

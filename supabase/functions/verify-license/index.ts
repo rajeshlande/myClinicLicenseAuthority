@@ -1,10 +1,16 @@
+/**
+ * myClinicLicenseAuthority — verify-license Supabase Edge Function
+ *
+ * Self-contained single-file script: can be deployed either via:
+ *   A) Supabase Dashboard → Edge Functions → Deploy a new function → Via Editor
+ *      (Function name: `verify-license`, turn OFF "Verify JWT with legacy secret")
+ *   B) Terminal: `npm run deploy:signer` or `npx supabase functions deploy verify-license --no-verify-jwt`
+ *
+ * Required Edge Function Secret (Supabase Dashboard → Edge Functions → Secrets):
+ *   LICENSE_PRIVATE_KEY — 2048-bit RSA PKCS#8 PEM private key generated in Step 2
+ */
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.119.0";
-import {
-  create,
-  getNumericDate,
-  type Header,
-  type Payload,
-} from "https://deno.land/x/djwt@v3.0.2/mod.ts";
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -48,6 +54,40 @@ function jsonResponse(body: Record<string, unknown>, status = 200): Response {
       "Cache-Control": "no-store",
     },
   });
+}
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function jsonToBase64Url(value: Record<string, unknown>): string {
+  return bytesToBase64Url(new TextEncoder().encode(JSON.stringify(value)));
+}
+
+/**
+ * Signs an RFC 7519 JWT with RS256 (`RSASSA-PKCS1-v1_5` + `SHA-256`) using
+ * built-in WebCrypto — zero external JWT library imports required.
+ */
+async function signRs256Jwt(
+  payload: Record<string, unknown>,
+  signingKey: CryptoKey,
+): Promise<string> {
+  const encodedHeader = jsonToBase64Url({ alg: "RS256", typ: "JWT" });
+  const encodedPayload = jsonToBase64Url(payload);
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+  const signatureBuffer = await crypto.subtle.sign(
+    { name: "RSASSA-PKCS1-v1_5" },
+    signingKey,
+    new TextEncoder().encode(signingInput),
+  );
+  return `${signingInput}.${bytesToBase64Url(new Uint8Array(signatureBuffer))}`;
 }
 
 /**
@@ -391,13 +431,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const signingKey = await getPrivateSigningKey();
+    const nowSeconds = Math.floor(Date.now() / 1000);
 
-    const header: Header = {
-      alg: "RS256",
-      typ: "JWT",
-    };
-
-    const payload: Payload = {
+    const payload: Record<string, unknown> = {
       iss: "myclinic-license-authority",
       sub: subscription.id,
       license_key: licenseRecord.license_key,
@@ -406,11 +442,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       ...(effectiveOrigin ? { allowed_origin: effectiveOrigin } : {}),
       max_machines: subscription.max_machines,
       subscription_expires_at: subscription.expires_at,
-      iat: getNumericDate(0),
-      exp: getNumericDate(TOKEN_TTL_SECONDS),
+      iat: nowSeconds,
+      exp: nowSeconds + TOKEN_TTL_SECONDS,
     };
 
-    const token = await create(header, payload, signingKey);
+    const token = await signRs256Jwt(payload, signingKey);
 
     return jsonResponse({ token }, 200);
   } catch (err) {

@@ -99,19 +99,31 @@ where email = 'ops@yourdomain.com';
 
 ### Step 2 — Generate RS256 Keys & Deploy `verify-license`
 
-1. In your terminal inside `myClinicLicenseAuthority`, generate a 2048-bit RSA keypair:
+Choose **Option A (100% in Supabase Dashboard — No Terminal Needed)** or **Option B / C (Automated Script / CLI)**:
+
+#### Option A — Supabase Dashboard Browser Script (No Terminal Required)
+1. Open your live console → **Step-by-Step Guide (`#/guide`) → Step 2**, and click **1. Generate RS256 Keypair** *(or run `npm run keygen`)*.
+2. In your **Authority Supabase Dashboard → Edge Functions → Secrets**, add a new secret:
+   - **Name:** `LICENSE_PRIVATE_KEY`
+   - **Value:** click **Copy `LICENSE_PRIVATE_KEY`** in `#/guide` *(keep secret — never share with clinics)*.
+3. In **Authority Supabase Dashboard → Edge Functions → Deploy a new function → Via Editor**:
+   - **Function name:** `verify-license`
+   - Turn **OFF** *"Verify JWT with legacy secret"*
+   - Click **Copy `verify-license` Script (`index.ts`)** in `#/guide` (or copy [`supabase/functions/verify-license/index.ts`](supabase/functions/verify-license/index.ts)), paste it into the editor, and click **Deploy function**.
+4. Click **Copy `LICENSE_PUBLIC_KEY`** and keep it handy for Step 5.
+
+#### Option B — One-Command Automated Script (`npm run deploy:signer`)
+Auto-generates an RS256 keypair into gitignored `keys/` (if none exists yet), uploads `LICENSE_PRIVATE_KEY` to Supabase Secrets, and deploys `verify-license --no-verify-jwt` in one command:
+
+```bash
+npx supabase login
+npm run deploy:signer -- --project-ref YOUR_AUTHORITY_PROJECT_REF
+```
+
+#### Option C — Manual Supabase CLI (4 Commands)
 
 ```bash
 npm run keygen
-```
-
-This prints two single-line `\n`-escaped values:
-- **`LICENSE_PRIVATE_KEY`** (`PKCS#8`) — **keep secret**; goes **only** into your Authority Edge Function below.
-- **`LICENSE_PUBLIC_KEY`** (`SPKI`) — safe to embed in `myClinic` so clinics can verify tokens offline.
-
-2. Link the Supabase CLI to **Project A** and deploy the `verify-license` signer:
-
-```bash
 npx supabase login
 npx supabase link --project-ref YOUR_AUTHORITY_PROJECT_REF
 npx supabase secrets set LICENSE_PRIVATE_KEY="<PASTE_LICENSE_PRIVATE_KEY_FROM_KEYGEN>"
@@ -158,12 +170,13 @@ Open **Deployment (`#/node-agent`)** in the console, paste your `LICENSE_PUBLIC_
    ```dotenv
    VITE_LICENSE_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
    ```
-2. **In the `myClinic` repo terminal (pointed at Project B — the clinic's Supabase project):**
+2. **In the `myClinic` repo terminal (or Project B → Edge Functions → Secrets):**
    ```bash
    npx supabase secrets set \
      AUTHORITY_VERIFY_URL="https://YOUR_AUTHORITY_PROJECT_REF.supabase.co/functions/v1/verify-license" \
-     CLINIC_LICENSE_KEY="PASTE_32_CHAR_HEX_LICENSE_KEY" \
-     CLINIC_ORIGIN="https://clinic-domain.example.com" \
+     LICENSE_KEY="PASTE_32_CHAR_HEX_LICENSE_KEY" \
+     LICENSE_PUBLIC_KEY="<PASTE_SPKI_PUBLIC_KEY>" \
+     MYCLINIC_ORIGINS="https://clinic-domain.example.com" \
      --project-ref YOUR_CLINIC_PROJECT_REF
 
    npx supabase functions deploy sync-clinic-license --project-ref YOUR_CLINIC_PROJECT_REF
@@ -216,7 +229,8 @@ Works identically on **Windows, macOS, and Linux**:
 | --- | --- |
 | `npm run dev` | Start Vite dev server on `0.0.0.0:5173` |
 | `npm run keygen` | Generate 2048-bit RSA `PKCS#8` + `SPKI` keypair locally |
-| `npm run start:node` | Run Express 5 local RS256 validator gateway (`server/node-host.mjs`) |
+| `npm run deploy:signer` | One-command automated keygen + secret upload + `verify-license` deploy |
+| `npm run start:validator` | Run Express 5 local RS256 validator gateway (`server/node-host.mjs`) |
 | `npm test` | Run all Node unit, crypto, compatibility, error-handling & audit tests |
 | `npm run build` | Build production static bundle into `dist/` |
 | `npm run check:pages` | Verify relative asset URLs, PWA manifest, icons & service worker |

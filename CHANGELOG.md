@@ -2,6 +2,13 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [1.5.1] - 2026-11-06
+
+### Added
+- **Zero-Terminal Supabase Dashboard Script Option on Step 2 (`src/pages/GuidePage.jsx`, `supabase/functions/verify-license/index.ts`):**
+  - Replaced external `djwt` URL import in `verify-license/index.ts` with built-in WebCrypto `RSASSA-PKCS1-v1_5` JWT signing (`signRs256Jwt`), making `verify-license/index.ts` a 100% self-contained single-file script that pastes and deploys directly inside **Supabase Dashboard → Edge Functions → Deploy a new function → Via Editor** with zero CLI required.
+  - Added 3 deployment tabs to Step 2 in `#/guide`: **Option A — Supabase Dashboard Script (No Terminal)** with one-click copy buttons for `LICENSE_PRIVATE_KEY`, `verify-license` (`index.ts`), and `LICENSE_PUBLIC_KEY`; **Option B — One-Command Automated Script (`npm run deploy:signer` / `scripts/deploy-signer.mjs`)**; and **Option C — Manual Supabase CLI**.
+
 ## [1.5.0] - 2026-11-06
 
 ### Added
