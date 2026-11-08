@@ -35,6 +35,7 @@ import {
   defaultExpirationDate,
   formatDisplayDate,
   getTierMeta,
+  sanitizeCsvCell,
   validateProvisionInput,
 } from '../lib/entitlements.mjs';
 
@@ -330,7 +331,6 @@ export default function EntitlementsPage({
       'max_machines',
       'expires_at',
     ];
-    const escapeCell = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`;
     const csvLines = [
       headers.join(','),
       ...filteredRecords.map((row) => {
@@ -344,7 +344,7 @@ export default function EntitlementsPage({
           row.max_machines,
           row.expires_at,
         ]
-          .map(escapeCell)
+          .map(sanitizeCsvCell)
           .join(',');
       }),
     ];
@@ -553,12 +553,6 @@ export default function EntitlementsPage({
               due soon
             </span>
           </div>
-          <p
-            style={{ color: 'var(--text-muted)' }}
-            className="mt-2.5 truncate text-[11px]"
-          >
-            Click to filter expiring licenses
-          </p>
         </button>
 
         <button
@@ -571,7 +565,7 @@ export default function EntitlementsPage({
               style={{ color: 'var(--text-muted)' }}
               className="font-mono text-[10.5px] font-semibold tracking-wider uppercase"
             >
-              Killed / Expired
+              Blocked / Expired
             </span>
             <ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
           </div>
@@ -586,12 +580,6 @@ export default function EntitlementsPage({
               blocked
             </span>
           </div>
-          <p
-            style={{ color: 'var(--text-muted)' }}
-            className="mt-2.5 truncate text-[11px]"
-          >
-            Refused 7-day RS256 renewal
-          </p>
         </button>
       </div>
 

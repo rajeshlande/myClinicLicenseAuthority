@@ -396,10 +396,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     console.error("[verify-license] Unhandled error:", err);
     return jsonResponse(
       {
-        error:
-          err instanceof Error
-            ? err.message
-            : "Unexpected internal validator failure.",
+        error: "Unexpected internal validator failure.",
       },
       500,
     );

@@ -1,95 +1,70 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  AlertCircle,
-  Check,
+  AlertTriangle,
+  ArrowLeft,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Copy,
   Eye,
   EyeOff,
   KeyRound,
-  Lock,
   LogOut,
   Mail,
   Moon,
   RefreshCw,
-  ShieldAlert,
+  Settings2,
   ShieldCheck,
   Sun,
-  TriangleAlert,
-  Wifi,
   WifiOff,
 } from 'lucide-react';
 import {
   MIN_ADMIN_PASSWORD_LENGTH,
   buildPasswordRecoveryRedirectUrl,
   formatAuthErrorMessage,
-  isAuthorizedAdminUser,
   validateAdminCredentials,
   validatePasswordUpdate,
   validateRecoveryEmail,
 } from '../lib/auth.mjs';
 import { saveRuntimeSupabaseConfig } from '../lib/supabase.js';
-import { APP_VERSION, SCHEMA_VERSION } from '../lib/version.js';
 
-export default function LoginPage({
+export function LoginPage({
   backend,
   session,
-  isOnline,
-  recoveryMode,
+  isOnline = true,
+  recoveryMode = false,
   theme,
   onToggleTheme,
   onBackendChanged,
   onSessionRefreshed,
   onRecoveryCompleted,
 }) {
-  const configured = Boolean(backend.configured);
+  const configured = Boolean(backend?.configured);
+  const client = backend?.supabase ?? null;
 
   const [view, setView] = useState('signin'); // 'signin' | 'forgot'
-  const [showEnvQuickConnect, setShowEnvQuickConnect] = useState(false);
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   const [newPassword, setNewPassword] = useState('');
-  const [newConfirmPassword, setNewConfirmPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
-  const [quickUrl, setQuickUrl] = useState('');
-  const [quickAnonKey, setQuickAnonKey] = useState('');
+  const [showEndpointForm, setShowEndpointForm] = useState(false);
+  const [endpointUrl, setEndpointUrl] = useState('');
+  const [endpointAnonKey, setEndpointAnonKey] = useState('');
 
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
-  const [copiedSql, setCopiedSql] = useState(false);
 
   const signedInNonAdmin =
-    configured &&
-    Boolean(session?.user) &&
-    !isAuthorizedAdminUser(session.user);
+    configured && Boolean(session?.user) && !recoveryMode;
 
-  const adminGrantSql = useMemo(() => {
-    const targetEmail = session?.user?.email ?? 'ops@yourdomain.com';
-    return `update auth.users\nset raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb\nwhere email = '${targetEmail.replace(/'/g, "''")}';`;
-  }, [session?.user?.email]);
-
-  const handleSignIn = async (e) => {
-    e.preventDefault();
+  async function handleSignIn(event) {
+    event.preventDefault();
     setErrorMsg('');
     setStatusMsg('');
 
-    if (!configured || !backend.supabase?.auth) {
-      setErrorMsg(
-        'Cloud Supabase credentials (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY) are required to sign in.',
-      );
-      return;
-    }
-
-    if (!isOnline) {
-      setErrorMsg(
-        'Internet connection is offline. Reconnect to authenticate against Cloud Supabase.',
-      );
+    if (!configured || !client) {
+      setErrorMsg('Service connection is not configured.');
       return;
     }
 
@@ -101,39 +76,26 @@ export default function LoginPage({
 
     setBusy(true);
     try {
-      const { data, error } = await backend.supabase.auth.signInWithPassword({
+      const { data, error } = await client.auth.signInWithPassword({
         email: check.email,
         password: check.password,
       });
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
       setPassword('');
-      onSessionRefreshed(data.session ?? null);
+      if (data?.session) {
+        onSessionRefreshed?.(data.session);
+      }
     } catch (err) {
       setErrorMsg(formatAuthErrorMessage(err));
     } finally {
       setBusy(false);
     }
-  };
+  }
 
-  const handleQuickConnectEndpoint = (e) => {
-    e.preventDefault();
-    setErrorMsg('');
-    setStatusMsg('');
-    try {
-      saveRuntimeSupabaseConfig({ url: quickUrl, anonKey: quickAnonKey });
-      setQuickAnonKey('');
-      setShowEnvQuickConnect(false);
-      onBackendChanged();
-      setStatusMsg('Connected to Cloud Supabase over HTTPS. Sign in below.');
-    } catch (err) {
-      setErrorMsg(
-        err instanceof Error ? err.message : 'Invalid Supabase configuration.',
-      );
-    }
-  };
-
-  const handleSendPasswordReset = async (e) => {
-    e.preventDefault();
+  async function handleSendResetEmail(event) {
+    event.preventDefault();
     setErrorMsg('');
     setStatusMsg('');
 
@@ -143,97 +105,111 @@ export default function LoginPage({
       return;
     }
 
+    if (!configured || !client) {
+      setErrorMsg('Service connection is not configured.');
+      return;
+    }
+
     setBusy(true);
     try {
-      const redirectTo = buildPasswordRecoveryRedirectUrl(window.location.href);
-      const { error } = await backend.supabase.auth.resetPasswordForEmail(
+      const redirectTo =
+        typeof window !== 'undefined'
+          ? buildPasswordRecoveryRedirectUrl(window.location.href)
+          : undefined;
+      const { error } = await client.auth.resetPasswordForEmail(
         check.email,
-        { redirectTo },
+        redirectTo ? { redirectTo } : undefined,
       );
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
       setStatusMsg(
-        `If ${check.email} is a registered operator, a password recovery link has been dispatched.`,
+        'If this account is registered, a password reset link has been sent.',
       );
     } catch (err) {
       setErrorMsg(formatAuthErrorMessage(err));
     } finally {
       setBusy(false);
     }
-  };
+  }
 
-  const handleCompleteRecovery = async (e) => {
-    e.preventDefault();
+  async function handleCompletePasswordRecovery(event) {
+    event.preventDefault();
     setErrorMsg('');
     setStatusMsg('');
 
     const check = validatePasswordUpdate({
       password: newPassword,
-      confirmPassword: newConfirmPassword,
+      confirmPassword: confirmNewPassword,
     });
     if (!check.ok) {
       setErrorMsg(check.error);
       return;
     }
 
+    if (!client) {
+      setErrorMsg('Service connection is unavailable.');
+      return;
+    }
+
     setBusy(true);
     try {
-      const { data, error } = await backend.supabase.auth.updateUser({
+      const { error } = await client.auth.updateUser({
         password: check.password,
       });
-      if (error) throw error;
-      setNewPassword('');
-      setNewConfirmPassword('');
-      if (data?.user) {
-        const { data: refreshed } =
-          await backend.supabase.auth.refreshSession();
-        onSessionRefreshed(refreshed?.session ?? session);
+      if (error) {
+        throw error;
       }
-      onRecoveryCompleted();
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setStatusMsg('Password updated.');
+      onRecoveryCompleted?.();
     } catch (err) {
       setErrorMsg(formatAuthErrorMessage(err));
     } finally {
       setBusy(false);
     }
-  };
+  }
 
-  const handleRecheckRole = async () => {
-    if (!backend.supabase?.auth) return;
+  async function handleRefreshAccess() {
+    if (!client) return;
     setBusy(true);
     setErrorMsg('');
     try {
-      const { data, error } = await backend.supabase.auth.refreshSession();
+      const { data, error } = await client.auth.refreshSession();
       if (error) throw error;
-      onSessionRefreshed(data.session ?? null);
-      if (!isAuthorizedAdminUser(data.session?.user)) {
-        setErrorMsg(
-          'Session refreshed, but app_metadata.role is still not "admin". Run the SQL grant below first.',
-        );
-      }
+      onSessionRefreshed?.(data?.session ?? null);
     } catch (err) {
-      setErrorMsg(formatAuthErrorMessage(err));
+      setErrorMsg(err.message || 'Unable to refresh session.');
     } finally {
       setBusy(false);
     }
-  };
+  }
 
-  const handleSignOut = async () => {
-    if (backend.supabase?.auth) {
-      await backend.supabase.auth.signOut();
+  async function handleSignOut() {
+    if (client) {
+      await client.auth.signOut();
     }
-    onSessionRefreshed(null);
+    onSessionRefreshed?.(null);
+  }
+
+  function handleSaveEndpointOverride(event) {
+    event.preventDefault();
     setErrorMsg('');
     setStatusMsg('');
-  };
-
-  const handleCopySql = async () => {
     try {
-      await navigator.clipboard.writeText(adminGrantSql);
-      setCopiedSql(true);
-      setTimeout(() => setCopiedSql(false), 1800);
-    } catch {
-      // Clipboard API unavailable in restricted iframe contexts.
+      saveRuntimeSupabaseConfig({
+        url: endpointUrl,
+        anonKey: endpointAnonKey,
+      });
+      setEndpointAnonKey('');
+      setShowEndpointForm(false);
+      setStatusMsg('Connection saved.');
+      onBackendChanged?.();
+    } catch (err) {
+      setErrorMsg(err.message || 'Invalid connection settings.');
     }
-  };
+  }
 
   return (
     <div
@@ -241,445 +217,347 @@ export default function LoginPage({
         backgroundColor: 'var(--bg-canvas)',
         color: 'var(--text-primary)',
       }}
-      className="flex min-h-screen flex-col justify-between px-4 py-6 sm:px-6"
+      className="relative flex min-h-screen flex-col justify-between overflow-x-hidden px-4 py-6 sm:px-6"
     >
-      {/* Top Security Bar */}
-      <header className="mx-auto flex w-full max-w-5xl items-center justify-between">
+      {/* Clean Minimal Header */}
+      <header className="mx-auto flex w-full max-w-md items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <span
+          <div
             style={{
               backgroundColor: 'var(--accent-soft)',
               border: '1px solid var(--accent-border)',
             }}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-emerald-400"
+            className="flex h-8 w-8 items-center justify-center rounded-lg"
           >
-            <KeyRound className="h-4 w-4" />
-          </span>
-          <div className="leading-tight">
-            <span className="block text-sm font-semibold tracking-tight">
-              myClinic Authority
-            </span>
-            <span
-              style={{ color: 'var(--text-muted)' }}
-              className="block font-mono text-[10px]"
-            >
-              CLOUD RS256 CONTROL PLANE
-            </span>
+            <ShieldCheck
+              style={{ color: 'var(--accent-primary)' }}
+              className="h-4 w-4"
+            />
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span
-            style={
-              isOnline && configured
-                ? {
-                    backgroundColor: 'var(--accent-soft)',
-                    border: '1px solid var(--accent-border)',
-                    color: 'var(--accent-primary)',
-                  }
-                : {
-                    backgroundColor: 'var(--warn-soft)',
-                    border: '1px solid rgba(245, 158, 11, 0.35)',
-                    color: 'var(--warn-text)',
-                  }
-            }
-            className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10.5px] font-semibold sm:inline-flex"
-          >
-            {isOnline ? (
-              <Wifi className="h-3 w-3" />
-            ) : (
-              <WifiOff className="h-3 w-3" />
-            )}
-            {!isOnline
-              ? 'INTERNET OFFLINE'
-              : configured
-                ? 'CLOUD AUTO-CONNECTED'
-                : 'AWAITING SUPABASE ENV'}
+          <span className="text-sm font-semibold tracking-tight">
+            myClinic Authority
           </span>
-
-          <button
-            type="button"
-            onClick={onToggleTheme}
-            title={
-              theme === 'dark'
-                ? 'Switch to Daylight Console'
-                : 'Switch to Obsidian Dark Console'
-            }
-            aria-label="Toggle color theme"
-            className="console-btn-secondary inline-flex h-8 w-8 items-center justify-center rounded-lg"
-          >
-            {theme === 'dark' ? (
-              <Sun className="h-4 w-4 text-amber-300" />
-            ) : (
-              <Moon className="h-4 w-4 text-slate-600" />
-            )}
-          </button>
         </div>
+
+        <button
+          type="button"
+          onClick={onToggleTheme}
+          title={
+            theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'
+          }
+          aria-label="Toggle color theme"
+          className="console-btn-secondary inline-flex h-8 w-8 items-center justify-center rounded-lg"
+        >
+          {theme === 'dark' ? (
+            <Sun className="h-3.5 w-3.5 text-amber-400" />
+          ) : (
+            <Moon className="h-3.5 w-3.5 text-slate-600" />
+          )}
+        </button>
       </header>
 
-      {/* Main Centered Cloud Authentication Card */}
+      {/* Sign-In Card */}
       <main className="mx-auto my-8 w-full max-w-md">
-        <div className="console-panel rounded-2xl p-6 sm:p-7">
-          {!isOnline ? (
-            <div
-              style={{
-                backgroundColor: 'var(--warn-soft)',
-                border: '1px solid rgba(245, 158, 11, 0.35)',
-                color: 'var(--warn-text)',
-              }}
-              className="mb-5 flex items-start gap-2.5 rounded-xl px-3.5 py-2.5 text-xs"
-            >
-              <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>
-                Waiting for internet connection. Cloud Supabase authentication
-                will resume automatically once online.
-              </span>
+        <div className="console-panel overflow-hidden rounded-2xl">
+          <div className="space-y-4 p-6 sm:p-7">
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight">
+                {recoveryMode
+                  ? 'Set new password'
+                  : signedInNonAdmin
+                    ? 'Access restricted'
+                    : view === 'forgot'
+                      ? 'Reset password'
+                      : 'Sign in'}
+              </h1>
+              <p
+                style={{ color: 'var(--text-muted)' }}
+                className="mt-1 text-xs"
+              >
+                {recoveryMode
+                  ? 'Choose a new password for your account.'
+                  : signedInNonAdmin
+                    ? 'Administrator access is required to open this console.'
+                    : view === 'forgot'
+                      ? 'Enter your email address to receive a reset link.'
+                      : 'Sign in with your operator account.'}
+              </p>
             </div>
-          ) : null}
 
-          {!configured ? (
-            <div
-              style={{
-                backgroundColor: 'var(--warn-soft)',
-                border: '1px solid rgba(245, 158, 11, 0.35)',
-                color: 'var(--warn-text)',
-              }}
-              className="mb-5 rounded-xl px-3.5 py-3 text-xs"
-            >
-              <div className="flex items-start gap-2.5">
-                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                <div className="min-w-0 flex-1 leading-relaxed">
-                  <strong className="block font-semibold">
-                    Supabase secrets not detected on this build
-                  </strong>
-                  <span>
-                    Set <code className="font-mono">VITE_SUPABASE_URL</code> and{' '}
-                    <code className="font-mono">VITE_SUPABASE_ANON_KEY</code> in{' '}
-                    <code className="font-mono">.env.local</code> or GitHub
-                    Repository Secrets so Sign-In auto-connects over the
-                    internet.
+            {!isOnline ? (
+              <div
+                style={{
+                  backgroundColor: 'var(--warning-soft)',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  color: 'var(--warning-text)',
+                }}
+                className="flex items-center gap-2 rounded-xl p-3 text-xs"
+              >
+                <WifiOff className="h-4 w-4 shrink-0" />
+                <span>Offline — check your internet connection.</span>
+              </div>
+            ) : null}
+
+            {errorMsg ? (
+              <div
+                role="alert"
+                style={{
+                  backgroundColor: 'var(--danger-soft)',
+                  border: '1px solid rgba(244, 63, 94, 0.35)',
+                  color: 'var(--danger-text)',
+                }}
+                className="flex items-start gap-2 rounded-xl p-3 text-xs"
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            ) : null}
+
+            {statusMsg ? (
+              <div
+                role="status"
+                style={{
+                  backgroundColor: 'var(--accent-soft)',
+                  border: '1px solid var(--accent-border)',
+                  color: 'var(--accent-primary)',
+                }}
+                className="flex items-start gap-2 rounded-xl p-3 text-xs"
+              >
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{statusMsg}</span>
+              </div>
+            ) : null}
+
+            {!configured && !recoveryMode ? (
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-well)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+                className="space-y-2.5 rounded-xl p-3.5 text-xs"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    Service connection not configured
                   </span>
                   <button
                     type="button"
-                    onClick={() => setShowEnvQuickConnect((v) => !v)}
-                    className="mt-2 inline-flex items-center gap-1 font-mono text-[10.5px] font-semibold underline"
+                    onClick={() => setShowEndpointForm((prev) => !prev)}
+                    className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px]"
                   >
-                    {showEnvQuickConnect ? (
-                      <>
-                        Hide browser endpoint override{' '}
-                        <ChevronUp className="h-3 w-3" />
-                      </>
-                    ) : (
-                      <>
-                        Connect URL &amp; Key in browser now{' '}
-                        <ChevronDown className="h-3 w-3" />
-                      </>
-                    )}
+                    <Settings2 className="h-3 w-3" />
+                    {showEndpointForm ? 'Close' : 'Configure'}
                   </button>
                 </div>
-              </div>
 
-              {showEnvQuickConnect ? (
-                <form
-                  onSubmit={handleQuickConnectEndpoint}
-                  style={{ borderTop: '1px solid rgba(245, 158, 11, 0.25)' }}
-                  className="mt-3 space-y-2.5 pt-3"
-                >
-                  <input
-                    type="url"
-                    required
-                    value={quickUrl}
-                    onChange={(e) => setQuickUrl(e.target.value)}
-                    placeholder="https://your-project-ref.supabase.co"
-                    className="console-input w-full rounded-lg px-3 py-1.5 font-mono text-xs"
-                  />
-                  <input
-                    type="password"
-                    required
-                    value={quickAnonKey}
-                    onChange={(e) => setQuickAnonKey(e.target.value)}
-                    placeholder="sb_publishable_... or anon key"
-                    className="console-input w-full rounded-lg px-3 py-1.5 font-mono text-xs"
-                  />
-                  <button
-                    type="submit"
-                    className="console-btn-primary w-full rounded-lg px-3 py-1.5 text-xs"
+                {showEndpointForm ? (
+                  <form
+                    onSubmit={handleSaveEndpointOverride}
+                    className="space-y-2.5 pt-1"
                   >
-                    Save &amp; Auto-Connect Cloud Supabase
-                  </button>
-                </form>
-              ) : null}
-            </div>
-          ) : null}
-
-          {errorMsg ? (
-            <div
-              style={{
-                backgroundColor: 'var(--danger-soft)',
-                border: '1px solid rgba(244, 63, 94, 0.35)',
-                color: 'var(--danger-text)',
-              }}
-              className="mb-5 flex items-start gap-2.5 rounded-xl px-3.5 py-2.5 text-xs"
-            >
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          ) : null}
-
-          {statusMsg ? (
-            <div
-              style={{
-                backgroundColor: 'var(--accent-soft)',
-                border: '1px solid var(--accent-border)',
-                color: 'var(--accent-primary)',
-              }}
-              className="mb-5 flex items-start gap-2.5 rounded-xl px-3.5 py-2.5 text-xs"
-            >
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{statusMsg}</span>
-            </div>
-          ) : null}
-
-          {/* STATE 1: Cloud Password Recovery Flow */}
-          {configured && recoveryMode ? (
-            <div>
-              <div className="flex items-center gap-2 font-mono text-[10.5px] font-semibold tracking-wider text-emerald-400 uppercase">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Password Recovery Verified
+                    <input
+                      type="url"
+                      required
+                      value={endpointUrl}
+                      onChange={(e) => setEndpointUrl(e.target.value)}
+                      placeholder="Service URL (https://...)"
+                      className="console-input w-full rounded-lg px-3 py-2 text-xs"
+                    />
+                    <input
+                      type="password"
+                      required
+                      value={endpointAnonKey}
+                      onChange={(e) => setEndpointAnonKey(e.target.value)}
+                      placeholder="Public client key"
+                      className="console-input w-full rounded-lg px-3 py-2 text-xs"
+                    />
+                    <button
+                      type="submit"
+                      className="console-btn-primary w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                    >
+                      Connect
+                    </button>
+                  </form>
+                ) : null}
               </div>
-              <h1 className="mt-1.5 text-lg font-semibold tracking-tight">
-                Set New Operator Password
-              </h1>
-              <p
-                style={{ color: 'var(--text-secondary)' }}
-                className="mt-1 text-xs leading-relaxed"
-              >
-                Choose a strong password of at least{' '}
-                <code className="font-mono">{MIN_ADMIN_PASSWORD_LENGTH}</code>{' '}
-                characters to restore access.
-              </p>
+            ) : null}
 
-              <form onSubmit={handleCompleteRecovery} className="mt-5 space-y-4">
+            {recoveryMode ? (
+              <form
+                onSubmit={handleCompletePasswordRecovery}
+                className="space-y-3.5"
+              >
                 <div>
                   <label
+                    htmlFor="recovery-new-password"
                     style={{ color: 'var(--text-secondary)' }}
                     className="block text-xs font-medium"
                   >
-                    New Password
+                    New password
                   </label>
                   <input
+                    id="recovery-new-password"
                     type="password"
                     required
                     minLength={MIN_ADMIN_PASSWORD_LENGTH}
                     autoComplete="new-password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Minimum 10 characters"
-                    className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 text-xs"
+                    placeholder={`Minimum ${MIN_ADMIN_PASSWORD_LENGTH} characters`}
+                    className="console-input mt-1.5 w-full rounded-lg px-3 py-2.5 text-xs"
                   />
                 </div>
 
                 <div>
                   <label
+                    htmlFor="recovery-confirm-password"
                     style={{ color: 'var(--text-secondary)' }}
                     className="block text-xs font-medium"
                   >
-                    Confirm New Password
+                    Confirm password
                   </label>
                   <input
+                    id="recovery-confirm-password"
                     type="password"
                     required
                     minLength={MIN_ADMIN_PASSWORD_LENGTH}
                     autoComplete="new-password"
-                    value={newConfirmPassword}
-                    onChange={(e) => setNewConfirmPassword(e.target.value)}
-                    placeholder="Repeat new password"
-                    className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 text-xs"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    placeholder="Re-enter password"
+                    className="console-input mt-1.5 w-full rounded-lg px-3 py-2.5 text-xs"
                   />
                 </div>
 
                 <button
                   type="submit"
-                  disabled={busy || !isOnline}
-                  className="console-btn-primary w-full rounded-lg px-4 py-2.5 text-xs disabled:opacity-50"
+                  disabled={busy}
+                  className="console-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold disabled:opacity-50"
                 >
-                  {busy ? 'Updating Password...' : 'Save Password & Enter Console'}
+                  <KeyRound className="h-3.5 w-3.5" />
+                  {busy ? 'Updating...' : 'Save password'}
                 </button>
               </form>
-            </div>
-          ) : /* STATE 2: Signed-In Non-Admin (403 Missing Claim) */ signedInNonAdmin ? (
-            <div>
-              <div
-                style={{ color: 'var(--danger-text)' }}
-                className="flex items-center gap-2 font-mono text-[10.5px] font-semibold tracking-wider uppercase"
-              >
-                <ShieldAlert className="h-4 w-4" />
-                403 · Admin Role Claim Required
-              </div>
-              <h1 className="mt-1.5 text-lg font-semibold tracking-tight">
-                Insufficient Operator Privileges
-              </h1>
-              <p
-                style={{ color: 'var(--text-secondary)' }}
-                className="mt-1 text-xs leading-relaxed"
-              >
-                Authenticated as{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>
-                  {session.user.email}
-                </strong>
-                , but your JWT does not carry{' '}
-                <code className="font-mono">
-                  app_metadata.role = &quot;admin&quot;
-                </code>
-                .
-              </p>
+            ) : signedInNonAdmin ? (
+              <div className="space-y-4">
+                <div
+                  style={{
+                    backgroundColor: 'var(--bg-well)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                  className="rounded-xl p-3.5 text-xs"
+                >
+                  <p style={{ color: 'var(--text-secondary)' }}>
+                    Signed in as{' '}
+                    <strong style={{ color: 'var(--text-primary)' }}>
+                      {session.user.email}
+                    </strong>
+                    . Contact an administrator to enable access for this
+                    account.
+                  </p>
+                </div>
 
-              <div className="console-code mt-4 overflow-hidden rounded-xl">
-                <div className="flex items-center justify-between border-b border-slate-800 px-3.5 py-2 font-mono text-[10.5px] text-slate-300">
-                  <span>Run in Authority Supabase SQL Editor</span>
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={handleCopySql}
-                    className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-0.5 text-[10px] text-slate-200 hover:bg-slate-700"
+                    disabled={busy}
+                    onClick={handleRefreshAccess}
+                    className="console-btn-primary inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
                   >
-                    {copiedSql ? (
-                      <Check className="h-3 w-3 text-emerald-400" />
-                    ) : (
-                      <Copy className="h-3 w-3" />
-                    )}
-                    {copiedSql ? 'Copied' : 'Copy SQL'}
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Check again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    className="console-btn-secondary inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    Sign out
                   </button>
                 </div>
-                <pre className="overflow-x-auto p-3.5 font-mono text-[11px] leading-relaxed text-emerald-300">
-                  {adminGrantSql}
-                </pre>
               </div>
-
-              <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  disabled={busy || !isOnline}
-                  onClick={handleRecheckRole}
-                  className="console-btn-primary inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs disabled:opacity-50"
-                >
-                  <RefreshCw
-                    className={`h-3.5 w-3.5 ${busy ? 'animate-spin' : ''}`}
-                  />
-                  Re-Verify Privileges
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="console-btn-secondary inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium"
-                >
-                  <LogOut className="h-3.5 w-3.5 text-rose-400" />
-                  Sign Out
-                </button>
-              </div>
-            </div>
-          ) : /* STATE 3: Forgot Password */ view === 'forgot' ? (
-            <div>
-              <div className="flex items-center gap-2 font-mono text-[10.5px] font-semibold tracking-wider text-sky-400 uppercase">
-                <Mail className="h-3.5 w-3.5" />
-                Account Recovery
-              </div>
-              <h1 className="mt-1.5 text-lg font-semibold tracking-tight">
-                Reset Operator Password
-              </h1>
-              <p
-                style={{ color: 'var(--text-secondary)' }}
-                className="mt-1 text-xs leading-relaxed"
-              >
-                Enter your registered Cloud Supabase operator email to receive a
-                one-time password recovery link.
-              </p>
-
-              <form onSubmit={handleSendPasswordReset} className="mt-5 space-y-4">
+            ) : view === 'forgot' ? (
+              <form onSubmit={handleSendResetEmail} className="space-y-4">
                 <div>
                   <label
+                    htmlFor="reset-email"
                     style={{ color: 'var(--text-secondary)' }}
                     className="block text-xs font-medium"
                   >
-                    Operator Email
+                    Email
                   </label>
-                  <input
-                    type="email"
-                    required
-                    disabled={!configured}
-                    autoComplete="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="ops@yourdomain.com"
-                    className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 text-xs disabled:opacity-50"
-                  />
+                  <div className="relative mt-1.5">
+                    <Mail
+                      style={{ color: 'var(--text-muted)' }}
+                      className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2"
+                    />
+                    <input
+                      id="reset-email"
+                      type="email"
+                      required
+                      autoComplete="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@clinic.com"
+                      className="console-input w-full rounded-lg py-2.5 pr-3 pl-9 text-xs"
+                    />
+                  </div>
                 </div>
 
                 <button
                   type="submit"
-                  disabled={busy || !configured || !isOnline}
-                  className="console-btn-primary w-full rounded-lg px-4 py-2.5 text-xs disabled:opacity-50"
+                  disabled={busy || !configured}
+                  className="console-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold disabled:opacity-50"
                 >
-                  {busy ? 'Sending Recovery Link...' : 'Send Recovery Email'}
+                  {busy ? 'Sending...' : 'Send reset link'}
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
+                    setView('signin');
                     setErrorMsg('');
                     setStatusMsg('');
-                    setView('forgot' === view ? 'signin' : 'forgot');
                   }}
-                  className="console-btn-secondary w-full rounded-lg px-4 py-2 text-xs font-medium"
+                  className="console-btn-secondary inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs"
                 >
-                  Back to Operator Sign-In
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back to sign in
                 </button>
               </form>
-            </div>
-          ) : (
-            /* STATE 4: Default Cloud Operator Sign-In (Zero Local Accounts, Zero Demo) */
-            <div>
-              <div className="flex items-center gap-2 font-mono text-[10.5px] font-semibold tracking-wider text-emerald-400 uppercase">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Cloud Authority Sign-In
-              </div>
-              <h1 className="mt-1.5 text-lg font-semibold tracking-tight">
-                Sign in to myClinic Authority
-              </h1>
-              <p
-                style={{ color: 'var(--text-secondary)' }}
-                className="mt-1 text-xs leading-relaxed"
-              >
-                Authenticate over HTTPS with your Cloud Supabase operator
-                account carrying{' '}
-                <code className="font-mono">
-                  app_metadata.role = &quot;admin&quot;
-                </code>
-                .
-              </p>
-
-              <form onSubmit={handleSignIn} className="mt-5 space-y-4">
+            ) : (
+              <form onSubmit={handleSignIn} className="space-y-4">
                 <div>
                   <label
+                    htmlFor="login-email"
                     style={{ color: 'var(--text-secondary)' }}
                     className="block text-xs font-medium"
                   >
-                    Operator Email
+                    Email
                   </label>
-                  <input
-                    type="email"
-                    required
-                    disabled={!configured}
-                    autoComplete="username"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="ops@yourdomain.com"
-                    className="console-input mt-1.5 w-full rounded-lg px-3.5 py-2 text-xs disabled:opacity-50"
-                  />
+                  <div className="relative mt-1.5">
+                    <Mail
+                      style={{ color: 'var(--text-muted)' }}
+                      className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2"
+                    />
+                    <input
+                      id="login-email"
+                      type="email"
+                      required
+                      autoComplete="username"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@clinic.com"
+                      className="console-input w-full rounded-lg py-2.5 pr-3 pl-9 text-xs"
+                    />
+                  </div>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between">
                     <label
+                      htmlFor="login-password"
                       style={{ color: 'var(--text-secondary)' }}
                       className="block text-xs font-medium"
                     >
@@ -687,37 +565,36 @@ export default function LoginPage({
                     </label>
                     <button
                       type="button"
-                      disabled={!configured}
                       onClick={() => {
+                        setView('forgot');
                         setErrorMsg('');
                         setStatusMsg('');
-                        setView('forgot');
                       }}
-                      className="text-[11px] font-medium text-emerald-400 hover:underline disabled:opacity-50"
+                      style={{ color: 'var(--accent-primary)' }}
+                      className="text-xs font-medium hover:underline"
                     >
                       Forgot password?
                     </button>
                   </div>
                   <div className="relative mt-1.5">
                     <input
+                      id="login-password"
                       type={showPassword ? 'text' : 'password'}
                       required
-                      disabled={!configured}
                       autoComplete="current-password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter operator password"
-                      className="console-input w-full rounded-lg py-2 pr-9 pl-3.5 text-xs disabled:opacity-50"
+                      placeholder="••••••••••••"
+                      className="console-input w-full rounded-lg py-2.5 pr-9 pl-3 text-xs"
                     />
                     <button
                       type="button"
-                      disabled={!configured}
-                      onClick={() => setShowPassword((v) => !v)}
+                      onClick={() => setShowPassword((prev) => !prev)}
                       aria-label={
                         showPassword ? 'Hide password' : 'Show password'
                       }
                       style={{ color: 'var(--text-muted)' }}
-                      className="absolute inset-y-0 right-2.5 flex items-center disabled:opacity-40"
+                      className="absolute top-1/2 right-2.5 -translate-y-1/2 p-1 hover:opacity-80"
                     >
                       {showPassword ? (
                         <EyeOff className="h-3.5 w-3.5" />
@@ -730,44 +607,20 @@ export default function LoginPage({
 
                 <button
                   type="submit"
-                  disabled={busy || !configured || !isOnline}
-                  className="console-btn-primary flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs disabled:opacity-50"
+                  disabled={busy || !configured}
+                  className="console-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold disabled:opacity-50"
                 >
-                  <Lock className="h-3.5 w-3.5" />
-                  {busy ? 'Authenticating...' : 'Sign In to Control Plane'}
+                  {busy ? 'Signing in...' : 'Sign in'}
                 </button>
               </form>
-
-              {configured ? (
-                <div
-                  style={{ borderTop: '1px solid var(--border-subtle)' }}
-                  className="mt-5 flex items-center justify-between gap-2 pt-4 font-mono text-[10.5px]"
-                >
-                  <span
-                    style={{ color: 'var(--text-muted)' }}
-                    className="truncate"
-                    title={backend.health?.url}
-                  >
-                    {backend.health?.url}
-                  </span>
-                  <span className="shrink-0 text-emerald-400">PKCE · TLS</span>
-                </div>
-              ) : null}
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </main>
 
-      {/* Bottom Security Telemetry Footer */}
-      <footer
-        style={{ color: 'var(--text-muted)' }}
-        className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 font-mono text-[10.5px]"
-      >
-        <span>
-          myClinic License Authority v{APP_VERSION} · Schema v{SCHEMA_VERSION}
-        </span>
-        <span>Cloud Accounts Only · No Local / Demo Bypass</span>
-      </footer>
+      <div aria-hidden="true" className="h-4" />
     </div>
   );
 }
+
+export default LoginPage;

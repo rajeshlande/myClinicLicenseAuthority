@@ -4,6 +4,7 @@ import express from 'express';
 import {
   computeMachineFingerprint,
   createLicenseMiddleware,
+  isAuthorizedRefreshRequest,
   startLicenseSyncScheduler,
   verifyCachedLicense,
 } from './license-middleware.mjs';
@@ -84,7 +85,13 @@ app.get('/api/license/status', (_req, res) => {
   });
 });
 
-app.post('/api/license/refresh', async (_req, res) => {
+app.post('/api/license/refresh', async (req, res) => {
+  if (!isAuthorizedRefreshRequest(req)) {
+    return res.status(403).json({
+      ok: false,
+      error: 'Manual license refresh requires loopback access or LICENSE_REFRESH_TOKEN.',
+    });
+  }
   const syncOutcome = await scheduler.triggerNow();
   if (!syncOutcome.ok) {
     return res.status(502).json({
@@ -125,7 +132,6 @@ app.use(
 app.get('/api/clinic/entitlements', (req, res) => {
   res.json({
     status: 'authorized',
-    license_key: req.license.license_key,
     tier: req.license.tier,
     myclinic_plan: req.license.entitlements.plan,
     seat_limits: {

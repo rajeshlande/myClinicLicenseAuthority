@@ -135,7 +135,8 @@ export async function syncLicenseFromCloud({
     }
 
     fs.mkdirSync(path.dirname(cacheFilePath), { recursive: true });
-    const tempPath = `${cacheFilePath}.${process.pid}.tmp`;
+    const nonce = crypto.randomBytes(6).toString('hex');
+    const tempPath = `${cacheFilePath}.${process.pid}.${nonce}.tmp`;
     fs.writeFileSync(tempPath, payload.token.trim(), {
       encoding: 'utf8',
       mode: 0o600,
@@ -152,27 +153,82 @@ export async function syncLicenseFromCloud({
   }
 }
 
+export function isAuthorizedRefreshRequest(
+  req,
+  expectedToken = process.env.LICENSE_REFRESH_TOKEN,
+) {
+  const configuredToken = String(expectedToken ?? '').trim();
+  if (configuredToken) {
+    const authHeader = String(req?.headers?.authorization ?? '');
+    const match = /^Bearer\s+(.+)$/i.exec(authHeader);
+    if (!match) return false;
+    const candidate = Buffer.from(match[1].trim(), 'utf8');
+    const expected = Buffer.from(configuredToken, 'utf8');
+    return (
+      candidate.length === expected.length &&
+      crypto.timingSafeEqual(candidate, expected)
+    );
+  }
+
+  const remoteAddr = String(
+    req?.socket?.remoteAddress ?? req?.ip ?? '',
+  ).trim();
+  return (
+    remoteAddr === '127.0.0.1' ||
+    remoteAddr === '::1' ||
+    remoteAddr === '::ffff:127.0.0.1'
+  );
+}
+
 export function startLicenseSyncScheduler(options = {}) {
   const cronExpression =
     options.cronExpression ?? process.env.LICENSE_SYNC_CRON ?? '0 */6 * * *';
+  const minManualIntervalMs = Number(options.minManualIntervalMs ?? 15_000);
 
   if (!cron.validate(cronExpression)) {
     throw new Error(`Invalid LICENSE_SYNC_CRON expression: ${cronExpression}`);
   }
 
+  let inFlightPromise = null;
+  let lastManualCompletedMs = 0;
+  let lastManualOutcome = null;
+
   const runSync = async (trigger) => {
-    try {
-      const result = await syncLicenseFromCloud(options);
-      console.info(
-        `[license-sync] (${trigger}) Refreshed capability token for tier='${result.decoded.tier}'`,
-      );
-      return result;
-    } catch (err) {
-      console.warn(
-        `[license-sync] (${trigger}) Cloud heartbeat failed; retaining local .license_cache. Reason: ${err.message}`,
-      );
-      return { ok: false, error: err };
+    if (inFlightPromise) {
+      return inFlightPromise;
     }
+
+    if (
+      trigger === 'manual' &&
+      lastManualOutcome?.ok &&
+      minManualIntervalMs > 0 &&
+      Date.now() - lastManualCompletedMs < minManualIntervalMs
+    ) {
+      return lastManualOutcome;
+    }
+
+    inFlightPromise = (async () => {
+      try {
+        const result = await syncLicenseFromCloud(options);
+        if (trigger === 'manual') {
+          lastManualCompletedMs = Date.now();
+          lastManualOutcome = result;
+        }
+        console.info(
+          `[license-sync] (${trigger}) Refreshed capability token for tier='${result.decoded.tier}'`,
+        );
+        return result;
+      } catch (err) {
+        console.warn(
+          `[license-sync] (${trigger}) Cloud heartbeat failed; retaining local .license_cache. Reason: ${err.message}`,
+        );
+        return { ok: false, error: err };
+      } finally {
+        inFlightPromise = null;
+      }
+    })();
+
+    return inFlightPromise;
   };
 
   const initialSyncPromise = runSync('startup');

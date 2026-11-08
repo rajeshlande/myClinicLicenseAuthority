@@ -234,3 +234,13 @@ export function buildDockerComposeConfig({
 volumes:
   myclinic_license_cache:`;
 }
+
+/**
+ * Escapes a value for RFC-4180 CSV export while neutralizing leading
+ * spreadsheet formula triggers (=, +, -, @, tab, CR).
+ */
+export function sanitizeCsvCell(value) {
+  const raw = String(value ?? '');
+  const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replace(/"/g, '""')}"`;
+}

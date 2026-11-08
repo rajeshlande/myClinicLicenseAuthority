@@ -3,8 +3,6 @@ import {
   Check,
   CheckCircle2,
   Copy,
-  Cpu,
-  Globe,
   KeyRound,
   Play,
   ShieldCheck,
@@ -17,13 +15,19 @@ import {
   verifyCapabilityJwt,
 } from '../lib/crypto-rs256.mjs';
 
-export default function ValidatorLabPage({ backend }) {
-  const [simKey, setSimKey] = useState('9F4A2C81E70B3D564A19C8E2710F5B3D');
-  const [simFingerprint, setSimFingerprint] = useState(
-    'node_mumbai_bandra_branch_03',
+export function ValidatorLabPage({ backend, records = [] }) {
+  const firstActive = records.find((r) => r.is_active) ?? records[0] ?? null;
+
+  const [generatedKeys, setGeneratedKeys] = useState(null);
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [copiedSlot, setCopiedSlot] = useState(null);
+
+  const [simLicenseKey, setSimLicenseKey] = useState(
+    firstActive?.license_key ?? '',
   );
-  const [simResult, setSimResult] = useState(null);
+  const [simFingerprint, setSimFingerprint] = useState('');
   const [simBusy, setSimBusy] = useState(false);
+  const [simResult, setSimResult] = useState(null);
 
   const [verifyTokenInput, setVerifyTokenInput] = useState('');
   const [verifyPubKeyInput, setVerifyPubKeyInput] = useState('');
@@ -31,145 +35,235 @@ export default function ValidatorLabPage({ backend }) {
   const [verifyOriginInput, setVerifyOriginInput] = useState('');
   const [verifyOutcome, setVerifyOutcome] = useState(null);
 
-  const [generatedKeys, setGeneratedKeys] = useState(null);
-  const [keyBusy, setKeyBusy] = useState(false);
-  const [copiedSlot, setCopiedSlot] = useState('');
+  async function ensureKeypair() {
+    if (generatedKeys) return generatedKeys;
+    const keys = await generateRsaKeyPairPem();
+    setGeneratedKeys(keys);
+    setVerifyPubKeyInput((prev) => prev || keys.publicKeyPem);
+    return keys;
+  }
 
-  const copyText = async (slot, value) => {
+  async function handleGenerateKeys() {
+    setKeyBusy(true);
     try {
-      await navigator.clipboard.writeText(value);
-      setCopiedSlot(slot);
-      setTimeout(() => {
-        setCopiedSlot((cur) => (cur === slot ? '' : cur));
-      }, 1800);
-    } catch {
-      // Ignore clipboard failures
+      const keys = await generateRsaKeyPairPem();
+      setGeneratedKeys(keys);
+      setVerifyPubKeyInput(keys.publicKeyPem);
+    } finally {
+      setKeyBusy(false);
     }
-  };
+  }
 
-  const handleRunPhoneHome = async (e) => {
-    e.preventDefault();
+  async function handleRunHeartbeat(event) {
+    event.preventDefault();
     setSimBusy(true);
+    setSimResult(null);
+
     try {
-      const res = await fetch(backend.verifyUrl, {
+      if (!backend?.configured || !backend?.health?.url) {
+        setSimResult({
+          status: 503,
+          body: { error: 'Service connection is not configured.' },
+        });
+        return;
+      }
+
+      const verifyEndpoint =
+        backend.verifyUrl ||
+        `${String(backend.health.url).replace(/\/+$/, '')}/functions/v1/verify-license`;
+      const isWebFp = simFingerprint.trim().startsWith('web:');
+      const headers = { 'Content-Type': 'application/json' };
+      if (isWebFp && backend.health?.anonKey) {
+        headers.apikey = backend.health.anonKey;
+      }
+
+      const response = await fetch(verifyEndpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: backend.health.anonKey,
-        },
+        headers,
         body: JSON.stringify({
-          license_key: simKey.trim().toUpperCase(),
+          license_key: simLicenseKey.trim(),
           machine_fingerprint: simFingerprint.trim(),
         }),
       });
-      const body = await res.json().catch(() => ({}));
-      setSimResult({ status: res.status, body });
-      if (body.token) {
-        setVerifyTokenInput(body.token);
+      const payload = await response.json().catch(() => ({}));
+      const res = {
+        status: response.status,
+        body: payload,
+      };
+      setSimResult(res);
+
+      if (res.status === 200 && res.body?.token) {
+        setVerifyTokenInput(res.body.token);
         setVerifyFpInput(simFingerprint.trim());
       }
     } catch (err) {
       setSimResult({
-        status: 502,
-        body: {
-          error:
-            err instanceof Error
-              ? err.message
-              : 'Failed to reach verify-license Edge Function.',
-        },
+        status: 500,
+        body: { error: err.message },
       });
     } finally {
       setSimBusy(false);
     }
-  };
+  }
 
-  const handleOfflineVerify = async (e) => {
-    e.preventDefault();
-    const res = await verifyCapabilityJwt(verifyTokenInput, verifyPubKeyInput, {
+  async function handleOfflineVerify(event) {
+    event.preventDefault();
+    const pubKey = verifyPubKeyInput.trim()
+      ? verifyPubKeyInput
+      : (await ensureKeypair()).publicKeyPem;
+
+    const outcome = await verifyCapabilityJwt(verifyTokenInput, pubKey, {
       expectedFingerprint: verifyFpInput.trim() || null,
       expectedOrigin: verifyOriginInput.trim() || null,
     });
-    setVerifyOutcome(res);
-  };
+    setVerifyOutcome(outcome);
+  }
 
-  const handleGenerateKeys = async () => {
-    setKeyBusy(true);
-    try {
-      const pair = await generateRsaKeyPairPem();
-      setGeneratedKeys(pair);
-    } finally {
-      setKeyBusy(false);
+  function copyText(slot, value) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(value).catch(() => {});
     }
-  };
+    setCopiedSlot(slot);
+    setTimeout(() => setCopiedSlot(null), 1600);
+  }
 
   return (
     <div className="space-y-6">
-      {/* Top 2-Column Split: Edge Heartbeat Simulator + Offline RS256 Verifier */}
+      {/* 1. Keypair Generator */}
+      <section className="console-panel overflow-hidden rounded-2xl">
+        <div
+          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"
+        >
+          <div className="flex items-center gap-2.5">
+            <span
+              style={{
+                backgroundColor: 'var(--accent-soft)',
+                border: '1px solid var(--accent-border)',
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-emerald-400"
+            >
+              <KeyRound className="h-4 w-4" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold">RS256 Keypair Generator</h2>
+              <p style={{ color: 'var(--text-muted)' }} className="text-xs">
+                Generate signing and verification keys in browser memory.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={keyBusy}
+            onClick={handleGenerateKeys}
+            className="console-btn-primary inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {keyBusy ? 'Generating...' : 'Generate Keypair'}
+          </button>
+        </div>
+
+        {generatedKeys ? (
+          <div className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-2">
+            <div className="console-code overflow-hidden rounded-xl">
+              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2.5">
+                <span className="font-mono text-[11px] font-semibold text-rose-300">
+                  LICENSE_PRIVATE_KEY (Edge Secret)
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyText('priv-env', generatedKeys.privateKeyEnv)
+                  }
+                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-1 font-mono text-[10px] text-slate-200 hover:bg-slate-700"
+                >
+                  {copiedSlot === 'priv-env' ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" /> Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" /> Copy
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="max-h-48 overflow-auto p-4 font-mono text-[11px] text-rose-200/90">
+                {generatedKeys.privateKeyPem}
+              </pre>
+            </div>
+
+            <div className="console-code overflow-hidden rounded-xl">
+              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2.5">
+                <span className="font-mono text-[11px] font-semibold text-emerald-300">
+                  LICENSE_PUBLIC_KEY (Client Nodes)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => copyText('pub-env', generatedKeys.publicKeyEnv)}
+                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-1 font-mono text-[10px] text-slate-200 hover:bg-slate-700"
+                >
+                  {copiedSlot === 'pub-env' ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" /> Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" /> Copy
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="max-h-48 overflow-auto p-4 font-mono text-[11px] text-emerald-300">
+                {generatedKeys.publicKeyPem}
+              </pre>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      {/* 2. Verification Tools */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {/* Panel 1: Edge Phone-Home Simulator */}
         <section className="console-panel flex flex-col overflow-hidden rounded-2xl">
           <div
             style={{ borderBottom: '1px solid var(--border-subtle)' }}
-            className="flex items-start justify-between gap-3 px-5 py-4"
+            className="flex items-center gap-2.5 px-5 py-4"
           >
-            <div className="flex items-center gap-2.5">
-              <span
-                style={{
-                  backgroundColor: 'var(--accent-soft)',
-                  border: '1px solid var(--accent-border)',
-                }}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-emerald-400"
-              >
-                <Terminal className="h-4 w-4" />
-              </span>
-              <div>
-                <h2 className="text-sm font-semibold">
-                  Phone-Home Edge Simulator
-                </h2>
-                <p style={{ color: 'var(--text-muted)' }} className="font-mono text-[11px]">
-                  POST /functions/v1/verify-license
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => setSimFingerprint('node_mumbai_bandra_branch_03')}
-                className="console-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[10px]"
-              >
-                <Cpu className="h-3 w-3 text-sky-400" />
-                Node Preset
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setSimFingerprint('web:https://cityclinic.github.io|clinic-01')
-                }
-                className="console-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[10px]"
-              >
-                <Globe className="h-3 w-3 text-emerald-400" />
-                Pages Preset
-              </button>
+            <span
+              style={{
+                backgroundColor: 'var(--accent-soft)',
+                border: '1px solid var(--accent-border)',
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-emerald-400"
+            >
+              <Terminal className="h-4 w-4" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold">License Check</h2>
+              <p style={{ color: 'var(--text-muted)' }} className="text-xs">
+                Test live token issuance for a license key and fingerprint.
+              </p>
             </div>
           </div>
 
           <div className="flex-1 space-y-4 p-5">
-            <form onSubmit={handleRunPhoneHome} className="space-y-3.5">
+            <form onSubmit={handleRunHeartbeat} className="space-y-3.5">
               <div>
                 <label
                   htmlFor="sim-license-key"
                   style={{ color: 'var(--text-secondary)' }}
                   className="block text-xs font-medium"
                 >
-                  32-Character License Key
+                  License Key
                 </label>
                 <input
                   id="sim-license-key"
                   type="text"
                   required
-                  value={simKey}
-                  onChange={(e) => setSimKey(e.target.value)}
+                  value={simLicenseKey}
+                  onChange={(e) => setSimLicenseKey(e.target.value)}
+                  placeholder="32-character license key"
                   className="console-input mt-1.5 w-full rounded-lg px-3 py-2 font-mono text-xs"
                 />
               </div>
@@ -180,7 +274,7 @@ export default function ValidatorLabPage({ backend }) {
                   style={{ color: 'var(--text-secondary)' }}
                   className="block text-xs font-medium"
                 >
-                  Hardware or GitHub Pages Origin Fingerprint
+                  Machine / Origin Fingerprint
                 </label>
                 <input
                   id="sim-fingerprint"
@@ -188,6 +282,7 @@ export default function ValidatorLabPage({ backend }) {
                   required
                   value={simFingerprint}
                   onChange={(e) => setSimFingerprint(e.target.value)}
+                  placeholder="node_01 or web:https://clinic.github.io"
                   className="console-input mt-1.5 w-full rounded-lg px-3 py-2 font-mono text-xs"
                 />
               </div>
@@ -195,10 +290,10 @@ export default function ValidatorLabPage({ backend }) {
               <button
                 type="submit"
                 disabled={simBusy}
-                className="console-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs disabled:opacity-50"
+                className="console-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold disabled:opacity-50"
               >
                 <Play className="h-3.5 w-3.5 fill-current" />
-                {simBusy ? 'Executing Heartbeat...' : 'Send Phone-Home Request'}
+                {simBusy ? 'Testing...' : 'Verify License'}
               </button>
             </form>
 
@@ -212,8 +307,7 @@ export default function ValidatorLabPage({ backend }) {
                         : 'font-semibold text-rose-400'
                     }
                   >
-                    HTTP {simResult.status}{' '}
-                    {simResult.status === 200 ? '· ISSUED 7D RS256 JWT' : '· REJECTED'}
+                    HTTP {simResult.status}
                   </span>
                   {simResult.body?.token ? (
                     <button
@@ -223,17 +317,17 @@ export default function ValidatorLabPage({ backend }) {
                     >
                       {copiedSlot === 'sim-jwt' ? (
                         <>
-                          <Check className="h-3 w-3 text-emerald-400" /> Copied JWT
+                          <Check className="h-3 w-3 text-emerald-400" /> Copied
                         </>
                       ) : (
                         <>
-                          <Copy className="h-3 w-3" /> Copy JWT
+                          <Copy className="h-3 w-3" /> Copy Token
                         </>
                       )}
                     </button>
                   ) : null}
                 </div>
-                <pre className="max-h-52 overflow-auto p-3.5 font-mono text-[11px] leading-relaxed text-emerald-300">
+                <pre className="max-h-48 overflow-auto p-3.5 font-mono text-[11px] leading-relaxed text-emerald-300">
                   {JSON.stringify(simResult.body, null, 2)}
                 </pre>
               </div>
@@ -241,7 +335,6 @@ export default function ValidatorLabPage({ backend }) {
           </div>
         </section>
 
-        {/* Panel 2: Offline RS256 SPKI Verifier */}
         <section className="console-panel flex flex-col overflow-hidden rounded-2xl">
           <div
             style={{ borderBottom: '1px solid var(--border-subtle)' }}
@@ -257,11 +350,9 @@ export default function ValidatorLabPage({ backend }) {
               <ShieldCheck className="h-4 w-4" />
             </span>
             <div>
-              <h2 className="text-sm font-semibold">
-                Offline RS256 Capability Verifier
-              </h2>
-              <p style={{ color: 'var(--text-muted)' }} className="font-mono text-[11px]">
-                Pins alg=RS256 · SPKI Public Key · Fingerprint &amp; Origin Lock
+              <h2 className="text-sm font-semibold">Token Inspector</h2>
+              <p style={{ color: 'var(--text-muted)' }} className="text-xs">
+                Verify a signed capability JWT offline against a public key.
               </p>
             </div>
           </div>
@@ -273,14 +364,14 @@ export default function ValidatorLabPage({ backend }) {
                   style={{ color: 'var(--text-secondary)' }}
                   className="block text-xs font-medium"
                 >
-                  Signed Capability JWT (.license_cache / localStorage)
+                  Signed Token
                 </label>
                 <textarea
                   rows={2}
                   required
                   value={verifyTokenInput}
                   onChange={(e) => setVerifyTokenInput(e.target.value)}
-                  placeholder="Run the Phone-Home Simulator on the left to auto-fill a signed RS256 token..."
+                  placeholder="eyJhbGciOiJSUzI1NiIs..."
                   className="console-input mt-1 w-full rounded-lg px-3 py-2 font-mono text-[11px]"
                 />
               </div>
@@ -290,14 +381,14 @@ export default function ValidatorLabPage({ backend }) {
                   style={{ color: 'var(--text-secondary)' }}
                   className="block text-xs font-medium"
                 >
-                  SPKI Public Key (LICENSE_PUBLIC_KEY)
+                  Public Key (SPKI)
                 </label>
                 <textarea
                   rows={3}
                   required
                   value={verifyPubKeyInput}
                   onChange={(e) => setVerifyPubKeyInput(e.target.value)}
-                  placeholder="-----BEGIN PUBLIC KEY----- ..."
+                  placeholder="Paste SPKI public key"
                   className="console-input mt-1 w-full rounded-lg px-3 py-2 font-mono text-[11px]"
                 />
               </div>
@@ -308,13 +399,13 @@ export default function ValidatorLabPage({ backend }) {
                     style={{ color: 'var(--text-secondary)' }}
                     className="block text-xs font-medium"
                   >
-                    Expected Fingerprint (Optional)
+                    Expected Fingerprint
                   </label>
                   <input
                     type="text"
                     value={verifyFpInput}
                     onChange={(e) => setVerifyFpInput(e.target.value)}
-                    placeholder="node_... or web:..."
+                    placeholder="Optional"
                     className="console-input mt-1 w-full rounded-lg px-3 py-1.5 font-mono text-xs"
                   />
                 </div>
@@ -323,13 +414,13 @@ export default function ValidatorLabPage({ backend }) {
                     style={{ color: 'var(--text-secondary)' }}
                     className="block text-xs font-medium"
                   >
-                    Expected Web Origin (Optional)
+                    Expected Origin
                   </label>
                   <input
                     type="text"
                     value={verifyOriginInput}
                     onChange={(e) => setVerifyOriginInput(e.target.value)}
-                    placeholder="https://clinic.github.io"
+                    placeholder="Optional"
                     className="console-input mt-1 w-full rounded-lg px-3 py-1.5 font-mono text-xs"
                   />
                 </div>
@@ -337,10 +428,10 @@ export default function ValidatorLabPage({ backend }) {
 
               <button
                 type="submit"
-                className="console-btn-secondary inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 font-mono text-xs font-semibold"
+                className="console-btn-secondary inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold"
               >
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                Verify RS256 Signature Offline
+                Verify Signature
               </button>
             </form>
 
@@ -363,12 +454,12 @@ export default function ValidatorLabPage({ backend }) {
                   {verifyOutcome.valid ? (
                     <>
                       <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                      <span>SIGNATURE VALID · CAPABILITY AUTHORIZED</span>
+                      <span>VALID</span>
                     </>
                   ) : (
                     <>
                       <XCircle className="h-4 w-4 text-rose-400" />
-                      <span>HTTP 402 GATE · {verifyOutcome.code}</span>
+                      <span>INVALID · {verifyOutcome.code}</span>
                     </>
                   )}
                 </div>
@@ -386,112 +477,8 @@ export default function ValidatorLabPage({ backend }) {
           </div>
         </section>
       </div>
-
-      {/* Bottom Full-Width Section: 2048-Bit WebCrypto RS256 Keypair Studio */}
-      <section className="console-panel overflow-hidden rounded-2xl">
-        <div
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
-          className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"
-        >
-          <div className="flex items-center gap-2.5">
-            <span
-              style={{
-                backgroundColor: 'var(--accent-soft)',
-                border: '1px solid var(--accent-border)',
-              }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-emerald-400"
-            >
-              <KeyRound className="h-4 w-4" />
-            </span>
-            <div>
-              <h2 className="text-sm font-semibold">
-                Asymmetric 2048-Bit RSA Keypair Studio (WebCrypto)
-              </h2>
-              <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                Generates PKCS#8 <code className="font-mono">LICENSE_PRIVATE_KEY</code>{' '}
-                (Edge Secret only) &amp; SPKI{' '}
-                <code className="font-mono">LICENSE_PUBLIC_KEY</code> (Clinic Nodes / GitHub Pages) locally in browser RAM.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            disabled={keyBusy}
-            onClick={handleGenerateKeys}
-            className="console-btn-primary inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            {keyBusy ? 'Generating 2048-bit RSA...' : 'Mint Fresh RS256 Keypair'}
-          </button>
-        </div>
-
-        {generatedKeys ? (
-          <div className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-2">
-            <div className="console-code overflow-hidden rounded-xl">
-              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2.5">
-                <span className="font-mono text-[11px] font-semibold text-rose-300">
-                  LICENSE_PRIVATE_KEY (PKCS#8 · Edge Function Secret ONLY)
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    copyText('priv-env', generatedKeys.privateKeyEnv)
-                  }
-                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-1 font-mono text-[10px] text-slate-200 hover:bg-slate-700"
-                >
-                  {copiedSlot === 'priv-env' ? (
-                    <>
-                      <Check className="h-3 w-3 text-emerald-400" /> Copied .env
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3 w-3" /> Copy \n-escaped
-                    </>
-                  )}
-                </button>
-              </div>
-              <pre className="max-h-52 overflow-auto p-4 font-mono text-[11px] text-rose-200/90">
-                {generatedKeys.privateKeyPem}
-              </pre>
-            </div>
-
-            <div className="console-code overflow-hidden rounded-xl">
-              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2.5">
-                <span className="font-mono text-[11px] font-semibold text-emerald-300">
-                  LICENSE_PUBLIC_KEY (SPKI · Safe for Docker &amp; GitHub Pages)
-                </span>
-                <button
-                  type="button"
-                  onClick={() => copyText('pub-env', generatedKeys.publicKeyEnv)}
-                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-1 font-mono text-[10px] text-slate-200 hover:bg-slate-700"
-                >
-                  {copiedSlot === 'pub-env' ? (
-                    <>
-                      <Check className="h-3 w-3 text-emerald-400" /> Copied .env
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3 w-3" /> Copy \n-escaped
-                    </>
-                  )}
-                </button>
-              </div>
-              <pre className="max-h-52 overflow-auto p-4 font-mono text-[11px] text-emerald-300">
-                {generatedKeys.publicKeyPem}
-              </pre>
-            </div>
-          </div>
-        ) : (
-          <div
-            style={{ color: 'var(--text-muted)' }}
-            className="px-5 py-10 text-center text-xs"
-          >
-            Click <strong>Mint Fresh RS256 Keypair</strong> above (or run{' '}
-            <code className="font-mono">npm run keygen</code> in your terminal) to generate an asymmetric keypair.
-          </div>
-        )}
-      </section>
     </div>
   );
 }
+
+export default ValidatorLabPage;

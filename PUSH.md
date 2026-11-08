@@ -1,14 +1,14 @@
-# Pushing `myclinic-license-authority` to GitHub via Git Bundle
+# Pushing `myClinicLicenseAuthority` (`v1.3.0`) to GitHub
 
-Because this sandbox does not hold your personal GitHub credentials, the full Git repository history (`main` branch + `v1.0.0` tag) is packaged into a single portable **`myclinic-license-authority.bundle`** file.
+Your full Git repository history (`main` branch + `v1.0.0` .. `v1.3.0` tags) is packaged into **`myclinic-license-authority.bundle`**.
 
 ---
 
 ## Step 1 — Download the Bundle
 
-Download **`myclinic-license-authority.bundle`** from the workspace viewer (saved at `/home/user/myclinic-license-authority.bundle` and `/home/user/myclinic-subscription-engine/myclinic-license-authority.bundle`).
+Download **`myclinic-license-authority.bundle`** from the workspace viewer (`/home/user/myclinic-license-authority.bundle`).
 
-Optional integrity check on your machine:
+Optional integrity check:
 
 ```bash
 git bundle verify myclinic-license-authority.bundle
@@ -16,48 +16,32 @@ git bundle verify myclinic-license-authority.bundle
 
 ---
 
-## Step 2 — Push to Your GitHub Repository
+## Step 2 — Push to `rajeshlande/myClinicLicenseAuthority`
 
-### Option A — Brand-New (Empty) GitHub Repository
-
-1. Create an empty repository on GitHub (for example, `https://github.com/rajeshlande/myclinic-license-authority.git`) — **do not** initialize it with a README or license.
-2. Run on your machine where `myclinic-license-authority.bundle` was downloaded:
+Run on your machine where `myclinic-license-authority.bundle` was downloaded:
 
 ```bash
-git clone myclinic-license-authority.bundle myclinic-license-authority
-cd myclinic-license-authority
+git clone myclinic-license-authority.bundle myClinicLicenseAuthority
+cd myClinicLicenseAuthority
 git checkout main
-git remote set-url origin https://github.com/<YOUR_GITHUB_USERNAME>/<YOUR_REPO_NAME>.git
+git remote set-url origin https://github.com/rajeshlande/myClinicLicenseAuthority.git
 git push -u origin main --tags
 ```
 
-### Option B — Push into an Existing GitHub Repository
-
-If the target GitHub repository already exists:
+*(If you already cloned an earlier bundle locally, update and push inside that folder instead:)*
 
 ```bash
-git clone https://github.com/<YOUR_GITHUB_USERNAME>/<YOUR_REPO_NAME>.git
-cd <YOUR_REPO_NAME>
-git fetch /path/to/myclinic-license-authority.bundle main:refs/heads/bundle-main --tags
-git checkout main || git checkout -b main
-git merge --allow-unrelated-histories bundle-main
-git branch -d bundle-main
+git pull /path/to/myclinic-license-authority.bundle main --tags
+git remote set-url origin https://github.com/rajeshlande/myClinicLicenseAuthority.git
 git push -u origin main --tags
 ```
-
-*(Or, if you want to overwrite the remote `main` cleanly with this exact bundle history: `git push --force-with-lease origin bundle-main:main --tags`.)*
 
 ---
 
-## Step 3 — Enable GitHub Pages (Automatic CI/CD)
+## Step 3 — GitHub Pages & Cloud Supabase Secrets
 
-Once pushed to `main`:
-
-1. Open your GitHub repository → **Settings → Pages**.
-2. Under **Build and deployment → Source**, select **GitHub Actions**.
-3. [`.github/workflows/pages.yml`](.github/workflows/pages.yml) will automatically run the 22-test suite, build `dist/` with relative `./` URLs, verify secret safety, and publish your Control Room live at:
-   `https://<YOUR_GITHUB_USERNAME>.github.io/<YOUR_REPO_NAME>/`
-4. *(Optional — Live Cloud Supabase Mode)* Under **Settings → Secrets and variables → Actions → Secrets**, add:
+1. Open **`https://github.com/rajeshlande/myClinicLicenseAuthority` → Settings → Secrets and variables → Actions → Secrets** and ensure both secrets are set:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY` *(public anon/publishable key only — never `service_role`)*
-   Then re-run the **Deploy to GitHub Pages** workflow from the **Actions** tab.
+2. Open **Settings → Pages** and ensure **Source** is set to **GitHub Actions**.
+3. In your **Authority Supabase Dashboard → Authentication → Providers → Email**, disable **Allow new users to sign up** once your admin operator accounts are created.

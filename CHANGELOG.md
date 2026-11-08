@@ -2,6 +2,17 @@
 
 All notable changes to `myclinic-license-authority` are documented in this file.
 
+## [1.3.0] - 2026-11-06
+
+### Security (Cloudflare `security-audit-skill` Remediation)
+- **Redacted Secret `LICENSE_KEY` from `/api/clinic/entitlements` (`server/node-host.mjs`):** Removed plaintext `req.license.license_key` from the clinic-facing gateway status response so unprivileged front-desk browsers and LAN peers cannot harvest the bearer subscription key to exhaust `max_machines` seats.
+- **Hardened `POST /api/license/refresh` & Atomic Cache Writes (`server/node-host.mjs`, `server/license-middleware.mjs`):** Restricted manual license refresh to loopback callers (`127.0.0.1` / `::1`) or timing-safe `Bearer <LICENSE_REFRESH_TOKEN>`, added single-flight promise coalescing + manual refresh cooldown in `startLicenseSyncScheduler`, and appended per-write CSPRNG entropy to `.license_cache.<pid>.<nonce>.tmp`.
+- **Sanitized Public Edge Function `HTTP 500` Responses (`supabase/functions/verify-license/index.ts`):** Stopped echoing raw internal `Error.message` diagnostics to unauthenticated callers on unhandled exceptions.
+- **Removed Pre-Auth Internal Schema/SQL/Endpoint Disclosures & Added CSV Formula Neutralization (`src/pages/LoginPage.jsx`, `src/lib/entitlements.mjs`):** Removed `auth.users` SQL snippets, claim paths, environment variable names, and endpoint telemetry from pre-admin screens, and added `sanitizeCsvCell()` to neutralize leading spreadsheet formula triggers (`=`, `+`, `-`, `@`, `\t`, `\r`) during CSV export.
+
+### Changed
+- **Minimal Sign-In & Decluttered In-App Console (`src/pages/LoginPage.jsx`, `src/components/AppShell.jsx`, `src/pages/SetupPage.jsx`, `src/pages/EntitlementsPage.jsx`, `src/pages/NodeAgentPage.jsx`, `src/pages/ValidatorLabPage.jsx`):** Streamlined the Sign-In screen and post-login navigation, Settings, Deployment, and Key Tools pages by removing redundant subheaders, verbose technical callouts, static CLI walls, and pre-filled placeholder strings.
+
 ## [1.2.0] - 2026-11-06
 
 ### Fixed

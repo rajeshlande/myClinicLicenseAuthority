@@ -171,7 +171,7 @@ export default function App() {
       className="flex min-h-screen items-center justify-center text-xs font-medium"
     >
       <Loader2 className="mr-2 h-4 w-4 animate-spin text-emerald-400" />
-      Auto-connecting to Cloud Supabase Authority...
+      Loading...
     </div>
   );
 
@@ -219,7 +219,7 @@ export default function App() {
             className="flex items-center justify-center py-24 text-xs font-medium"
           >
             <Loader2 className="mr-2 h-4 w-4 animate-spin text-emerald-400" />
-            Loading security module...
+            Loading...
           </div>
         }
       >

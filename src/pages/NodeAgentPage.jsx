@@ -4,143 +4,69 @@ import {
   Container,
   Copy,
   Globe,
-  ShieldCheck,
-  Terminal,
 } from 'lucide-react';
 import {
-  MYCLINIC_TIER_ENTITLEMENTS,
   buildDockerComposeConfig,
+  MYCLINIC_TIER_ENTITLEMENTS,
 } from '../lib/entitlements.mjs';
 
-export default function NodeAgentPage({ backend, selectedLicense }) {
-  const [targetMode, setTargetMode] = useState('docker');
+export function NodeAgentPage({ backend, selectedLicense = null }) {
+  const [targetMode, setTargetMode] = useState('docker'); // 'docker' | 'github-pages'
   const [licenseKey, setLicenseKey] = useState(
-    selectedLicense?.license_key ?? '9F4A2C81E70B3D564A19C8E2710F5B3D',
+    selectedLicense?.license_key ?? '',
   );
   const [verifyUrl, setVerifyUrl] = useState(
-    backend.mode === 'cloud'
-      ? backend.verifyUrl
-      : 'https://YOUR-PROJECT.supabase.co/functions/v1/verify-license',
+    backend?.verifyUrl ||
+      (import.meta.env.VITE_SUPABASE_URL
+        ? `${String(import.meta.env.VITE_SUPABASE_URL).replace(/\/+$/, '')}/functions/v1/verify-license`
+        : ''),
   );
-  const [publicKeyEscaped, setPublicKeyEscaped] = useState(
-    'Paste_SPKI_PUBLIC_KEY_from_Key_Studio',
-  );
-  const [customerOrigin, setCustomerOrigin] = useState(
-    'https://cityclinic.github.io',
-  );
+  const [publicKeyEscaped, setPublicKeyEscaped] = useState('');
   const [hostPort, setHostPort] = useState(8080);
-  const [copiedId, setCopiedId] = useState('');
-
-  const composeYaml = useMemo(
-    () =>
-      buildDockerComposeConfig({
-        licenseKey,
-        verifyUrl,
-        publicKeyEscaped,
-        hostPort,
-      }),
-    [licenseKey, verifyUrl, publicKeyEscaped, hostPort],
-  );
-
-  const pagesVarsEnv = useMemo(
-    () =>
-      [
-        '# Customer myClinic GitHub Repo -> Settings -> Secrets and variables -> Actions -> Variables',
-        `VITE_LICENSE_VERIFY_URL=${verifyUrl}`,
-        `VITE_LICENSE_KEY=${licenseKey.trim().toUpperCase()}`,
-        `VITE_LICENSE_PUBLIC_KEY=${publicKeyEscaped}`,
-        `# Origin lock bound on first heartbeat: web:${customerOrigin.trim().toLowerCase().replace(/\/+$/, '')}|<clinic_id>`,
-      ].join('\n'),
-    [verifyUrl, licenseKey, publicKeyEscaped, customerOrigin],
-  );
-
-  const customerEdgeSyncSnippet = useMemo(
-    () =>
-      `// Customer Supabase Edge Function: supabase/functions/sync-clinic-license/index.ts
-// Enforces standing in PostgreSQL RLS (public.clinic_subscriptions) — immune to DevTools edits!
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.119.0";
-import { verifyCapabilityJwt } from "./crypto-rs256.mjs";
-
-Deno.serve(async (req) => {
-  const { clinic_id } = await req.json();
-  const origin = "${customerOrigin.trim().toLowerCase().replace(/\/+$/, '')}";
-  const fingerprint = \`supabase:\${origin}|\${clinic_id}\`;
-
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
-
-  const resp = await fetch("${verifyUrl}", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      license_key: Deno.env.get("LICENSE_KEY"),
-      machine_fingerprint: fingerprint,
-    }),
-  });
-  const body = await resp.json().catch(() => ({}));
-  const check = resp.ok
-    ? await verifyCapabilityJwt(body.token, Deno.env.get("LICENSE_PUBLIC_KEY")!, {
-        expectedFingerprint: fingerprint,
-      })
-    : { valid: false };
-
-  if (!check.valid) {
-    await supabase.rpc("set_license_status", { p_clinic: clinic_id, p_status: "read_only" });
-    return Response.json({ active: false }, { status: 402 });
-  }
-
-  await supabase.from("clinic_subscriptions").upsert({
-    clinic_id,
-    plan: check.claims.tier === "solo" || check.claims.tier === "chain" ? check.claims.tier : "growth",
-    status: "active",
-    current_period_end: check.claims.subscription_expires_at,
-  });
-  return Response.json({ active: true, tier: check.claims.tier });
-});`,
-    [verifyUrl, customerOrigin],
-  );
+  const [customerOrigin, setCustomerOrigin] = useState('');
+  const [copiedId, setCopiedId] = useState(null);
 
   const selectedTier = selectedLicense?.tier ?? 'growth';
   const mappedSeats =
     MYCLINIC_TIER_ENTITLEMENTS[selectedTier] ??
     MYCLINIC_TIER_ENTITLEMENTS.standard;
 
-  const copySnippet = async (id, text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedId(id);
-      setTimeout(() => {
-        setCopiedId((cur) => (cur === id ? '' : cur));
-      }, 1800);
-    } catch {
-      // Ignore clipboard failures
+  const composeYaml = useMemo(
+    () =>
+      buildDockerComposeConfig({
+        licenseKey: licenseKey || 'YOUR_LICENSE_KEY',
+        verifyUrl:
+          verifyUrl || 'https://YOUR-PROJECT.supabase.co/functions/v1/verify-license',
+        publicKeyEscaped: publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY',
+        hostPort,
+      }),
+    [licenseKey, verifyUrl, publicKeyEscaped, hostPort],
+  );
+
+  const pagesVarsEnv = useMemo(
+    () => `VITE_LICENSE_KEY=${licenseKey || 'YOUR_LICENSE_KEY'}
+VITE_LICENSE_VERIFY_URL=${verifyUrl || 'https://YOUR-PROJECT.supabase.co/functions/v1/verify-license'}
+VITE_LICENSE_PUBLIC_KEY="${publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY'}"`,
+    [licenseKey, verifyUrl, publicKeyEscaped],
+  );
+
+  function copySnippet(id, text) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(() => {});
     }
-  };
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 1600);
+  }
 
   return (
     <div className="space-y-6">
       <div className="console-panel rounded-2xl p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <span
-              style={{
-                backgroundColor: 'var(--accent-soft)',
-                border: '1px solid var(--accent-border)',
-              }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-emerald-400"
-            >
-              <Container className="h-4 w-4" />
-            </span>
-            <div>
-              <h2 className="text-sm font-semibold">
-                Target Clinic Hosting Architecture
-              </h2>
-              <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                Configure customer manifests for On-Premises Docker/Node or Static GitHub Pages.
-              </p>
-            </div>
+          <div>
+            <h2 className="text-sm font-semibold">Client Configuration</h2>
+            <p style={{ color: 'var(--text-muted)' }} className="mt-0.5 text-xs">
+              Generate deployment configuration for Docker or GitHub Pages.
+            </p>
           </div>
 
           <div
@@ -148,7 +74,7 @@ Deno.serve(async (req) => {
               backgroundColor: 'var(--bg-well)',
               border: '1px solid var(--border-subtle)',
             }}
-            className="inline-flex rounded-xl p-1 text-xs font-medium"
+            className="inline-flex rounded-xl p-1"
           >
             <button
               type="button"
@@ -156,33 +82,39 @@ Deno.serve(async (req) => {
               style={
                 targetMode === 'docker'
                   ? {
-                      backgroundColor: 'var(--bg-elevated)',
+                      backgroundColor: 'var(--accent-soft)',
+                      border: '1px solid var(--accent-border)',
                       color: 'var(--text-primary)',
-                      border: '1px solid var(--border-strong)',
                     }
-                  : { color: 'var(--text-secondary)', border: '1px solid transparent' }
+                  : {
+                      color: 'var(--text-secondary)',
+                      border: '1px solid transparent',
+                    }
               }
-              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-xs transition"
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition"
             >
               <Container className="h-3.5 w-3.5 text-sky-400" />
-              Docker / Node Host
+              Docker
             </button>
             <button
               type="button"
-              onClick={() => setTargetMode('pages')}
+              onClick={() => setTargetMode('github-pages')}
               style={
-                targetMode === 'pages'
+                targetMode === 'github-pages'
                   ? {
-                      backgroundColor: 'var(--bg-elevated)',
+                      backgroundColor: 'var(--accent-soft)',
+                      border: '1px solid var(--accent-border)',
                       color: 'var(--text-primary)',
-                      border: '1px solid var(--border-strong)',
                     }
-                  : { color: 'var(--text-secondary)', border: '1px solid transparent' }
+                  : {
+                      color: 'var(--text-secondary)',
+                      border: '1px solid transparent',
+                    }
               }
-              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-xs transition"
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition"
             >
               <Globe className="h-3.5 w-3.5 text-emerald-400" />
-              GitHub Pages Host
+              GitHub Pages
             </button>
           </div>
         </div>
@@ -193,12 +125,13 @@ Deno.serve(async (req) => {
               style={{ color: 'var(--text-secondary)' }}
               className="block text-xs font-medium"
             >
-              Customer License Key
+              License Key
             </label>
             <input
               type="text"
               value={licenseKey}
               onChange={(e) => setLicenseKey(e.target.value)}
+              placeholder="32-char license key"
               className="console-input mt-1.5 w-full rounded-lg px-3 py-2 font-mono text-xs"
             />
           </div>
@@ -208,12 +141,13 @@ Deno.serve(async (req) => {
               style={{ color: 'var(--text-secondary)' }}
               className="block text-xs font-medium"
             >
-              Cloud Validator Endpoint
+              Verify Endpoint
             </label>
             <input
               type="text"
               value={verifyUrl}
               onChange={(e) => setVerifyUrl(e.target.value)}
+              placeholder="https://.../functions/v1/verify-license"
               className="console-input mt-1.5 w-full rounded-lg px-3 py-2 font-mono text-xs"
             />
           </div>
@@ -223,12 +157,13 @@ Deno.serve(async (req) => {
               style={{ color: 'var(--text-secondary)' }}
               className="block text-xs font-medium"
             >
-              RS256 Public Key (\n-escaped)
+              Public Key (\n-escaped)
             </label>
             <input
               type="text"
               value={publicKeyEscaped}
               onChange={(e) => setPublicKeyEscaped(e.target.value)}
+              placeholder="Paste SPKI public key"
               className="console-input mt-1.5 w-full rounded-lg px-3 py-2 font-mono text-xs"
             />
           </div>
@@ -239,7 +174,7 @@ Deno.serve(async (req) => {
                 style={{ color: 'var(--text-secondary)' }}
                 className="block text-xs font-medium"
               >
-                Clinic Host Port
+                Host Port
               </label>
               <input
                 type="number"
@@ -254,7 +189,7 @@ Deno.serve(async (req) => {
                 style={{ color: 'var(--text-secondary)' }}
                 className="block text-xs font-medium"
               >
-                Customer GitHub Pages Origin
+                Allowed Web Origin
               </label>
               <input
                 type="text"
@@ -267,127 +202,82 @@ Deno.serve(async (req) => {
           )}
         </div>
 
-        <div
-          style={{
-            backgroundColor: 'var(--accent-soft)',
-            border: '1px solid var(--accent-border)',
-          }}
-          className="mt-4 rounded-xl px-4 py-2.5 font-mono text-xs"
-        >
-          <strong>Mapped myClinic Entitlement ({selectedTier.toUpperCase()}):</strong>{' '}
-          plan={mappedSeats.plan} · doctors={mappedSeats.doctors ?? '∞'} ·
-          frontdesk={mappedSeats.frontdesk ?? '∞'} · branches=
-          {mappedSeats.branches ?? '∞'}
-        </div>
+        {selectedLicense ? (
+          <div
+            style={{
+              backgroundColor: 'var(--accent-soft)',
+              border: '1px solid var(--accent-border)',
+            }}
+            className="mt-4 rounded-xl px-4 py-2 font-mono text-xs"
+          >
+            {selectedTier.toUpperCase()} · plan={mappedSeats.plan} · doctors=
+            {mappedSeats.doctors ?? '∞'} · frontdesk=
+            {mappedSeats.frontdesk ?? '∞'} · branches=
+            {mappedSeats.branches ?? '∞'}
+          </div>
+        ) : null}
       </div>
 
       {targetMode === 'docker' ? (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div className="console-code overflow-hidden rounded-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
-              <span className="font-mono text-xs font-semibold text-slate-200">
-                docker-compose.yml (Customer On-Premises Host)
-              </span>
-              <button
-                type="button"
-                onClick={() => copySnippet('compose', composeYaml)}
-                className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1 font-mono text-xs text-slate-200 hover:bg-slate-700"
-              >
-                {copiedId === 'compose' ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3.5 w-3.5" /> Copy YAML
-                  </>
-                )}
-              </button>
-            </div>
-            <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-emerald-300">
-              {composeYaml}
-            </pre>
+        <div className="console-code overflow-hidden rounded-2xl">
+          <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
+            <span className="font-mono text-xs font-semibold text-slate-200">
+              docker-compose.yml
+            </span>
+            <button
+              type="button"
+              onClick={() => copySnippet('compose', composeYaml)}
+              className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1 font-mono text-xs text-slate-200 hover:bg-slate-700"
+            >
+              {copiedId === 'compose' ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" /> Copy
+                </>
+              )}
+            </button>
           </div>
-
-          <div className="console-code overflow-hidden rounded-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
-              <span className="inline-flex items-center gap-2 font-mono text-xs font-semibold text-slate-200">
-                <Terminal className="h-3.5 w-3.5 text-sky-400" />
-                Operator CLI Deployment Sequence
-              </span>
-            </div>
-            <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-slate-300">{`# 1. Generate RS256 PKCS#8 + SPKI keypair
-npm run keygen
-
-# 2. Apply single source-of-truth schema & scratch RLS suite
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/schema.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/schema-tests.sql
-
-# 3. Deploy Supabase Edge Validator
-supabase secrets set LICENSE_PRIVATE_KEY="$LICENSE_PRIVATE_KEY"
-supabase functions deploy verify-license --no-verify-jwt
-
-# 4. Run Local Validator Gateway for myClinic container
-npm run start:validator`}</pre>
-          </div>
+          <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-emerald-300">
+            {composeYaml}
+          </pre>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div className="console-code overflow-hidden rounded-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
-              <span className="inline-flex items-center gap-2 font-mono text-xs font-semibold text-slate-200">
-                <Globe className="h-3.5 w-3.5 text-emerald-400" />
-                Layer 1 · GitHub Pages Origin-Locked WebCrypto Vars
-              </span>
-              <button
-                type="button"
-                onClick={() => copySnippet('pages-vars', pagesVarsEnv)}
-                className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1 font-mono text-xs text-slate-200 hover:bg-slate-700"
-              >
-                {copiedId === 'pages-vars' ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3.5 w-3.5" /> Copy Variables
-                  </>
-                )}
-              </button>
-            </div>
-            <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-emerald-300">
-              {pagesVarsEnv}
-            </pre>
+        <div className="console-code overflow-hidden rounded-2xl">
+          <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
+            <span className="font-mono text-xs font-semibold text-slate-200">
+              GitHub Actions Repository Variables
+            </span>
+            <button
+              type="button"
+              onClick={() => copySnippet('pages-vars', pagesVarsEnv)}
+              className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1 font-mono text-xs text-slate-200 hover:bg-slate-700"
+            >
+              {copiedId === 'pages-vars' ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" /> Copy
+                </>
+              )}
+            </button>
           </div>
-
-          <div className="console-code overflow-hidden rounded-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
-              <span className="inline-flex items-center gap-2 font-mono text-xs font-semibold text-slate-200">
-                <ShieldCheck className="h-3.5 w-3.5 text-sky-400" />
-                Layer 2 · Tamper-Proof Customer Supabase RLS Sync
-              </span>
-              <button
-                type="button"
-                onClick={() => copySnippet('edge-sync', customerEdgeSyncSnippet)}
-                className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1 font-mono text-xs text-slate-200 hover:bg-slate-700"
-              >
-                {copiedId === 'edge-sync' ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3.5 w-3.5" /> Copy Edge Function
-                  </>
-                )}
-              </button>
-            </div>
-            <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-slate-300">
-              {customerEdgeSyncSnippet}
-            </pre>
-          </div>
+          <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-emerald-300">
+            {pagesVarsEnv}
+          </pre>
+          {customerOrigin ? (
+            <p className="border-t border-slate-800 px-5 py-2.5 font-mono text-[11px] text-slate-400">
+              Expected browser origin: {customerOrigin}
+            </p>
+          ) : null}
         </div>
       )}
     </div>
   );
 }
+
+export default NodeAgentPage;

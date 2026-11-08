@@ -5,6 +5,7 @@ import {
   buildDockerComposeConfig,
   computeFleetMetrics,
   computeStanding,
+  sanitizeCsvCell,
   validateProvisionInput,
 } from '../src/lib/entitlements.mjs';
 
@@ -95,4 +96,8 @@ test('MYCLINIC_TIER_ENTITLEMENTS and Docker Compose generator match myClinic pla
   assert.match(yaml, /"9090:4000"/);
   assert.match(yaml, /LICENSE_KEY: "ABCD1234"/);
   assert.match(yaml, /\/etc\/machine-id:\/etc\/machine-id:ro/);
+
+  assert.equal(sanitizeCsvCell('=CMD()'), `"'=CMD()"`);
+  assert.equal(sanitizeCsvCell('-bullet'), `"'-bullet"`);
+  assert.equal(sanitizeCsvCell('normal "note"'), `"normal ""note"""`);
 });

@@ -1,7 +1,7 @@
 {
   "name": "myclinic-license-authority",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "module",
   "description": "Central Asymmetric RS256 Subscription Management & Phone-Home Hardware Lock Authority for self-hosted myClinic deployments.",
   "engines": {
