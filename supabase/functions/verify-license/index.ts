@@ -20,6 +20,7 @@ const corsHeaders: Record<string, string> = {
 };
 
 interface VerifyLicenseRequest {
+  healthcheck?: unknown;
   license_key?: unknown;
   machine_fingerprint?: unknown;
 }
@@ -165,6 +166,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
       body = (await req.json()) as VerifyLicenseRequest;
     } catch {
       return jsonResponse({ error: "Invalid JSON request body." }, 400);
+    }
+
+    // Safe readiness probe used by Step 2 ("Test Step 2") in myClinicLicenseAuthority:
+    // verifies that verify-license is deployed with CORS and LICENSE_PRIVATE_KEY is valid PKCS#8.
+    if (body.healthcheck === true) {
+      try {
+        await getPrivateSigningKey();
+        return jsonResponse({ ok: true, signer_ready: true }, 200);
+      } catch {
+        return jsonResponse(
+          {
+            ok: false,
+            code: "SIGNER_SECRET_MISSING",
+            error:
+              "LICENSE_PRIVATE_KEY secret is missing or invalid in Supabase Edge Functions -> Secrets.",
+          },
+          503,
+        );
+      }
     }
 
     const licenseKey =

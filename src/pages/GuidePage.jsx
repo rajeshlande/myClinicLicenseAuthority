@@ -19,7 +19,7 @@ import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import { generateRsaKeyPairPem } from '../lib/crypto-rs256.mjs';
 import {
   buildAdminGrantSql,
-  fetchWithTimeout,
+  probeVerifyLicenseEndpoint,
   rememberError,
 } from '../lib/errors.mjs';
 
@@ -146,15 +146,11 @@ export function GuidePage({
       if (verifyEndpoint.includes('YOUR_AUTHORITY_PROJECT_REF')) {
         throw new Error('Save your Authority Supabase URL in Settings first.');
       }
-      const res = await fetchWithTimeout(verifyEndpoint, { method: 'OPTIONS' }, 10000);
-      if (res.status === 404) {
-        const notFound = new Error(
-          'verify-license is not deployed yet (HTTP 404). Complete Step 2 below first.',
-        );
-        notFound.status = 502;
-        throw notFound;
-      }
-      setEdgeOk(`verify-license is online (HTTP ${res.status}).`);
+      const probe = await probeVerifyLicenseEndpoint(verifyEndpoint, {
+        anonKey: backend?.health?.anonKey ?? '',
+        timeoutMs: 10000,
+      });
+      setEdgeOk(probe.message);
     } catch (err) {
       setEdgeError(rememberError(err, 'Test verify-license'));
     } finally {

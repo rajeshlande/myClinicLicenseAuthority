@@ -52,9 +52,24 @@ const FIX_BUCKETS = {
       'Verify that the license key exists, its Kill-Switch is enabled (active), its subscription expiration date is in the future, and the machine fingerprint or web origin matches.',
   },
   edge_config: {
-    label: 'Deploy Edge Function',
+    label: 'Configure Edge Function',
     hint: () =>
-      'Ensure LICENSE_PRIVATE_KEY is set (`npx supabase secrets set LICENSE_PRIVATE_KEY="..."`) and deploy the signer (`npx supabase functions deploy verify-license --no-verify-jwt`).',
+      'In Authority Supabase → Edge Functions: 1) add secret LICENSE_PRIVATE_KEY under Secrets, 2) deploy verify-license via Editor, and 3) turn OFF "Verify JWT" in the function settings.',
+  },
+  edge_not_deployed: {
+    label: 'Deploy verify-license',
+    hint: () =>
+      'Open Authority Supabase → Edge Functions → "Deploy a new function → Via Editor", set Function name to exact lowercase "verify-license", turn OFF "Verify JWT", paste "2. Function Script", and click Deploy.',
+  },
+  edge_jwt: {
+    label: 'Turn OFF Verify JWT',
+    hint: () =>
+      'Open Authority Supabase → Edge Functions → verify-license → Details (or Settings), switch OFF "Enforce JWT Verification" / "Verify JWT with legacy secret", and click Save.',
+  },
+  edge_secret: {
+    label: 'Add LICENSE_PRIVATE_KEY',
+    hint: () =>
+      'verify-license is deployed, but LICENSE_PRIVATE_KEY is missing or invalid. Open Authority Supabase → Edge Functions → Secrets, add LICENSE_PRIVATE_KEY with "1. Private Key" from Step 2, and Save.',
   },
   rate_limit: {
     label: 'Wait & retry',
@@ -351,7 +366,34 @@ export function explainError(error, { context = 'Operation failed' } = {}) {
     });
   }
 
-  // 4. Edge Function secret / deployment issues
+  // 4. Edge Function secret / JWT toggle / deployment issues
+  if (code === 'EDGE_JWT_ENABLED') {
+    return buildExplained({
+      code,
+      title: `${context}: verify-license is deployed, but "Verify JWT" is still turned ON.`,
+      fix: 'edge_jwt',
+      raw,
+    });
+  }
+
+  if (code === 'EDGE_NOT_DEPLOYED') {
+    return buildExplained({
+      code,
+      title: `${context}: verify-license is not deployed yet on your Authority Supabase project.`,
+      fix: 'edge_not_deployed',
+      raw,
+    });
+  }
+
+  if (code === 'SIGNER_SECRET_MISSING') {
+    return buildExplained({
+      code,
+      title: `${context}: LICENSE_PRIVATE_KEY secret is not saved in Supabase yet.`,
+      fix: 'edge_secret',
+      raw,
+    });
+  }
+
   if (
     /LICENSE_PRIVATE_KEY|FunctionsFetchError|edge function|signing key/i.test(raw) ||
     status === 502 ||
@@ -359,7 +401,7 @@ export function explainError(error, { context = 'Operation failed' } = {}) {
   ) {
     return buildExplained({
       code: code || String(status || 'EDGE_CONFIG'),
-      title: `${context}: the verify-license Edge Function is not deployed or missing LICENSE_PRIVATE_KEY.`,
+      title: `${context}: the verify-license Edge Function needs configuration in Supabase.`,
       fix: 'edge_config',
       raw,
     });
@@ -459,13 +501,21 @@ export function explainError(error, { context = 'Operation failed' } = {}) {
     });
   }
 
-  // 9. Network / offline / timeout
+  // 9. Network / offline / timeout (with special detection for Edge Function CORS 404/401)
   if (
     code === 'ETIMEDOUT' ||
     /failed to fetch|networkerror|load failed|timed out|offline|ERR_NETWORK|fetch failed/i.test(
       raw,
     )
   ) {
+    if (/verify-license|edge function/i.test(context)) {
+      return buildExplained({
+        code: 'EDGE_CORS_OR_UNDEPLOYED',
+        title: `${context}: Supabase blocked the browser request (verify-license is not deployed yet, or "Verify JWT" is still ON).`,
+        fix: 'edge_config',
+        raw,
+      });
+    }
     return buildExplained({
       code: code || 'NETWORK_ERROR',
       title: `${context}: could not reach the server.`,
@@ -536,4 +586,131 @@ export function diagnosticsText({
     `userAgent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'node'}`,
     rows.length > 0 ? rows.join('\n') : '- no recent errors recorded',
   ].join('\n');
+}
+
+/**
+ * Two-stage diagnostic probe for /functions/v1/verify-license:
+ *  1. Sends POST `{"healthcheck":true}` WITHOUT an Authorization header (matching how
+ *     myClinic's sync-clinic-license calls verify-license).
+ *  2. If the browser throws `Failed to fetch` (which happens when Supabase's API gateway
+ *     returns a non-CORS 401 or 404 before Edge code runs), retries WITH `Bearer <anonKey>`
+ *     to distinguish "Verify JWT left ON" from "Function not deployed yet".
+ */
+export async function probeVerifyLicenseEndpoint(
+  verifyEndpoint,
+  { anonKey = '', timeoutMs = 10000, fetchImpl = globalThis.fetch } = {},
+) {
+  const makeError = (code, message) => {
+    const err = new Error(message);
+    err.code = code;
+    return err;
+  };
+
+  let res;
+  try {
+    res = await fetchWithTimeout(
+      verifyEndpoint,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ healthcheck: true }),
+      },
+      timeoutMs,
+      fetchImpl,
+    );
+  } catch (firstErr) {
+    if (firstErr?.code === 'ETIMEDOUT') {
+      throw firstErr;
+    }
+
+    // Browser CORS blocked a gateway 401 ("Verify JWT" ON) or 404 (not deployed).
+    // Retry with Bearer anonKey to tell the user which exact button to click!
+    if (anonKey) {
+      try {
+        const authedRes = await fetchWithTimeout(
+          verifyEndpoint,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: anonKey,
+              Authorization: `Bearer ${anonKey}`,
+            },
+            body: JSON.stringify({ healthcheck: true }),
+          },
+          timeoutMs,
+          fetchImpl,
+        );
+        if (authedRes.status !== 404) {
+          throw makeError(
+            'EDGE_JWT_ENABLED',
+            'verify-license responded only with a JWT header — "Verify JWT" is still turned ON.',
+          );
+        }
+      } catch (secondErr) {
+        if (secondErr?.code === 'EDGE_JWT_ENABLED') {
+          throw secondErr;
+        }
+      }
+    }
+
+    throw makeError(
+      'EDGE_NOT_DEPLOYED',
+      `Could not reach ${verifyEndpoint} — verify-license is not deployed yet (or "Verify JWT" is ON).`,
+    );
+  }
+
+  const payload = await res.json().catch(() => ({}));
+
+  if (res.status === 200 && payload?.signer_ready) {
+    return {
+      ok: true,
+      signerVerified: true,
+      message:
+        'Step 2 verified — verify-license is online & LICENSE_PRIVATE_KEY is valid.',
+    };
+  }
+
+  // Older deployed verify-license versions without healthcheck return 400 on missing license_key
+  if (
+    res.status === 400 &&
+    /license_key/i.test(String(payload?.error ?? ''))
+  ) {
+    return {
+      ok: true,
+      signerVerified: false,
+      message: 'verify-license is deployed and reachable.',
+    };
+  }
+
+  if (res.status === 401) {
+    throw makeError(
+      'EDGE_JWT_ENABLED',
+      'Supabase returned 401 Unauthorized — turn OFF "Verify JWT" on verify-license.',
+    );
+  }
+
+  if (res.status === 404) {
+    throw makeError(
+      'EDGE_NOT_DEPLOYED',
+      'Supabase returned 404 Not Found — deploy verify-license first.',
+    );
+  }
+
+  if (
+    res.status === 503 ||
+    payload?.code === 'SIGNER_SECRET_MISSING' ||
+    /LICENSE_PRIVATE_KEY/i.test(String(payload?.error ?? ''))
+  ) {
+    throw makeError(
+      'SIGNER_SECRET_MISSING',
+      payload?.error ||
+        'LICENSE_PRIVATE_KEY secret is missing or invalid in Edge Functions -> Secrets.',
+    );
+  }
+
+  throw makeError(
+    'EDGE_CONFIG',
+    payload?.error || `verify-license returned HTTP ${res.status}.`,
+  );
 }

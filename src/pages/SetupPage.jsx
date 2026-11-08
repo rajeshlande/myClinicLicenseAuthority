@@ -23,7 +23,7 @@ import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import {
   clearRecentErrors,
   diagnosticsText,
-  fetchWithTimeout,
+  probeVerifyLicenseEndpoint,
   recentErrors,
   rememberError,
 } from '../lib/errors.mjs';
@@ -117,24 +117,25 @@ export function SetupPage({
         throw error;
       }
 
-      // 3. Check Edge Function reachability (non-fatal status detail if not deployed yet)
+      // 3. Check Edge Function reachability + JWT toggle + secret status
       const verifyEndpoint =
         backend.verifyUrl ||
         `${String(backend.health?.url ?? '').replace(/\/+$/, '')}/functions/v1/verify-license`;
-      let edgeStatus = 'reachable';
+      let edgeStatus = 'ready';
       try {
-        const edgeRes = await fetchWithTimeout(
-          verifyEndpoint,
-          { method: 'OPTIONS' },
-          8000,
-        );
-        if (edgeRes.status === 404) {
-          edgeStatus = 'not deployed (404)';
+        const probe = await probeVerifyLicenseEndpoint(verifyEndpoint, {
+          anonKey: backend.health?.anonKey ?? '',
+          timeoutMs: 8000,
+        });
+        edgeStatus = probe.signerVerified ? 'ready (key verified)' : 'online';
+      } catch (edgeErr) {
+        if (edgeErr?.code === 'EDGE_JWT_ENABLED') {
+          edgeStatus = 'turn OFF "Verify JWT" in Supabase';
+        } else if (edgeErr?.code === 'SIGNER_SECRET_MISSING') {
+          edgeStatus = 'missing LICENSE_PRIVATE_KEY secret';
         } else {
-          edgeStatus = `HTTP ${edgeRes.status}`;
+          edgeStatus = 'not deployed yet (see Guide → Step 2)';
         }
-      } catch {
-        edgeStatus = 'unreachable';
       }
 
       const latencyMs = Math.round(performance.now() - started);

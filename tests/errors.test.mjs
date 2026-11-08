@@ -10,6 +10,7 @@ import {
   fetchWithTimeout,
   missingColumn,
   missingSchemaObject,
+  probeVerifyLicenseEndpoint,
   recentErrors,
   rememberError,
   sanitizeDiagnosticText,
@@ -84,7 +85,7 @@ test('explainError maps schema, RLS, auth, seat limit, kill-switch, network, and
     { context: 'Heartbeat' },
   );
   assert.equal(edgeDown.fix, 'edge_config');
-  assert.match(edgeDown.hint, /verify-license --no-verify-jwt/);
+  assert.match(edgeDown.hint, /deploy verify-license/);
 
   const offline = explainError(
     { message: 'TypeError: Failed to fetch' },
@@ -201,4 +202,74 @@ test('copyTextToClipboard succeeds with navigator.clipboard and returns structur
   const blockedRes = await copyTextToClipboard('TEXT', {});
   assert.equal(blockedRes.ok, false);
   assert.match(blockedRes.error, /Clipboard/i);
+});
+
+test('probeVerifyLicenseEndpoint distinguishes Verify-JWT-ON, missing secret, undeployed function, and healthy signer', async () => {
+  // 1. Healthy signer with healthcheck
+  const okProbe = await probeVerifyLicenseEndpoint('https://ref.supabase.co/functions/v1/verify-license', {
+    fetchImpl: async () => ({
+      status: 200,
+      json: async () => ({ ok: true, signer_ready: true }),
+    }),
+  });
+  assert.equal(okProbe.ok, true);
+  assert.equal(okProbe.signerVerified, true);
+
+  // 2. Unauthed fails with CORS TypeError: Failed to fetch, authed succeeds => Verify JWT is left ON!
+  let callCount = 0;
+  await assert.rejects(
+    () =>
+      probeVerifyLicenseEndpoint('https://ref.supabase.co/functions/v1/verify-license', {
+        anonKey: 'sb_publishable_demo',
+        fetchImpl: async (_url, opts) => {
+          callCount += 1;
+          if (!opts.headers?.Authorization) {
+            throw new TypeError('Failed to fetch');
+          }
+          return { status: 400, json: async () => ({ error: 'license_key' }) };
+        },
+      }),
+    (err) => {
+      const explained = explainError(err, { context: 'Test verify-license' });
+      assert.equal(err.code, 'EDGE_JWT_ENABLED');
+      assert.equal(explained.fix, 'edge_jwt');
+      assert.match(explained.hint, /Verify JWT/i);
+      return true;
+    },
+  );
+  assert.equal(callCount, 2);
+
+  // 3. Both fail with TypeError: Failed to fetch => Function not deployed yet!
+  await assert.rejects(
+    () =>
+      probeVerifyLicenseEndpoint('https://ref.supabase.co/functions/v1/verify-license', {
+        anonKey: 'sb_publishable_demo',
+        fetchImpl: async () => {
+          throw new TypeError('Failed to fetch');
+        },
+      }),
+    (err) => {
+      const explained = explainError(err, { context: 'Test verify-license' });
+      assert.equal(err.code, 'EDGE_NOT_DEPLOYED');
+      assert.equal(explained.fix, 'edge_not_deployed');
+      return true;
+    },
+  );
+
+  // 4. Function deployed, Verify JWT OFF, but LICENSE_PRIVATE_KEY secret not set yet
+  await assert.rejects(
+    () =>
+      probeVerifyLicenseEndpoint('https://ref.supabase.co/functions/v1/verify-license', {
+        fetchImpl: async () => ({
+          status: 503,
+          json: async () => ({ ok: false, code: 'SIGNER_SECRET_MISSING' }),
+        }),
+      }),
+    (err) => {
+      const explained = explainError(err, { context: 'Test verify-license' });
+      assert.equal(err.code, 'SIGNER_SECRET_MISSING');
+      assert.equal(explained.fix, 'edge_secret');
+      return true;
+    },
+  );
 });

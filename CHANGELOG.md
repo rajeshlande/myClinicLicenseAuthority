@@ -2,6 +2,13 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [1.5.3] - 2026-11-06
+
+### Fixed
+- **Accurate `Test Step 2` (`verify-license`) Browser Probe (`src/lib/errors.mjs`, `src/pages/GuidePage.jsx`, `supabase/functions/verify-license/index.ts`):**
+  - Replaced the `OPTIONS` fetch in **Test Step 2** (which browsers reject with a generic `Failed to fetch` when Supabase's Edge Gateway returns a non-CORS `401` or `404`) with a two-stage `POST` probe (`probeVerifyLicenseEndpoint`) and a safe `{ "healthcheck": true }` branch in `verify-license/index.ts`.
+  - **Test Step 2** now pinpoints the exact issue: **(1)** `verify-license` not deployed yet (`EDGE_NOT_DEPLOYED`), **(2)** `"Verify JWT"` accidentally left ON in Supabase Dashboard (`EDGE_JWT_ENABLED`), or **(3)** `LICENSE_PRIVATE_KEY` secret not added yet (`SIGNER_SECRET_MISSING`).
+
 ## [1.5.2] - 2026-11-06
 
 ### Changed
