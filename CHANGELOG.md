@@ -2,6 +2,11 @@
 
 All notable changes to `myclinic-license-authority` are documented in this file.
 
+## [1.4.1] - 2026-11-06
+
+### Fixed
+- **Windows `npm test` / `npm run verify` Compatibility (`tests/audit-skill.test.mjs`):** Fixed `audit-skill.test.mjs` failing on Windows (`OS no-follow and nonblocking input protection is unavailable`) because upstream `validate-findings.cjs` CLI file descriptor opening requires POSIX `O_NOFOLLOW | O_NONBLOCK`. The test suite now validates `validateDocument()` + `canonicalCoverageId()` cross-platform on Windows, macOS, and Linux, runs the POSIX CLI test suites when `O_NOFOLLOW | O_NONBLOCK` are present, and verifies the fail-closed guard on Windows.
+
 ## [1.4.0] - 2026-11-06
 
 ### Changed (`rajeshlande/myClinic` v1.20+ Schema 18 Alignment)
