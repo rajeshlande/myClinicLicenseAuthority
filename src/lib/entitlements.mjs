@@ -236,6 +236,46 @@ volumes:
 }
 
 /**
+ * Generates the exact two-step configuration expected by `rajeshlande/myClinic`
+ * (v1.20.0+, schema 18 `supabase/functions/sync-clinic-license` + `src/lib/authority.mjs`).
+ *
+ * `LICENSE_KEY` stays exclusively inside the clinic's Edge Function secrets and
+ * never enters the browser bundle (`VITE_LICENSE_PUBLIC_KEY` only).
+ */
+export function buildMyClinicCloudSetup({
+  licenseKey = 'YOUR_32_CHAR_LICENSE_KEY',
+  verifyUrl = 'https://YOUR-AUTHORITY-REF.supabase.co/functions/v1/verify-license',
+  publicKeyEscaped = 'YOUR_SPKI_PUBLIC_KEY',
+  clinicOrigin = 'https://clinic.github.io',
+  clinicProjectRef = '<CLINIC_PROJECT_REF>',
+} = {}) {
+  const cleanKey = String(licenseKey || 'YOUR_32_CHAR_LICENSE_KEY').trim();
+  const cleanUrl = String(
+    verifyUrl ||
+      'https://YOUR-AUTHORITY-REF.supabase.co/functions/v1/verify-license',
+  ).trim();
+  const cleanPub = String(publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY').trim();
+  const cleanOrigin = String(clinicOrigin || 'https://clinic.github.io')
+    .trim()
+    .replace(/\/+$/, '');
+  const cleanRef = String(clinicProjectRef || '<CLINIC_PROJECT_REF>').trim();
+
+  const appBuildVars = `VITE_LICENSE_PUBLIC_KEY="${cleanPub}"`;
+
+  const edgeSecretsCmd = `npx supabase link --project-ref ${cleanRef}
+
+npx supabase secrets set \\
+  AUTHORITY_VERIFY_URL="${cleanUrl}" \\
+  LICENSE_KEY="${cleanKey}" \\
+  LICENSE_PUBLIC_KEY="${cleanPub}" \\
+  MYCLINIC_ORIGINS="${cleanOrigin}"
+
+npx supabase functions deploy sync-clinic-license --project-ref ${cleanRef}`;
+
+  return { appBuildVars, edgeSecretsCmd };
+}
+
+/**
  * Escapes a value for RFC-4180 CSV export while neutralizing leading
  * spreadsheet formula triggers (=, +, -, @, tab, CR).
  */

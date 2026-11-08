@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  SECRET_SCAN_SKIP,
   findSecrets,
   namingProblems,
   runChecks,
   unbalancedListeners,
   unsafeHtml,
 } from '../scripts/check-contributing.mjs';
+
+const fake = (...parts) => parts.join('');
 
 test('check-contributing detectors catch raw HTML, unbalanced listeners, and bad naming', () => {
   assert.equal(
@@ -33,11 +36,23 @@ test('check-contributing detectors catch raw HTML, unbalanced listeners, and bad
   assert.equal(namingProblems(['src/pages/bad_name.jsx']).length, 1);
   assert.equal(namingProblems(['src/lib/BadUpper.mjs']).length, 1);
 
-  const secretHit = findSecrets(
-    'src/leak.js',
-    ['const k = "', 'sk-', '12345678901234567890abcd";'].join(''),
+  assert.ok(
+    !SECRET_SCAN_SKIP.includes('tests/'),
+    'tests/ must be scanned so GitHub Secret Scanning never sees a fixture leak',
   );
-  assert.equal(secretHit.length, 1);
+
+  const cases = [
+    [fake('-----BEGIN RSA', ' PRIVATE KEY-----'), 'private-key'],
+    [fake('const k = "sb', '_secret_', 'abcdefghijklmnopqrst"'), 'supabase-secret'],
+    [fake('AKIA', 'IOSFODNN7EXAMPLE'), 'aws'],
+    [fake('ghp', '_aB3dE5gH7jK9mN1pQ2sT4vW6yZ8bC0dE1fG3'), 'github-token'],
+    [fake('sk-', '12345678901234567890abcd'), 'openai'],
+    [fake('AIza', 'SyA1234567890abcdefghijklmnopqrstuv'), 'google-api'],
+  ];
+  for (const [line, expectedId] of cases) {
+    const hits = findSecrets('tests/fixture.test.mjs', line);
+    assert.equal(hits[0]?.id, expectedId);
+  }
 });
 
 test('this repository passes all CONTRIBUTING.md checks with 0 failures and 0 warnings', () => {

@@ -1,17 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import {
-  Check,
-  Container,
-  Copy,
-  Globe,
-} from 'lucide-react';
+import { Check, Container, Copy, Globe } from 'lucide-react';
 import {
   buildDockerComposeConfig,
+  buildMyClinicCloudSetup,
   MYCLINIC_TIER_ENTITLEMENTS,
 } from '../lib/entitlements.mjs';
 
 export function NodeAgentPage({ backend, selectedLicense = null }) {
-  const [targetMode, setTargetMode] = useState('docker'); // 'docker' | 'github-pages'
+  const [targetMode, setTargetMode] = useState('myclinic-cloud'); // 'myclinic-cloud' | 'docker'
   const [licenseKey, setLicenseKey] = useState(
     selectedLicense?.license_key ?? '',
   );
@@ -24,6 +20,7 @@ export function NodeAgentPage({ backend, selectedLicense = null }) {
   const [publicKeyEscaped, setPublicKeyEscaped] = useState('');
   const [hostPort, setHostPort] = useState(8080);
   const [customerOrigin, setCustomerOrigin] = useState('');
+  const [clinicProjectRef, setClinicProjectRef] = useState('');
   const [copiedId, setCopiedId] = useState(null);
 
   const selectedTier = selectedLicense?.tier ?? 'growth';
@@ -31,23 +28,31 @@ export function NodeAgentPage({ backend, selectedLicense = null }) {
     MYCLINIC_TIER_ENTITLEMENTS[selectedTier] ??
     MYCLINIC_TIER_ENTITLEMENTS.standard;
 
+  const myClinicSetup = useMemo(
+    () =>
+      buildMyClinicCloudSetup({
+        licenseKey: licenseKey || 'YOUR_LICENSE_KEY',
+        verifyUrl:
+          verifyUrl ||
+          'https://YOUR-AUTHORITY-REF.supabase.co/functions/v1/verify-license',
+        publicKeyEscaped: publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY',
+        clinicOrigin: customerOrigin || 'https://clinic.github.io',
+        clinicProjectRef: clinicProjectRef || '<CLINIC_PROJECT_REF>',
+      }),
+    [licenseKey, verifyUrl, publicKeyEscaped, customerOrigin, clinicProjectRef],
+  );
+
   const composeYaml = useMemo(
     () =>
       buildDockerComposeConfig({
         licenseKey: licenseKey || 'YOUR_LICENSE_KEY',
         verifyUrl:
-          verifyUrl || 'https://YOUR-PROJECT.supabase.co/functions/v1/verify-license',
+          verifyUrl ||
+          'https://YOUR-AUTHORITY-REF.supabase.co/functions/v1/verify-license',
         publicKeyEscaped: publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY',
         hostPort,
       }),
     [licenseKey, verifyUrl, publicKeyEscaped, hostPort],
-  );
-
-  const pagesVarsEnv = useMemo(
-    () => `VITE_LICENSE_KEY=${licenseKey || 'YOUR_LICENSE_KEY'}
-VITE_LICENSE_VERIFY_URL=${verifyUrl || 'https://YOUR-PROJECT.supabase.co/functions/v1/verify-license'}
-VITE_LICENSE_PUBLIC_KEY="${publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY'}"`,
-    [licenseKey, verifyUrl, publicKeyEscaped],
   );
 
   function copySnippet(id, text) {
@@ -63,9 +68,9 @@ VITE_LICENSE_PUBLIC_KEY="${publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY'}"`,
       <div className="console-panel rounded-2xl p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold">Client Configuration</h2>
+            <h2 className="text-sm font-semibold">Clinic Connection</h2>
             <p style={{ color: 'var(--text-muted)' }} className="mt-0.5 text-xs">
-              Generate deployment configuration for Docker or GitHub Pages.
+              Generate configuration for myClinic (`sync-clinic-license`) or Docker.
             </p>
           </div>
 
@@ -76,6 +81,26 @@ VITE_LICENSE_PUBLIC_KEY="${publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY'}"`,
             }}
             className="inline-flex rounded-xl p-1"
           >
+            <button
+              type="button"
+              onClick={() => setTargetMode('myclinic-cloud')}
+              style={
+                targetMode === 'myclinic-cloud'
+                  ? {
+                      backgroundColor: 'var(--accent-soft)',
+                      border: '1px solid var(--accent-border)',
+                      color: 'var(--text-primary)',
+                    }
+                  : {
+                      color: 'var(--text-secondary)',
+                      border: '1px solid transparent',
+                    }
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition"
+            >
+              <Globe className="h-3.5 w-3.5 text-emerald-400" />
+              myClinic (Supabase + Pages)
+            </button>
             <button
               type="button"
               onClick={() => setTargetMode('docker')}
@@ -94,27 +119,7 @@ VITE_LICENSE_PUBLIC_KEY="${publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY'}"`,
               className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition"
             >
               <Container className="h-3.5 w-3.5 text-sky-400" />
-              Docker
-            </button>
-            <button
-              type="button"
-              onClick={() => setTargetMode('github-pages')}
-              style={
-                targetMode === 'github-pages'
-                  ? {
-                      backgroundColor: 'var(--accent-soft)',
-                      border: '1px solid var(--accent-border)',
-                      color: 'var(--text-primary)',
-                    }
-                  : {
-                      color: 'var(--text-secondary)',
-                      border: '1px solid transparent',
-                    }
-              }
-              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition"
-            >
-              <Globe className="h-3.5 w-3.5 text-emerald-400" />
-              GitHub Pages
+              Docker Gateway
             </button>
           </div>
         </div>
@@ -141,7 +146,7 @@ VITE_LICENSE_PUBLIC_KEY="${publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY'}"`,
               style={{ color: 'var(--text-secondary)' }}
               className="block text-xs font-medium"
             >
-              Verify Endpoint
+              Authority Verify URL
             </label>
             <input
               type="text"
@@ -184,20 +189,37 @@ VITE_LICENSE_PUBLIC_KEY="${publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY'}"`,
               />
             </div>
           ) : (
-            <div>
-              <label
-                style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
-              >
-                Allowed Web Origin
-              </label>
-              <input
-                type="text"
-                value={customerOrigin}
-                onChange={(e) => setCustomerOrigin(e.target.value)}
-                placeholder="https://clinic.github.io"
-                className="console-input mt-1.5 w-full rounded-lg px-3 py-2 font-mono text-xs"
-              />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:col-span-1">
+              <div>
+                <label
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="block text-xs font-medium"
+                >
+                  Clinic Origin
+                </label>
+                <input
+                  type="text"
+                  value={customerOrigin}
+                  onChange={(e) => setCustomerOrigin(e.target.value)}
+                  placeholder="https://clinic.github.io"
+                  className="console-input mt-1.5 w-full rounded-lg px-3 py-2 font-mono text-xs"
+                />
+              </div>
+              <div>
+                <label
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="block text-xs font-medium"
+                >
+                  Clinic Supabase Ref
+                </label>
+                <input
+                  type="text"
+                  value={clinicProjectRef}
+                  onChange={(e) => setClinicProjectRef(e.target.value)}
+                  placeholder="project-ref"
+                  className="console-input mt-1.5 w-full rounded-lg px-3 py-2 font-mono text-xs"
+                />
+              </div>
             </div>
           )}
         </div>
@@ -218,7 +240,65 @@ VITE_LICENSE_PUBLIC_KEY="${publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY'}"`,
         ) : null}
       </div>
 
-      {targetMode === 'docker' ? (
+      {targetMode === 'myclinic-cloud' ? (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="console-code overflow-hidden rounded-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
+              <span className="font-mono text-xs font-semibold text-slate-200">
+                1. myClinic Build Variable (Actions Variables / .env.local)
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  copySnippet('app-vars', myClinicSetup.appBuildVars)
+                }
+                className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1 font-mono text-xs text-slate-200 hover:bg-slate-700"
+              >
+                {copiedId === 'app-vars' ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" /> Copy
+                  </>
+                )}
+              </button>
+            </div>
+            <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-emerald-300">
+              {myClinicSetup.appBuildVars}
+            </pre>
+          </div>
+
+          <div className="console-code overflow-hidden rounded-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
+              <span className="font-mono text-xs font-semibold text-slate-200">
+                2. Clinic Edge Function (sync-clinic-license)
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  copySnippet('edge-cmd', myClinicSetup.edgeSecretsCmd)
+                }
+                className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1 font-mono text-xs text-slate-200 hover:bg-slate-700"
+              >
+                {copiedId === 'edge-cmd' ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" /> Copy
+                  </>
+                )}
+              </button>
+            </div>
+            <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-slate-300">
+              {myClinicSetup.edgeSecretsCmd}
+            </pre>
+          </div>
+        </div>
+      ) : (
         <div className="console-code overflow-hidden rounded-2xl">
           <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
             <span className="font-mono text-xs font-semibold text-slate-200">
@@ -243,37 +323,6 @@ VITE_LICENSE_PUBLIC_KEY="${publicKeyEscaped || 'YOUR_SPKI_PUBLIC_KEY'}"`,
           <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-emerald-300">
             {composeYaml}
           </pre>
-        </div>
-      ) : (
-        <div className="console-code overflow-hidden rounded-2xl">
-          <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
-            <span className="font-mono text-xs font-semibold text-slate-200">
-              GitHub Actions Repository Variables
-            </span>
-            <button
-              type="button"
-              onClick={() => copySnippet('pages-vars', pagesVarsEnv)}
-              className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1 font-mono text-xs text-slate-200 hover:bg-slate-700"
-            >
-              {copiedId === 'pages-vars' ? (
-                <>
-                  <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3.5 w-3.5" /> Copy
-                </>
-              )}
-            </button>
-          </div>
-          <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-emerald-300">
-            {pagesVarsEnv}
-          </pre>
-          {customerOrigin ? (
-            <p className="border-t border-slate-800 px-5 py-2.5 font-mono text-[11px] text-slate-400">
-              Expected browser origin: {customerOrigin}
-            </p>
-          ) : null}
         </div>
       )}
     </div>

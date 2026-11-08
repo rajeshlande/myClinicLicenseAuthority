@@ -131,7 +131,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       typeof body.license_key === "string"
         ? body.license_key.trim().toUpperCase()
         : "";
-    const machineFingerprint =
+    let machineFingerprint =
       typeof body.machine_fingerprint === "string"
         ? body.machine_fingerprint.trim()
         : "";
@@ -150,24 +150,47 @@ Deno.serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    // Browser / GitHub Pages anti-cloning check:
-    // Browsers attach an unforgeable `Origin` header on cross-origin POSTs.
-    // Enforce that browser requests bind their fingerprint to that exact Origin.
-    const rawOrigin = req.headers.get("origin")?.trim().toLowerCase() || null;
-    if (rawOrigin && rawOrigin !== "null") {
-      const expectedPrefix = `web:${rawOrigin}`;
-      if (
-        !machineFingerprint.toLowerCase().startsWith(expectedPrefix) ||
-        (machineFingerprint.length > expectedPrefix.length &&
-          machineFingerprint[expectedPrefix.length] !== "|")
-      ) {
+    // Normalize `web:<origin>` fingerprints (used by myClinic's sync-clinic-license
+    // Edge Function as well as direct browser origins) so casing or trailing slashes
+    // cannot consume duplicate seats, and populate `allowed_origin` on both paths.
+    let effectiveOrigin: string | null = null;
+    if (/^web:/i.test(machineFingerprint)) {
+      const webMatch = /^web:(https?:\/\/[^|\s]+?)(\|[^\s]+)?$/i.exec(
+        machineFingerprint,
+      );
+      if (!webMatch) {
         return jsonResponse(
           {
-            error: `Browser origin mismatch: fingerprint must be scoped to '${expectedPrefix}'.`,
+            error:
+              "Web deployment fingerprint must follow 'web:https://<origin>'.",
+          },
+          400,
+        );
+      }
+      const normalizedWebOrigin = webMatch[1]
+        .trim()
+        .toLowerCase()
+        .replace(/\/+$/, "");
+      const suffix = webMatch[2] ?? "";
+      machineFingerprint = `web:${normalizedWebOrigin}${suffix}`;
+      effectiveOrigin = normalizedWebOrigin;
+    }
+
+    // Browser anti-cloning check: when an HTTP Origin header is present,
+    // require the fingerprint to bind to that exact normalized origin.
+    const rawOrigin =
+      req.headers.get("origin")?.trim().toLowerCase().replace(/\/+$/, "") ||
+      null;
+    if (rawOrigin && rawOrigin !== "null") {
+      if (effectiveOrigin !== rawOrigin) {
+        return jsonResponse(
+          {
+            error: `Browser origin mismatch: fingerprint must be scoped to 'web:${rawOrigin}'.`,
           },
           403,
         );
       }
+      effectiveOrigin = rawOrigin;
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -380,9 +403,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       license_key: licenseRecord.license_key,
       tier: subscription.tier,
       machine_fingerprint: machineFingerprint,
-      ...(rawOrigin && rawOrigin !== "null"
-        ? { allowed_origin: rawOrigin }
-        : {}),
+      ...(effectiveOrigin ? { allowed_origin: effectiveOrigin } : {}),
       max_machines: subscription.max_machines,
       subscription_expires_at: subscription.expires_at,
       iat: getNumericDate(0),

@@ -2,6 +2,16 @@
 
 All notable changes to `myclinic-license-authority` are documented in this file.
 
+## [1.4.0] - 2026-11-06
+
+### Changed (`rajeshlande/myClinic` v1.20+ Schema 18 Alignment)
+- **`verify-license` Web Origin Normalization & `allowed_origin` Claim (`supabase/functions/verify-license/index.ts`):** Normalized `web:<origin>` fingerprints (lowercase, stripped trailing `/`) so casing or slash variations cannot consume duplicate seats, and populated `allowed_origin` inside the signed RS256 JWT even on server-to-server `sync-clinic-license` calls from `myClinic` (where no browser `Origin` header is present) so `myClinic`'s `authorityView().origin` renders accurately.
+- **First-Class `myClinic` (`sync-clinic-license`) Deployment Kit (`src/lib/entitlements.mjs`, `src/pages/NodeAgentPage.jsx`):** Replaced legacy browser-bundle `VITE_LICENSE_KEY` snippets with `buildMyClinicCloudSetup()`, generating the exact two-step `myClinic v1.20+` configuration: (1) `VITE_LICENSE_PUBLIC_KEY` build variable (`LICENSE_KEY` never enters the browser bundle) and (2) `npx supabase secrets set AUTHORITY_VERIFY_URL LICENSE_KEY LICENSE_PUBLIC_KEY MYCLINIC_ORIGINS` + `npx supabase functions deploy sync-clinic-license`.
+
+### Security
+- **Scanned `tests/` for Credential-Shaped Literals (`scripts/check-contributing.mjs`, `tests/contributing.test.mjs`):** Removed `'tests/'` from `SECRET_SCAN_SKIP` (matching `myClinic v1.20.2`) and assembled all secret-scanner fixtures from runtime fragments so GitHub Secret Scanning never raises alerts on test files.
+- **Added Browser `Content-Security-Policy` (`index.html`):** Added strict CSP `<meta>` defense-in-depth for static GitHub Pages deployments and added `tests/myclinic-compat.test.mjs` verifying end-to-end RS256 claim and tier parity with `rajeshlande/myClinic`.
+
 ## [1.3.0] - 2026-11-06
 
 ### Security (Cloudflare `security-audit-skill` Remediation)

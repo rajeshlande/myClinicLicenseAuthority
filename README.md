@@ -253,17 +253,27 @@ export async function fetchVerifiedClinicLicense() {
 }
 ```
 
-#### Option C: Customer Hosted `myClinic` on GitHub Pages (`https://<clinic>.github.io/myClinic/`)
+#### Option C: Connecting `rajeshlande/myClinic` (`v1.20+`, Schema 18 — Recommended for Cloud / GitHub Pages)
 
-GitHub Pages serves pure static files — there is no Node/Express server (`server/node-host.mjs`), and browser JavaScript alone can be inspected in DevTools. Use **two-layer validation** (`src/lib/pages-client-validator.mjs` + `#/node-agent` → **GitHub Pages Host** tab):
+`myClinic` (`v1.20.0+`, schema 18) ships [`supabase/functions/sync-clinic-license`](https://github.com/rajeshlande/myClinic/tree/main/supabase/functions/sync-clinic-license) and [`src/lib/authority.mjs`](https://github.com/rajeshlande/myClinic/blob/main/src/lib/authority.mjs) natively. **`LICENSE_KEY` never enters the `myClinic` browser bundle** — open **`Deployment` (`#/node-agent`)** in the Authority console to copy both commands:
 
-1. **Layer 1 — Origin-Locked Browser WebCrypto Gate (Static PWA + Anti-Cloning):**
-   - Set `VITE_LICENSE_VERIFY_URL`, `VITE_LICENSE_KEY`, and `VITE_LICENSE_PUBLIC_KEY` (SPKI public key — safe to expose publicly) in the customer's GitHub Actions repository variables.
-   - `syncPagesLicense()` (`src/lib/pages-client-validator.mjs`) sends `machine_fingerprint = "web:" + location.origin + "|" + clinicId` to `verify-license`.
-   - `verify-license/index.ts` cross-checks that `web:<origin>` matches the browser's **unforgeable `Origin` HTTP header** and signs `allowed_origin` into the 7-day RS256 JWT. Even if another domain scrapes `VITE_LICENSE_KEY` from the public JS bundle, `verify-license` rejects their `Origin` (`403`) and offline WebCrypto (`window.crypto.subtle`) rejects copied `localStorage` tokens (`ORIGIN_MISMATCH`).
-2. **Layer 2 — Tamper-Proof Database Enforcement in the Customer's Supabase Project (Defeats DevTools):**
-   - Because clinical data in `myClinic` lives in the customer's own Supabase PostgreSQL database — where `public.can_write(clinic_id)` gates every `INSERT`/`UPDATE` RLS policy and `public.set_license_status()` is restricted to `service_role` — deploy the `sync-clinic-license` Edge Function (generated in `#/node-agent` → **GitHub Pages Host** tab) to the **customer's Supabase project**.
-   - It phones home to your Authority `verify-license` endpoint, verifies the RS256 JWT with `LICENSE_PUBLIC_KEY` server-side, and updates `public.clinic_subscriptions` (`active` vs `read_only`). Editing JavaScript in Chrome DevTools on GitHub Pages **cannot** bypass PostgreSQL RLS.
+1. **App Build Variable (`myClinic` GitHub Actions Variables or `.env.local`):**
+   ```dotenv
+   VITE_LICENSE_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A...\n-----END PUBLIC KEY-----"
+   ```
+2. **Clinic Supabase Edge Function Secrets & Deploy (`sync-clinic-license`):**
+   ```bash
+   npx supabase link --project-ref <CLINIC_PROJECT_REF>
+
+   npx supabase secrets set \
+     AUTHORITY_VERIFY_URL="https://<AUTHORITY_PROJECT_REF>.supabase.co/functions/v1/verify-license" \
+     LICENSE_KEY="<32_CHAR_LICENSE_KEY>" \
+     LICENSE_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----" \
+     MYCLINIC_ORIGINS="https://clinic.github.io"
+
+   npx supabase functions deploy sync-clinic-license --project-ref <CLINIC_PROJECT_REF>
+   ```
+   When the clinic owner clicks **Check the licence now** (or on boot every 6 hours), `sync-clinic-license` calls `verify-license` with `machine_fingerprint = "web:<origin>"`, verifies the 7-day RS256 token with `LICENSE_PUBLIC_KEY`, and records the verdict via `apply_authority_license()` (`service_role` only). Editing JavaScript in DevTools cannot bypass PostgreSQL RLS.
 
 ### Step 4 — Verify End-to-End Connectivity
 

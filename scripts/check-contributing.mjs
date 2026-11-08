@@ -26,10 +26,12 @@ export const ALLOWED_DEV_DEPENDENCIES = [
 
 export const SECRET_SCAN_SKIP = [
   'package-lock.json',
-  'tests/',
   'supabase/schema-tests.sql',
   '.claude/skills/security-audit/',
 ];
+// Note: `tests/` is intentionally NOT in SECRET_SCAN_SKIP — GitHub Secret Scanning
+// has no allowlist for test directories, so credential-shaped test fixtures must
+// be assembled from fragments at runtime (`['sk-', '...'].join('')`).
 
 export const SECRET_PATTERNS = [
   {

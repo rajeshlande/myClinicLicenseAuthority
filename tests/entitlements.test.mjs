@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   MYCLINIC_TIER_ENTITLEMENTS,
   buildDockerComposeConfig,
+  buildMyClinicCloudSetup,
   computeFleetMetrics,
   computeStanding,
   sanitizeCsvCell,
@@ -100,4 +101,22 @@ test('MYCLINIC_TIER_ENTITLEMENTS and Docker Compose generator match myClinic pla
   assert.equal(sanitizeCsvCell('=CMD()'), `"'=CMD()"`);
   assert.equal(sanitizeCsvCell('-bullet'), `"'-bullet"`);
   assert.equal(sanitizeCsvCell('normal "note"'), `"normal ""note"""`);
+
+  const cloudSetup = buildMyClinicCloudSetup({
+    licenseKey: '7A3F91C4082BD6E54A109F83C2D17E6B',
+    verifyUrl: 'https://auth.supabase.co/functions/v1/verify-license',
+    publicKeyEscaped: 'PUBKEY_SPKI',
+    clinicOrigin: 'https://clinic.github.io/',
+    clinicProjectRef: 'clinicref123',
+  });
+  assert.match(cloudSetup.appBuildVars, /^VITE_LICENSE_PUBLIC_KEY="PUBKEY_SPKI"$/);
+  assert.doesNotMatch(
+    cloudSetup.appBuildVars,
+    /LICENSE_KEY=|7A3F91C4082BD6E54A109F83C2D17E6B/,
+    'App build vars must never embed the secret LICENSE_KEY in the browser bundle',
+  );
+  assert.match(cloudSetup.edgeSecretsCmd, /AUTHORITY_VERIFY_URL="https:\/\/auth\.supabase\.co\/functions\/v1\/verify-license"/);
+  assert.match(cloudSetup.edgeSecretsCmd, /LICENSE_KEY="7A3F91C4082BD6E54A109F83C2D17E6B"/);
+  assert.match(cloudSetup.edgeSecretsCmd, /MYCLINIC_ORIGINS="https:\/\/clinic\.github\.io"/);
+  assert.match(cloudSetup.edgeSecretsCmd, /sync-clinic-license --project-ref clinicref123/);
 });

@@ -3,14 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self';"
+    />
     <meta name="theme-color" content="#080b11" />
     <meta
       name="description"
-      content="Central RS256 Subscription Management & Phone-Home Hardware Lock Control Console for self-hosted myClinic deployments."
+      content="Subscription & RS256 License Authority for myClinic deployments."
     />
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <title>myClinic License Authority · Zero-Trust RS256 Console</title>
+    <title>myClinic Authority</title>
   </head>
   <body class="antialiased selection:bg-emerald-500/25 selection:text-emerald-200">
     <div id="root"></div>
