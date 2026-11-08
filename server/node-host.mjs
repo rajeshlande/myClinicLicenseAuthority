@@ -150,6 +150,30 @@ if (MYCLINIC_DIST_DIR && fs.existsSync(MYCLINIC_DIST_DIR)) {
   });
 }
 
+// Structured Express 5 error handler (catches malformed JSON & unexpected throws without leaking stacks)
+app.use((err, _req, res, _next) => {
+  if (err?.type === 'entity.parse.failed' || err instanceof SyntaxError) {
+    return res.status(400).json({
+      ok: false,
+      code: 'INVALID_JSON',
+      error: 'Request body must be valid JSON.',
+    });
+  }
+  const status =
+    Number.isInteger(err?.status) && err.status >= 400 && err.status < 600
+      ? err.status
+      : 500;
+  console.error('[myclinic-node] Unhandled request error:', err?.message ?? err);
+  return res.status(status).json({
+    ok: false,
+    code: status === 413 ? 'PAYLOAD_TOO_LARGE' : 'INTERNAL_ERROR',
+    error:
+      status === 413
+        ? 'Request payload exceeds the 64 KB limit.'
+        : 'Internal validator gateway error.',
+  });
+});
+
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.info(
     `[myclinic-node] Listening on 0.0.0.0:${PORT} | fingerprint=${machineFingerprint}${

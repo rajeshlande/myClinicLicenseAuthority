@@ -1,10 +1,12 @@
 import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import AppShell from './components/AppShell.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import {
   detectRecoveryFlowFromUrl,
   isAuthorizedAdminUser,
 } from './lib/auth.mjs';
+import { rememberError } from './lib/errors.mjs';
 import { resolveAuthorityBackend } from './lib/supabase.js';
 import {
   applyDocumentTheme,
@@ -17,10 +19,13 @@ const EntitlementsPage = lazy(() => import('./pages/EntitlementsPage.jsx'));
 const ValidatorLabPage = lazy(() => import('./pages/ValidatorLabPage.jsx'));
 const NodeAgentPage = lazy(() => import('./pages/NodeAgentPage.jsx'));
 const SetupPage = lazy(() => import('./pages/SetupPage.jsx'));
+const GuidePage = lazy(() => import('./pages/GuidePage.jsx'));
+
+const VALID_ROUTES = ['dashboard', 'guide', 'node-agent', 'simulator', 'setup'];
 
 function readCurrentRoute() {
   const raw = window.location.hash.replace(/^#\/?/, '').split('?')[0];
-  if (['dashboard', 'simulator', 'node-agent', 'setup'].includes(raw)) {
+  if (VALID_ROUTES.includes(raw)) {
     return raw;
   }
   return 'dashboard';
@@ -58,6 +63,27 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  // Capture uncaught background errors into sanitized diagnostics
+  useEffect(() => {
+    const onUnhandledRejection = (event) => {
+      rememberError(
+        event?.reason ?? 'Unhandled promise rejection',
+        'Background async operation',
+      );
+    };
+    const onWindowError = (event) => {
+      if (event?.error || event?.message) {
+        rememberError(event.error ?? event.message, 'Runtime script error');
+      }
+    };
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    window.addEventListener('error', onWindowError);
+    return () => {
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+      window.removeEventListener('error', onWindowError);
+    };
+  }, []);
+
   // Auto-reconnect Supabase session refresh whenever internet connectivity resumes
   useEffect(() => {
     const handleOnline = () => {
@@ -69,7 +95,9 @@ export default function App() {
           .then(({ data }) => {
             if (data?.session) setSession(data.session);
           })
-          .catch(() => {});
+          .catch((err) => {
+            rememberError(err, 'Session refresh on reconnect');
+          });
       }
     };
     const handleOffline = () => {
@@ -96,13 +124,17 @@ export default function App() {
 
     backend.supabase.auth
       .getSession()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          rememberError(error, 'Initial session check');
+        }
         if (mounted) {
           setSession(data?.session ?? null);
           setAuthLoading(false);
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        rememberError(err, 'Initial session check');
         if (mounted) {
           setSession(null);
           setAuthLoading(false);
@@ -140,6 +172,10 @@ export default function App() {
     });
   }, []);
 
+  const handleNavigate = useCallback((targetRoute) => {
+    window.location.hash = `#/${targetRoute}`;
+  }, []);
+
   const handleQuickIssueLicense = useCallback(() => {
     if (readCurrentRoute() !== 'dashboard') {
       window.location.hash = '#/dashboard';
@@ -148,8 +184,12 @@ export default function App() {
   }, []);
 
   const handleSignOut = useCallback(async () => {
-    if (backend.supabase?.auth) {
-      await backend.supabase.auth.signOut();
+    try {
+      if (backend.supabase?.auth) {
+        await backend.supabase.auth.signOut();
+      }
+    } catch (err) {
+      rememberError(err, 'Sign out');
     }
     setSession(null);
     setRecoveryMode(false);
@@ -212,40 +252,50 @@ export default function App() {
       onQuickIssueLicense={handleQuickIssueLicense}
       onSignOut={handleSignOut}
     >
-      <Suspense
-        fallback={
-          <div
-            style={{ color: 'var(--text-secondary)' }}
-            className="flex items-center justify-center py-24 text-xs font-medium"
-          >
-            <Loader2 className="mr-2 h-4 w-4 animate-spin text-emerald-400" />
-            Loading...
-          </div>
-        }
-      >
-        {route === 'simulator' ? (
-          <ValidatorLabPage backend={backend} />
-        ) : route === 'node-agent' ? (
-          <NodeAgentPage
-            backend={backend}
-            selectedLicense={selectedLicense}
-          />
-        ) : route === 'setup' ? (
-          <SetupPage
-            backend={backend}
-            session={session}
-            isOnline={isOnline}
-            onBackendChanged={refreshBackend}
-            onSignOut={handleSignOut}
-          />
-        ) : (
-          <EntitlementsPage
-            backend={backend}
-            issueDrawerSignal={issueDrawerSignal}
-            onSelectLicenseForKit={setSelectedLicense}
-          />
-        )}
-      </Suspense>
+      <ErrorBoundary key={route}>
+        <Suspense
+          fallback={
+            <div
+              style={{ color: 'var(--text-secondary)' }}
+              className="flex items-center justify-center py-24 text-xs font-medium"
+            >
+              <Loader2 className="mr-2 h-4 w-4 animate-spin text-emerald-400" />
+              Loading...
+            </div>
+          }
+        >
+          {route === 'guide' ? (
+            <GuidePage
+              backend={backend}
+              session={session}
+              onQuickIssueLicense={handleQuickIssueLicense}
+              onNavigate={handleNavigate}
+            />
+          ) : route === 'simulator' ? (
+            <ValidatorLabPage backend={backend} />
+          ) : route === 'node-agent' ? (
+            <NodeAgentPage
+              backend={backend}
+              selectedLicense={selectedLicense}
+            />
+          ) : route === 'setup' ? (
+            <SetupPage
+              backend={backend}
+              session={session}
+              isOnline={isOnline}
+              onBackendChanged={refreshBackend}
+              onSignOut={handleSignOut}
+            />
+          ) : (
+            <EntitlementsPage
+              backend={backend}
+              issueDrawerSignal={issueDrawerSignal}
+              onSelectLicenseForKit={setSelectedLicense}
+              onOpenGuide={() => handleNavigate('guide')}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
     </AppShell>
   );
 }

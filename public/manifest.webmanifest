@@ -1,7 +1,7 @@
 {
-  "name": "myClinic License Authority",
-  "short_name": "LicenseHub",
-  "description": "Asymmetric RS256 Subscription Management and Hardware Lock Control Room for self-hosted myClinic containers.",
+  "name": "myClinicLicenseAuthority",
+  "short_name": "myClinicAuth",
+  "description": "Centralized Subscription Management and Asymmetric RS256 License Authority for myClinic deployments.",
   "start_url": "./#/dashboard",
   "scope": "./",
   "display": "standalone",

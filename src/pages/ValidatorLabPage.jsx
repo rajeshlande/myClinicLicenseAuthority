@@ -10,16 +10,25 @@ import {
   Terminal,
   XCircle,
 } from 'lucide-react';
+import ErrorAlert from '../components/ErrorAlert.jsx';
+import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import {
   generateRsaKeyPairPem,
   verifyCapabilityJwt,
 } from '../lib/crypto-rs256.mjs';
+import {
+  explainError,
+  fetchWithTimeout,
+  rememberError,
+  validatePublicKeyPemInput,
+} from '../lib/errors.mjs';
 
 export function ValidatorLabPage({ backend, records = [] }) {
   const firstActive = records.find((r) => r.is_active) ?? records[0] ?? null;
 
   const [generatedKeys, setGeneratedKeys] = useState(null);
   const [keyBusy, setKeyBusy] = useState(false);
+  const [keyError, setKeyError] = useState(null);
   const [copiedSlot, setCopiedSlot] = useState(null);
 
   const [simLicenseKey, setSimLicenseKey] = useState(
@@ -28,12 +37,14 @@ export function ValidatorLabPage({ backend, records = [] }) {
   const [simFingerprint, setSimFingerprint] = useState('');
   const [simBusy, setSimBusy] = useState(false);
   const [simResult, setSimResult] = useState(null);
+  const [simError, setSimError] = useState(null);
 
   const [verifyTokenInput, setVerifyTokenInput] = useState('');
   const [verifyPubKeyInput, setVerifyPubKeyInput] = useState('');
   const [verifyFpInput, setVerifyFpInput] = useState('');
   const [verifyOriginInput, setVerifyOriginInput] = useState('');
   const [verifyOutcome, setVerifyOutcome] = useState(null);
+  const [verifyError, setVerifyError] = useState(null);
 
   async function ensureKeypair() {
     if (generatedKeys) return generatedKeys;
@@ -45,10 +56,13 @@ export function ValidatorLabPage({ backend, records = [] }) {
 
   async function handleGenerateKeys() {
     setKeyBusy(true);
+    setKeyError(null);
     try {
       const keys = await generateRsaKeyPairPem();
       setGeneratedKeys(keys);
       setVerifyPubKeyInput(keys.publicKeyPem);
+    } catch (err) {
+      setKeyError(rememberError(err, 'Generate RS256 keypair'));
     } finally {
       setKeyBusy(false);
     }
@@ -58,14 +72,15 @@ export function ValidatorLabPage({ backend, records = [] }) {
     event.preventDefault();
     setSimBusy(true);
     setSimResult(null);
+    setSimError(null);
 
     try {
       if (!backend?.configured || !backend?.health?.url) {
-        setSimResult({
-          status: 503,
-          body: { error: 'Service connection is not configured.' },
-        });
-        return;
+        throw new Error('Authority Supabase connection is not configured.');
+      }
+
+      if (!simLicenseKey.trim() || !simFingerprint.trim()) {
+        throw new Error('Enter both a License Key and a Machine / Origin Fingerprint.');
       }
 
       const verifyEndpoint =
@@ -77,14 +92,19 @@ export function ValidatorLabPage({ backend, records = [] }) {
         headers.apikey = backend.health.anonKey;
       }
 
-      const response = await fetch(verifyEndpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          license_key: simLicenseKey.trim(),
-          machine_fingerprint: simFingerprint.trim(),
-        }),
-      });
+      const response = await fetchWithTimeout(
+        verifyEndpoint,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            license_key: simLicenseKey.trim(),
+            machine_fingerprint: simFingerprint.trim(),
+          }),
+        },
+        12000,
+      );
+
       const payload = await response.json().catch(() => ({}));
       const res = {
         status: response.status,
@@ -95,12 +115,19 @@ export function ValidatorLabPage({ backend, records = [] }) {
       if (res.status === 200 && res.body?.token) {
         setVerifyTokenInput(res.body.token);
         setVerifyFpInput(simFingerprint.trim());
+      } else if (res.status !== 200) {
+        const errPayload = {
+          status: res.status,
+          code: res.body?.code || String(res.status),
+          message:
+            res.body?.error ||
+            res.body?.message ||
+            `verify-license returned HTTP ${res.status}`,
+        };
+        setSimError(explainError(errPayload, { context: 'License check refused' }));
       }
     } catch (err) {
-      setSimResult({
-        status: 500,
-        body: { error: err.message },
-      });
+      setSimError(rememberError(err, 'Live verify-license test'));
     } finally {
       setSimBusy(false);
     }
@@ -108,20 +135,36 @@ export function ValidatorLabPage({ backend, records = [] }) {
 
   async function handleOfflineVerify(event) {
     event.preventDefault();
-    const pubKey = verifyPubKeyInput.trim()
-      ? verifyPubKeyInput
-      : (await ensureKeypair()).publicKeyPem;
+    setVerifyError(null);
+    setVerifyOutcome(null);
 
-    const outcome = await verifyCapabilityJwt(verifyTokenInput, pubKey, {
-      expectedFingerprint: verifyFpInput.trim() || null,
-      expectedOrigin: verifyOriginInput.trim() || null,
-    });
-    setVerifyOutcome(outcome);
+    try {
+      if (verifyPubKeyInput.trim()) {
+        const pubCheck = validatePublicKeyPemInput(verifyPubKeyInput);
+        if (!pubCheck.ok) {
+          throw new Error(pubCheck.error);
+        }
+      }
+
+      const pubKey = verifyPubKeyInput.trim()
+        ? verifyPubKeyInput.replace(/\\n/g, '\n')
+        : (await ensureKeypair()).publicKeyPem;
+
+      const outcome = await verifyCapabilityJwt(verifyTokenInput, pubKey, {
+        expectedFingerprint: verifyFpInput.trim() || null,
+        expectedOrigin: verifyOriginInput.trim() || null,
+      });
+      setVerifyOutcome(outcome);
+    } catch (err) {
+      setVerifyError(rememberError(err, 'Offline JWT verification'));
+    }
   }
 
-  function copyText(slot, value) {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(value).catch(() => {});
+  async function copyText(slot, value) {
+    const res = await copyTextToClipboard(value);
+    if (!res.ok) {
+      setKeyError(rememberError(res.error, 'Copy key or token'));
+      return;
     }
     setCopiedSlot(slot);
     setTimeout(() => setCopiedSlot(null), 1600);
@@ -148,7 +191,7 @@ export function ValidatorLabPage({ backend, records = [] }) {
             <div>
               <h2 className="text-sm font-semibold">RS256 Keypair Generator</h2>
               <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                Generate signing and verification keys in browser memory.
+                Generate 2048-bit RSA signing (PKCS#8) and verification (SPKI) keys locally in browser memory.
               </p>
             </div>
           </div>
@@ -164,12 +207,22 @@ export function ValidatorLabPage({ backend, records = [] }) {
           </button>
         </div>
 
+        {keyError ? (
+          <div className="p-5 pb-0">
+            <ErrorAlert
+              error={keyError}
+              context="Key tool error"
+              onDismiss={() => setKeyError(null)}
+            />
+          </div>
+        ) : null}
+
         {generatedKeys ? (
           <div className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-2">
             <div className="console-code overflow-hidden rounded-xl">
               <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2.5">
                 <span className="font-mono text-[11px] font-semibold text-rose-300">
-                  LICENSE_PRIVATE_KEY (Edge Secret)
+                  LICENSE_PRIVATE_KEY (Authority Edge Secret ONLY)
                 </span>
                 <button
                   type="button"
@@ -197,7 +250,7 @@ export function ValidatorLabPage({ backend, records = [] }) {
             <div className="console-code overflow-hidden rounded-xl">
               <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2.5">
                 <span className="font-mono text-[11px] font-semibold text-emerald-300">
-                  LICENSE_PUBLIC_KEY (Client Nodes)
+                  LICENSE_PUBLIC_KEY (myClinic / Client Nodes)
                 </span>
                 <button
                   type="button"
@@ -240,9 +293,9 @@ export function ValidatorLabPage({ backend, records = [] }) {
               <Terminal className="h-4 w-4" />
             </span>
             <div>
-              <h2 className="text-sm font-semibold">License Check</h2>
+              <h2 className="text-sm font-semibold">Live Heartbeat Check</h2>
               <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                Test live token issuance for a license key and fingerprint.
+                Test live token issuance from verify-license (12s timeout guard).
               </p>
             </div>
           </div>
@@ -297,6 +350,14 @@ export function ValidatorLabPage({ backend, records = [] }) {
               </button>
             </form>
 
+            {simError ? (
+              <ErrorAlert
+                error={simError}
+                context="License check failed"
+                onDismiss={() => setSimError(null)}
+              />
+            ) : null}
+
             {simResult ? (
               <div className="console-code overflow-hidden rounded-xl">
                 <div className="flex items-center justify-between border-b border-slate-800 px-3.5 py-2 font-mono text-[11px]">
@@ -350,9 +411,9 @@ export function ValidatorLabPage({ backend, records = [] }) {
               <ShieldCheck className="h-4 w-4" />
             </span>
             <div>
-              <h2 className="text-sm font-semibold">Token Inspector</h2>
+              <h2 className="text-sm font-semibold">Offline Token Inspector</h2>
               <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                Verify a signed capability JWT offline against a public key.
+                Verify a signed capability JWT offline against an SPKI public key.
               </p>
             </div>
           </div>
@@ -381,14 +442,14 @@ export function ValidatorLabPage({ backend, records = [] }) {
                   style={{ color: 'var(--text-secondary)' }}
                   className="block text-xs font-medium"
                 >
-                  Public Key (SPKI)
+                  Public Key (SPKI PEM — never private)
                 </label>
                 <textarea
                   rows={3}
                   required
                   value={verifyPubKeyInput}
                   onChange={(e) => setVerifyPubKeyInput(e.target.value)}
-                  placeholder="Paste SPKI public key"
+                  placeholder="-----BEGIN PUBLIC KEY----- ..."
                   className="console-input mt-1 w-full rounded-lg px-3 py-2 font-mono text-[11px]"
                 />
               </div>
@@ -434,6 +495,14 @@ export function ValidatorLabPage({ backend, records = [] }) {
                 Verify Signature
               </button>
             </form>
+
+            {verifyError ? (
+              <ErrorAlert
+                error={verifyError}
+                context="Token verification failed"
+                onDismiss={() => setVerifyError(null)}
+              />
+            ) : null}
 
             {verifyOutcome ? (
               <div

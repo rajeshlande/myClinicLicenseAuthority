@@ -1,6 +1,16 @@
 # Changelog
 
-All notable changes to `myclinic-license-authority` are documented in this file.
+All notable changes to `myClinicLicenseAuthority` are documented in this file.
+
+## [1.5.0] - 2026-11-06
+
+### Added
+- **Interactive 5-Step Setup & Onboarding Guide (`src/pages/GuidePage.jsx` at `#/guide`):** Step-by-step checklist with persisted progress, one-click Admin Role SQL generator, live database + RLS verification, in-browser RS256 keypair generator, `verify-license` Edge Function ping probe, and built-in troubleshooting reference.
+- **Multi-Layer Error Handling & Sanitized Diagnostics (`src/lib/errors.mjs`, `src/lib/clipboard.mjs`, `src/components/ErrorBoundary.jsx`, `src/components/ErrorAlert.jsx`, `tests/errors.test.mjs`):**
+  - Actionable error classification (`explainError`) mapping schema mismatches, non-admin RLS refusals, expired sessions, hardware seat limits (`53400`), kill-switches, network timeouts (`fetchWithTimeout`), and Edge Function deployment issues to step-by-step fix instructions.
+  - Global & per-route React `ErrorBoundary` catching render crashes and stale lazy-chunk loads after deployments, plus secret-redacted session error logs under **Settings → Diagnostics & Recent Errors** (`#/setup`).
+  - Proactive private-key leak guard (`validatePublicKeyPemInput`) blocking accidental `PRIVATE KEY` pastes into client `PUBLIC KEY` fields, Express 5 malformed-JSON/runtime error handler in `server/node-host.mjs`, and Windows `pathToFileURL` entrypoint detection in `scripts/check-contributing.mjs`.
+- **Streamlined `myClinicLicenseAuthority` Documentation (`README.md`):** Rebuilt with direct [`rajeshlande/myClinicLicenseAuthority`](https://github.com/rajeshlande/myClinicLicenseAuthority) links, clear 5-step setup guide, and troubleshooting matrix.
 
 ## [1.4.1] - 2026-11-06
 

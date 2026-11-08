@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  BookOpen,
   Container,
   FlaskConical,
   KeyRound,
@@ -16,6 +17,7 @@ import {
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Licenses', icon: KeyRound },
+  { id: 'guide', label: 'Step-by-Step Guide', icon: BookOpen },
   { id: 'node-agent', label: 'Deployment', icon: Container },
   { id: 'simulator', label: 'Key Tools', icon: FlaskConical },
   { id: 'setup', label: 'Settings', icon: Settings },
@@ -23,6 +25,7 @@ const NAV_ITEMS = [
 
 const ROUTE_TITLES = {
   dashboard: 'Licenses',
+  guide: 'Step-by-Step Guide',
   'node-agent': 'Deployment',
   simulator: 'Key Tools',
   setup: 'Settings',
@@ -53,13 +56,19 @@ export function AppShell({
           style={{ borderBottom: '1px solid var(--border-subtle)' }}
           className="flex h-14 items-center justify-between px-4"
         >
-          <div className="flex items-center gap-2.5">
+          <a
+            href="https://github.com/rajeshlande/myClinicLicenseAuthority"
+            target="_blank"
+            rel="noreferrer"
+            title="myClinicLicenseAuthority on GitHub"
+            className="flex min-w-0 items-center gap-2.5"
+          >
             <div
               style={{
                 backgroundColor: 'var(--accent-soft)',
                 border: '1px solid var(--accent-border)',
               }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
             >
               <ShieldCheck
                 style={{ color: 'var(--accent-primary)' }}
@@ -68,11 +77,11 @@ export function AppShell({
             </div>
             <span
               style={{ color: 'var(--text-primary)' }}
-              className="text-sm font-semibold tracking-tight"
+              className="truncate text-xs font-semibold tracking-tight"
             >
-              myClinic Authority
+              myClinicLicenseAuthority
             </span>
-          </div>
+          </a>
 
           {isMobile ? (
             <button
@@ -181,7 +190,7 @@ export function AppShell({
           backgroundColor: 'var(--bg-sidebar)',
           borderRight: '1px solid var(--border-subtle)',
         }}
-        className="hidden w-56 shrink-0 lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block"
+        className="hidden w-60 shrink-0 lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block"
       >
         {renderSidebarContent(false)}
       </aside>
@@ -204,7 +213,7 @@ export function AppShell({
         </div>
       ) : null}
 
-      <div className="flex min-w-0 flex-1 flex-col lg:pl-56">
+      <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
         <header
           style={{
             backgroundColor: 'var(--bg-header)',
@@ -241,6 +250,17 @@ export function AppShell({
                   <WifiOff className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Offline</span>
                 </span>
+              ) : null}
+
+              {activeRoute !== 'guide' ? (
+                <button
+                  type="button"
+                  onClick={() => navigateTo('guide')}
+                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+                >
+                  <BookOpen className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline">Guide</span>
+                </button>
               ) : null}
 
               {onQuickIssueLicense ? (

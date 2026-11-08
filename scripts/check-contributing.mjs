@@ -5,7 +5,8 @@
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
-import { extname, join, relative } from 'node:path';
+import { extname, join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 export const ALLOWED_DEPENDENCIES = [
   '@supabase/supabase-js',
@@ -647,7 +648,8 @@ export function formatReport(
 }
 
 const isMain =
-  process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+  Boolean(process.argv[1]) &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 if (isMain) {
   const args = process.argv.slice(2);
   const only = args.includes('--only')

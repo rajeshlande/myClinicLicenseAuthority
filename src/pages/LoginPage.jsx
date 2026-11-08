@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  AlertTriangle,
   ArrowLeft,
+  Check,
   CheckCircle2,
+  Copy,
   Eye,
   EyeOff,
   KeyRound,
@@ -15,6 +16,7 @@ import {
   Sun,
   WifiOff,
 } from 'lucide-react';
+import ErrorAlert from '../components/ErrorAlert.jsx';
 import {
   MIN_ADMIN_PASSWORD_LENGTH,
   buildPasswordRecoveryRedirectUrl,
@@ -23,6 +25,8 @@ import {
   validatePasswordUpdate,
   validateRecoveryEmail,
 } from '../lib/auth.mjs';
+import { copyTextToClipboard } from '../lib/clipboard.mjs';
+import { buildAdminGrantSql, rememberError } from '../lib/errors.mjs';
 import { saveRuntimeSupabaseConfig } from '../lib/supabase.js';
 
 export function LoginPage({
@@ -47,30 +51,55 @@ export function LoginPage({
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
-  const [showEndpointForm, setShowEndpointForm] = useState(false);
-  const [endpointUrl, setEndpointUrl] = useState('');
+  const [showEndpointForm, setShowEndpointForm] = useState(!configured);
+  const [endpointUrl, setEndpointUrl] = useState(backend?.health?.url ?? '');
   const [endpointAnonKey, setEndpointAnonKey] = useState('');
 
   const [busy, setBusy] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [errorState, setErrorState] = useState(null);
   const [statusMsg, setStatusMsg] = useState('');
+  const [copiedAdminSql, setCopiedAdminSql] = useState(false);
 
   const signedInNonAdmin =
     configured && Boolean(session?.user) && !recoveryMode;
 
+  const nonAdminSql = useMemo(
+    () => buildAdminGrantSql(session?.user?.email || 'ops@yourdomain.com'),
+    [session?.user?.email],
+  );
+
+  async function handleCopyNonAdminSql() {
+    const res = await copyTextToClipboard(nonAdminSql);
+    if (!res.ok) {
+      setErrorState(rememberError(res.error, 'Copy admin SQL'));
+      return;
+    }
+    setCopiedAdminSql(true);
+    setTimeout(() => setCopiedAdminSql(false), 1800);
+  }
+
   async function handleSignIn(event) {
     event.preventDefault();
-    setErrorMsg('');
+    setErrorState(null);
     setStatusMsg('');
 
     if (!configured || !client) {
-      setErrorMsg('Service connection is not configured.');
+      setErrorState(
+        rememberError(
+          'Connect your Authority Supabase project URL and public anon key below before signing in.',
+          'Sign in',
+        ),
+      );
       return;
     }
 
     const check = validateAdminCredentials({ email, password });
     if (!check.ok) {
-      setErrorMsg(check.error);
+      setErrorState({
+        message: check.error,
+        hint: 'Enter the operator email and password registered in Supabase Dashboard → Authentication → Users.',
+        fixLabel: 'Check input',
+      });
       return;
     }
 
@@ -88,7 +117,12 @@ export function LoginPage({
         onSessionRefreshed?.(data.session);
       }
     } catch (err) {
-      setErrorMsg(formatAuthErrorMessage(err));
+      const friendly = formatAuthErrorMessage(err);
+      const explained = rememberError(err, 'Sign in');
+      setErrorState({
+        ...explained,
+        message: friendly || explained.message,
+      });
     } finally {
       setBusy(false);
     }
@@ -96,17 +130,23 @@ export function LoginPage({
 
   async function handleSendResetEmail(event) {
     event.preventDefault();
-    setErrorMsg('');
+    setErrorState(null);
     setStatusMsg('');
 
     const check = validateRecoveryEmail(email);
     if (!check.ok) {
-      setErrorMsg(check.error);
+      setErrorState({
+        message: check.error,
+        hint: 'Enter a valid email address such as ops@yourdomain.com.',
+        fixLabel: 'Fix email',
+      });
       return;
     }
 
     if (!configured || !client) {
-      setErrorMsg('Service connection is not configured.');
+      setErrorState(
+        rememberError('Service connection is not configured.', 'Password reset'),
+      );
       return;
     }
 
@@ -127,7 +167,11 @@ export function LoginPage({
         'If this account is registered, a password reset link has been sent.',
       );
     } catch (err) {
-      setErrorMsg(formatAuthErrorMessage(err));
+      const explained = rememberError(err, 'Password reset');
+      setErrorState({
+        ...explained,
+        message: formatAuthErrorMessage(err) || explained.message,
+      });
     } finally {
       setBusy(false);
     }
@@ -135,7 +179,7 @@ export function LoginPage({
 
   async function handleCompletePasswordRecovery(event) {
     event.preventDefault();
-    setErrorMsg('');
+    setErrorState(null);
     setStatusMsg('');
 
     const check = validatePasswordUpdate({
@@ -143,12 +187,18 @@ export function LoginPage({
       confirmPassword: confirmNewPassword,
     });
     if (!check.ok) {
-      setErrorMsg(check.error);
+      setErrorState({
+        message: check.error,
+        hint: `Choose a password with at least ${MIN_ADMIN_PASSWORD_LENGTH} characters and ensure both fields match.`,
+        fixLabel: 'Fix password',
+      });
       return;
     }
 
     if (!client) {
-      setErrorMsg('Service connection is unavailable.');
+      setErrorState(
+        rememberError('Service connection is unavailable.', 'Update password'),
+      );
       return;
     }
 
@@ -165,7 +215,11 @@ export function LoginPage({
       setStatusMsg('Password updated.');
       onRecoveryCompleted?.();
     } catch (err) {
-      setErrorMsg(formatAuthErrorMessage(err));
+      const explained = rememberError(err, 'Update password');
+      setErrorState({
+        ...explained,
+        message: formatAuthErrorMessage(err) || explained.message,
+      });
     } finally {
       setBusy(false);
     }
@@ -174,28 +228,32 @@ export function LoginPage({
   async function handleRefreshAccess() {
     if (!client) return;
     setBusy(true);
-    setErrorMsg('');
+    setErrorState(null);
     try {
       const { data, error } = await client.auth.refreshSession();
       if (error) throw error;
       onSessionRefreshed?.(data?.session ?? null);
     } catch (err) {
-      setErrorMsg(err.message || 'Unable to refresh session.');
+      setErrorState(rememberError(err, 'Refresh admin standing'));
     } finally {
       setBusy(false);
     }
   }
 
   async function handleSignOut() {
-    if (client) {
-      await client.auth.signOut();
+    try {
+      if (client) {
+        await client.auth.signOut();
+      }
+    } catch (err) {
+      rememberError(err, 'Sign out');
     }
     onSessionRefreshed?.(null);
   }
 
   function handleSaveEndpointOverride(event) {
     event.preventDefault();
-    setErrorMsg('');
+    setErrorState(null);
     setStatusMsg('');
     try {
       saveRuntimeSupabaseConfig({
@@ -204,10 +262,10 @@ export function LoginPage({
       });
       setEndpointAnonKey('');
       setShowEndpointForm(false);
-      setStatusMsg('Connection saved.');
+      setStatusMsg('Authority Supabase connection saved. Sign in below.');
       onBackendChanged?.();
     } catch (err) {
-      setErrorMsg(err.message || 'Invalid connection settings.');
+      setErrorState(rememberError(err, 'Save Authority connection'));
     }
   }
 
@@ -219,9 +277,14 @@ export function LoginPage({
       }}
       className="relative flex min-h-screen flex-col justify-between overflow-x-hidden px-4 py-6 sm:px-6"
     >
-      {/* Clean Minimal Header */}
+      {/* Header */}
       <header className="mx-auto flex w-full max-w-md items-center justify-between">
-        <div className="flex items-center gap-2.5">
+        <a
+          href="https://github.com/rajeshlande/myClinicLicenseAuthority"
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-2.5"
+        >
           <div
             style={{
               backgroundColor: 'var(--accent-soft)',
@@ -235,9 +298,9 @@ export function LoginPage({
             />
           </div>
           <span className="text-sm font-semibold tracking-tight">
-            myClinic Authority
+            myClinicLicenseAuthority
           </span>
-        </div>
+        </a>
 
         <button
           type="button"
@@ -265,22 +328,22 @@ export function LoginPage({
                 {recoveryMode
                   ? 'Set new password'
                   : signedInNonAdmin
-                    ? 'Access restricted'
+                    ? 'Admin role required'
                     : view === 'forgot'
                       ? 'Reset password'
                       : 'Sign in'}
               </h1>
               <p
                 style={{ color: 'var(--text-muted)' }}
-                className="mt-1 text-xs"
+                className="mt-1 text-xs leading-relaxed"
               >
                 {recoveryMode
-                  ? 'Choose a new password for your account.'
+                  ? 'Choose a new password for your operator account.'
                   : signedInNonAdmin
-                    ? 'Administrator access is required to open this console.'
+                    ? 'Your account signed in, but needs app_metadata.role = "admin" in Supabase.'
                     : view === 'forgot'
-                      ? 'Enter your email address to receive a reset link.'
-                      : 'Sign in with your operator account.'}
+                      ? 'Enter your operator email address to receive a password reset link.'
+                      : 'Sign in with your Authority operator account.'}
               </p>
             </div>
 
@@ -294,23 +357,16 @@ export function LoginPage({
                 className="flex items-center gap-2 rounded-xl p-3 text-xs"
               >
                 <WifiOff className="h-4 w-4 shrink-0" />
-                <span>Offline — check your internet connection.</span>
+                <span>Offline — reconnect to the internet to authenticate.</span>
               </div>
             ) : null}
 
-            {errorMsg ? (
-              <div
-                role="alert"
-                style={{
-                  backgroundColor: 'var(--danger-soft)',
-                  border: '1px solid rgba(244, 63, 94, 0.35)',
-                  color: 'var(--danger-text)',
-                }}
-                className="flex items-start gap-2 rounded-xl p-3 text-xs"
-              >
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{errorMsg}</span>
-              </div>
+            {errorState ? (
+              <ErrorAlert
+                error={errorState}
+                context="Authentication error"
+                onDismiss={() => setErrorState(null)}
+              />
             ) : null}
 
             {statusMsg ? (
@@ -334,11 +390,11 @@ export function LoginPage({
                   backgroundColor: 'var(--bg-well)',
                   border: '1px solid var(--border-subtle)',
                 }}
-                className="space-y-2.5 rounded-xl p-3.5 text-xs"
+                className="space-y-3 rounded-xl p-4 text-xs"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    Service connection not configured
+                  <span className="font-semibold">
+                    Quick Setup — Connect Authority Supabase
                   </span>
                   <button
                     type="button"
@@ -346,9 +402,34 @@ export function LoginPage({
                     className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px]"
                   >
                     <Settings2 className="h-3 w-3" />
-                    {showEndpointForm ? 'Close' : 'Configure'}
+                    {showEndpointForm ? 'Hide' : 'Configure'}
                   </button>
                 </div>
+
+                <ol
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="list-inside list-decimal space-y-1 text-[11px] leading-relaxed"
+                >
+                  <li>
+                    Run <code className="font-mono">supabase/schema.sql</code> in your
+                    Authority Supabase SQL Editor.
+                  </li>
+                  <li>
+                    Create an operator in <strong>Authentication → Users</strong> and grant{' '}
+                    <code className="font-mono">role = &quot;admin&quot;</code>.
+                  </li>
+                  <li>
+                    Paste your Project URL &amp; Public Anon/Publishable Key below (never a{' '}
+                    <code className="font-mono">service_role</code> key).
+                  </li>
+                </ol>
+
+                {backend?.health?.reason && backend.health.status === 'invalid' ? (
+                  <ErrorAlert
+                    error={backend.health.reason}
+                    context="Invalid Supabase configuration"
+                  />
+                ) : null}
 
                 {showEndpointForm ? (
                   <form
@@ -360,7 +441,7 @@ export function LoginPage({
                       required
                       value={endpointUrl}
                       onChange={(e) => setEndpointUrl(e.target.value)}
-                      placeholder="Service URL (https://...)"
+                      placeholder="https://your-authority-ref.supabase.co"
                       className="console-input w-full rounded-lg px-3 py-2 text-xs"
                     />
                     <input
@@ -368,14 +449,14 @@ export function LoginPage({
                       required
                       value={endpointAnonKey}
                       onChange={(e) => setEndpointAnonKey(e.target.value)}
-                      placeholder="Public client key"
+                      placeholder="Public anon / sb_publishable_ key"
                       className="console-input w-full rounded-lg px-3 py-2 text-xs"
                     />
                     <button
                       type="submit"
                       className="console-btn-primary w-full rounded-lg px-3 py-2 text-xs font-semibold"
                     >
-                      Connect
+                      Save &amp; Connect
                     </button>
                   </form>
                 ) : null}
@@ -445,16 +526,41 @@ export function LoginPage({
                     backgroundColor: 'var(--bg-well)',
                     border: '1px solid var(--border-subtle)',
                   }}
-                  className="rounded-xl p-3.5 text-xs"
+                  className="space-y-2.5 rounded-xl p-3.5 text-xs"
                 >
                   <p style={{ color: 'var(--text-secondary)' }}>
                     Signed in as{' '}
                     <strong style={{ color: 'var(--text-primary)' }}>
                       {session.user.email}
                     </strong>
-                    . Contact an administrator to enable access for this
-                    account.
+                    . Run this SQL in your Authority Supabase{' '}
+                    <strong>SQL Editor</strong>, then click <strong>Check again</strong>:
                   </p>
+                  <div className="console-code overflow-hidden rounded-lg">
+                    <div className="flex items-center justify-between border-b border-slate-800 px-3 py-1.5">
+                      <span className="font-mono text-[10px] text-slate-400">
+                        SQL Editor
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyNonAdminSql}
+                        className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-0.5 font-mono text-[10px] text-slate-200 hover:bg-slate-700"
+                      >
+                        {copiedAdminSql ? (
+                          <>
+                            <Check className="h-2.5 w-2.5 text-emerald-400" /> Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-2.5 w-2.5" /> Copy SQL
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <pre className="overflow-x-auto p-3 font-mono text-[10.5px] text-emerald-200">
+                      {nonAdminSql}
+                    </pre>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -465,7 +571,7 @@ export function LoginPage({
                     className="console-btn-primary inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
                   >
                     <RefreshCw className="h-3.5 w-3.5" />
-                    Check again
+                    {busy ? 'Checking...' : 'Check again'}
                   </button>
                   <button
                     type="button"
@@ -499,7 +605,7 @@ export function LoginPage({
                       autoComplete="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="name@clinic.com"
+                      placeholder="ops@yourdomain.com"
                       className="console-input w-full rounded-lg py-2.5 pr-3 pl-9 text-xs"
                     />
                   </div>
@@ -517,7 +623,7 @@ export function LoginPage({
                   type="button"
                   onClick={() => {
                     setView('signin');
-                    setErrorMsg('');
+                    setErrorState(null);
                     setStatusMsg('');
                   }}
                   className="console-btn-secondary inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs"
@@ -548,7 +654,7 @@ export function LoginPage({
                       autoComplete="username"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="name@clinic.com"
+                      placeholder="ops@yourdomain.com"
                       className="console-input w-full rounded-lg py-2.5 pr-3 pl-9 text-xs"
                     />
                   </div>
@@ -567,7 +673,7 @@ export function LoginPage({
                       type="button"
                       onClick={() => {
                         setView('forgot');
-                        setErrorMsg('');
+                        setErrorState(null);
                         setStatusMsg('');
                       }}
                       style={{ color: 'var(--accent-primary)' }}

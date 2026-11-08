@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowUpRight,
+  BookOpen,
   Calendar,
   Check,
   Clock,
@@ -24,9 +25,11 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import ErrorAlert from '../components/ErrorAlert.jsx';
 import RichNotesField from '../components/RichNotesField.jsx';
 import RichNotesView from '../components/RichNotesView.jsx';
 import SlideOverDrawer from '../components/SlideOverDrawer.jsx';
+import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import {
   MYCLINIC_TIER_ENTITLEMENTS,
   TIER_CATALOG,
@@ -38,6 +41,7 @@ import {
   sanitizeCsvCell,
   validateProvisionInput,
 } from '../lib/entitlements.mjs';
+import { errorLine, rememberError } from '../lib/errors.mjs';
 
 function formatCompactKey(rawKey = '') {
   const clean = String(rawKey).trim().toUpperCase();
@@ -74,13 +78,14 @@ export default function EntitlementsPage({
   backend,
   issueDrawerSignal = 0,
   onSelectLicenseForKit,
+  onOpenGuide,
 }) {
   const supabase = backend.supabase;
 
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [errorBanner, setErrorBanner] = useState('');
+  const [errorBanner, setErrorBanner] = useState(null);
   const [toast, setToast] = useState(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -125,7 +130,7 @@ export default function EntitlementsPage({
   const fetchEntitlements = useCallback(
     async ({ silent = false } = {}) => {
       if (!silent) setRefreshing(true);
-      setErrorBanner('');
+      setErrorBanner(null);
 
       try {
         const { data, error } = await supabase
@@ -136,11 +141,7 @@ export default function EntitlementsPage({
         if (error) throw error;
         setRecords(Array.isArray(data) ? data : []);
       } catch (err) {
-        setErrorBanner(
-          err instanceof Error
-            ? err.message
-            : 'Failed to load entitlements from admin_license_view.',
-        );
+        setErrorBanner(rememberError(err, 'Load clinic licenses'));
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -172,8 +173,9 @@ export default function EntitlementsPage({
       if (error) throw error;
       setBoundMachines(Array.isArray(data) ? data : []);
     } catch (err) {
+      rememberError(err, 'Fetch bound machines');
       showToast(
-        err instanceof Error ? err.message : 'Unable to fetch bound machines.',
+        errorLine(err, { context: 'Could not load bound machines' }),
         'error',
       );
     } finally {
@@ -191,8 +193,9 @@ export default function EntitlementsPage({
       await fetchEntitlements({ silent: true });
       showToast('Released hardware/origin node seat.');
     } catch (err) {
+      rememberError(err, 'Release machine node');
       showToast(
-        err instanceof Error ? err.message : 'Failed to release hardware seat.',
+        errorLine(err, { context: 'Could not release node seat' }),
         'error',
       );
     }
@@ -213,8 +216,9 @@ export default function EntitlementsPage({
       await fetchEntitlements({ silent: true });
       showToast(`Extended subscription term to ${nextDateStr}.`);
     } catch (err) {
+      rememberError(err, 'Extend subscription term');
       showToast(
-        err instanceof Error ? err.message : 'Failed to update expiration date.',
+        errorLine(err, { context: 'Could not update expiration date' }),
         'error',
       );
     } finally {
@@ -238,7 +242,7 @@ export default function EntitlementsPage({
     }
 
     setSubmitting(true);
-    setErrorBanner('');
+    setErrorBanner(null);
 
     try {
       const { data: rpcRecord, error: rpcError } = await supabase.rpc(
@@ -264,10 +268,9 @@ export default function EntitlementsPage({
         `Issued ${validation.payload.p_tier.toUpperCase()} key for ${validation.payload.p_customer_email}.`,
       );
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : 'Failed to provision subscription.';
-      setErrorBanner(msg);
-      showToast(msg, 'error');
+      const explained = rememberError(err, 'Issue clinic license');
+      setErrorBanner(explained);
+      showToast(explained.message, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -300,8 +303,9 @@ export default function EntitlementsPage({
         nextActiveState ? 'success' : 'warn',
       );
     } catch (err) {
+      rememberError(err, 'Toggle kill-switch');
       showToast(
-        err instanceof Error ? err.message : 'Failed to toggle license status.',
+        errorLine(err, { context: 'Could not toggle kill-switch' }),
         'error',
       );
     } finally {
@@ -310,15 +314,15 @@ export default function EntitlementsPage({
   };
 
   const handleCopyLicenseKey = async (licenseId, licenseKey) => {
-    try {
-      await navigator.clipboard.writeText(licenseKey);
-      setCopiedKeyId(licenseId);
-      setTimeout(() => {
-        setCopiedKeyId((current) => (current === licenseId ? null : current));
-      }, 1800);
-    } catch {
-      showToast('Clipboard permission unavailable.', 'error');
+    const res = await copyTextToClipboard(licenseKey);
+    if (!res.ok) {
+      showToast(res.error, 'error');
+      return;
     }
+    setCopiedKeyId(licenseId);
+    setTimeout(() => {
+      setCopiedKeyId((current) => (current === licenseId ? null : current));
+    }, 1800);
   };
 
   const handleExportCsv = () => {
@@ -426,17 +430,12 @@ export default function EntitlementsPage({
       ) : null}
 
       {errorBanner ? (
-        <div
-          style={{
-            backgroundColor: 'var(--danger-soft)',
-            border: '1px solid rgba(244, 63, 94, 0.35)',
-            color: 'var(--danger-text)',
-          }}
-          className="flex items-start gap-2.5 rounded-xl px-4 py-3 text-xs"
-        >
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{errorBanner}</span>
-        </div>
+        <ErrorAlert
+          error={errorBanner}
+          context="License registry error"
+          onRetry={() => fetchEntitlements()}
+          onDismiss={() => setErrorBanner(null)}
+        />
       ) : null}
 
       {/* 1. Precision 4-Card KPI Telemetry Strip */}
@@ -722,6 +721,47 @@ export default function EntitlementsPage({
           >
             <Loader2 className="mr-2 h-4 w-4 animate-spin text-emerald-400" />
             Querying admin_license_view...
+          </div>
+        ) : records.length === 0 ? (
+          <div className="px-6 py-16 text-center">
+            <KeyRound
+              style={{ color: 'var(--accent-primary)' }}
+              className="mx-auto h-8 w-8 opacity-85"
+            />
+            <p
+              style={{ color: 'var(--text-primary)' }}
+              className="mt-3 text-sm font-semibold"
+            >
+              No clinic licenses issued yet
+            </p>
+            <p
+              style={{ color: 'var(--text-muted)' }}
+              className="mx-auto mt-1 max-w-md text-xs leading-relaxed"
+            >
+              Issue your first 32-character license key to onboard a{' '}
+              <code className="font-mono">myClinic</code> deployment, or open the
+              5-step interactive guide to finish setting up RS256 signing.
+            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIssueOpen(true)}
+                className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Issue First License
+              </button>
+              {onOpenGuide ? (
+                <button
+                  type="button"
+                  onClick={onOpenGuide}
+                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium"
+                >
+                  <BookOpen className="h-3.5 w-3.5 text-emerald-400" />
+                  Open Step-by-Step Guide
+                </button>
+              ) : null}
+            </div>
           </div>
         ) : filteredRecords.length === 0 ? (
           <div className="px-6 py-16 text-center">
