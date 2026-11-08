@@ -1,24 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Activity,
-  ArrowRight,
-  BookOpen,
   Check,
   CheckCircle2,
-  Circle,
   Container,
   Copy,
   Database,
   ExternalLink,
-  FileCode2,
-  FlaskConical,
-  Globe,
   HelpCircle,
   KeyRound,
   Plus,
   ShieldCheck,
   Sparkles,
-  Terminal,
 } from 'lucide-react';
 import verifyLicenseScriptSource from '../../supabase/functions/verify-license/index.ts?raw';
 import ErrorAlert from '../components/ErrorAlert.jsx';
@@ -26,56 +19,28 @@ import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import { generateRsaKeyPairPem } from '../lib/crypto-rs256.mjs';
 import {
   buildAdminGrantSql,
-  explainError,
   fetchWithTimeout,
   rememberError,
 } from '../lib/errors.mjs';
 
-const GUIDE_PROGRESS_STORAGE_KEY = 'myclinic_authority_guide_steps_v1';
-
-const TROUBLESHOOTING_ITEMS = [
+const COMMON_FIXES = [
   {
-    symptom: '"Access restricted" after signing in',
-    cause: 'Account exists in Supabase Auth, but raw_app_meta_data lacks {"role":"admin"}.',
-    fix: 'Run the 3-line Admin Role SQL from Step 1 in Supabase Dashboard → SQL Editor, then click "Check again".',
+    problem: '"Admin role required" after signing in',
+    fix: 'Paste the Admin SQL from Side 1 → Step 1 into Authority Supabase SQL Editor, click Run, then click "Check again".',
   },
   {
-    symptom: 'PGRST204 / relation "admin_license_view" does not exist',
-    cause: 'supabase/schema.sql has not been applied to your Authority Supabase project yet.',
-    fix: 'Paste the entire supabase/schema.sql file into Supabase SQL Editor and click Run (safe and idempotent).',
+    problem: 'PGRST204 / admin_license_view does not exist',
+    fix: 'Paste supabase/schema.sql into Authority Supabase SQL Editor and click Run.',
   },
   {
-    symptom: 'HTTP 403 MAX_MACHINES_EXCEEDED (code 53400)',
-    cause: 'All allowed hardware/web seats (max_machines) for that clinic key are already bound.',
-    fix: 'Open Licenses (#/dashboard) → click Inspect on the clinic → release an old node or raise Max Nodes.',
+    problem: 'myClinic says "not-configured" on Check licence',
+    fix: 'In the Clinic Supabase → Edge Functions → Secrets, make sure AUTHORITY_VERIFY_URL, LICENSE_KEY, and LICENSE_PUBLIC_KEY are saved.',
   },
   {
-    symptom: 'HTTP 402 Payment Required / SUBSCRIPTION_INACTIVE / KEY_KILLED',
-    cause: 'Subscription expired or the operator toggled the remote Kill-Switch.',
-    fix: 'Open Licenses (#/dashboard), click Enable if killed, or Inspect → extend Expiration Date and Save Term.',
-  },
-  {
-    symptom: 'Edge Function 500 / Failed to fetch on /functions/v1/verify-license',
-    cause: 'verify-license is not deployed yet, or LICENSE_PRIVATE_KEY secret was not set.',
-    fix: 'Run Step 2 commands: npx supabase secrets set LICENSE_PRIVATE_KEY="..." and npx supabase functions deploy verify-license --no-verify-jwt.',
-  },
-  {
-    symptom: 'ORIGIN_MISMATCH or FINGERPRINT_MISMATCH in myClinic',
-    cause: 'Token was minted for a different web:<origin> URL or hardware machine_fingerprint.',
-    fix: 'Ensure Clinic Origin matches the exact https://<domain> hosting myClinic (no trailing slash), then re-sync.',
+    problem: 'myClinic says "Hardware seat limit reached" or "expired"',
+    fix: 'Open Licenses (#/dashboard) here, click Inspect on that clinic, and release an old node or extend the expiry date.',
   },
 ];
-
-function loadSavedSteps() {
-  try {
-    const raw = globalThis.localStorage?.getItem(GUIDE_PROGRESS_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
 
 function extractProjectRef(url = '') {
   const match = String(url).match(/^https:\/\/([a-z0-9-]+)\.supabase\.co/i);
@@ -101,51 +66,33 @@ export function GuidePage({
     return 'https://YOUR_AUTHORITY_PROJECT_REF.supabase.co/functions/v1/verify-license';
   }, [backend]);
 
-  const [completed, setCompleted] = useState(loadSavedSteps);
   const [adminEmail, setAdminEmail] = useState(
     session?.user?.email || 'ops@yourdomain.com',
   );
   const [copiedId, setCopiedId] = useState(null);
   const [copyError, setCopyError] = useState('');
 
-  // Step 1 live check state
-  const [dbCheckBusy, setDbCheckBusy] = useState(false);
-  const [dbCheckResult, setDbCheckResult] = useState(null);
-  const [dbCheckError, setDbCheckError] = useState(null);
+  const [dbBusy, setDbBusy] = useState(false);
+  const [dbOk, setDbOk] = useState(null);
+  const [dbError, setDbError] = useState(null);
 
-  // Step 2 in-browser keygen & deploy mode state
-  const [step2Mode, setStep2Mode] = useState('dashboard'); // 'dashboard' | 'script' | 'cli'
   const [keyBusy, setKeyBusy] = useState(false);
   const [generatedKeys, setGeneratedKeys] = useState(null);
   const [keyError, setKeyError] = useState(null);
 
-  // Step 5 Edge probe state
   const [edgeBusy, setEdgeBusy] = useState(false);
-  const [edgeResult, setEdgeResult] = useState(null);
+  const [edgeOk, setEdgeOk] = useState(null);
   const [edgeError, setEdgeError] = useState(null);
 
-  useEffect(() => {
-    try {
-      globalThis.localStorage?.setItem(
-        GUIDE_PROGRESS_STORAGE_KEY,
-        JSON.stringify(completed),
-      );
-    } catch {
-      // Ignore storage quota errors in private browsing
-    }
-  }, [completed]);
+  const adminGrantSql = useMemo(
+    () => buildAdminGrantSql(adminEmail),
+    [adminEmail],
+  );
 
-  const toggleStep = (stepKey) => {
-    setCompleted((prev) => ({ ...prev, [stepKey]: !prev[stepKey] }));
-  };
-
-  const markDone = (stepKey) => {
-    setCompleted((prev) => ({ ...prev, [stepKey]: true }));
-  };
-
-  const completedCount = ['step1', 'step2', 'step3', 'step4', 'step5'].filter(
-    (k) => Boolean(completed[k]),
-  ).length;
+  const dashboardFunctionsUrl =
+    projectRef !== 'YOUR_AUTHORITY_PROJECT_REF'
+      ? `https://supabase.com/dashboard/project/${projectRef}/functions`
+      : 'https://supabase.com/dashboard';
 
   async function handleCopy(id, text) {
     setCopyError('');
@@ -158,1019 +105,497 @@ export function GuidePage({
     setTimeout(() => setCopiedId(null), 1800);
   }
 
-  async function handleVerifyDatabaseStep() {
-    setDbCheckBusy(true);
-    setDbCheckError(null);
-    setDbCheckResult(null);
-    const started = performance.now();
-
+  async function handleCheckDatabase() {
+    setDbBusy(true);
+    setDbError(null);
+    setDbOk(null);
     try {
       if (!backend?.configured || !supabase) {
-        throw new Error(
-          'Authority Supabase connection is not configured yet. Open Settings (#/setup) to save VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
-        );
+        throw new Error('Configure Authority Supabase URL & Anon Key in Settings first.');
       }
       const { count, error } = await supabase
         .from('admin_license_view')
         .select('license_id', { count: 'exact', head: true });
       if (error) throw error;
-
-      const latencyMs = Math.round(performance.now() - started);
-      setDbCheckResult({
-        latencyMs,
-        count: count ?? 0,
-      });
-      markDone('step1');
-      if ((count ?? 0) > 0) {
-        markDone('step3');
-      }
+      setDbOk(`Database & Admin role ready (${count ?? 0} licenses).`);
     } catch (err) {
-      const explained = rememberError(err, 'Step 1 database check');
-      setDbCheckError(explained);
+      setDbError(rememberError(err, 'Check Authority database'));
     } finally {
-      setDbCheckBusy(false);
+      setDbBusy(false);
     }
   }
 
-  async function handleGenerateStepKeys() {
+  async function handleGenerateKeys() {
     setKeyBusy(true);
     setKeyError(null);
     try {
       const pair = await generateRsaKeyPairPem();
       setGeneratedKeys(pair);
-      markDone('step2');
     } catch (err) {
-      const explained = rememberError(err, 'RS256 keypair generation');
-      setKeyError(explained);
+      setKeyError(rememberError(err, 'Generate RS256 keys'));
     } finally {
       setKeyBusy(false);
     }
   }
 
-  async function handleProbeEdgeFunction() {
+  async function handlePingSigner() {
     setEdgeBusy(true);
     setEdgeError(null);
-    setEdgeResult(null);
-    const started = performance.now();
-
+    setEdgeOk(null);
     try {
-      if (!backend?.configured || verifyEndpoint.includes('YOUR_AUTHORITY_PROJECT_REF')) {
-        throw new Error(
-          'Configure your Authority Supabase URL first so the verify-license endpoint can be probed.',
-        );
+      if (verifyEndpoint.includes('YOUR_AUTHORITY_PROJECT_REF')) {
+        throw new Error('Save your Authority Supabase URL in Settings first.');
       }
-      const response = await fetchWithTimeout(
-        verifyEndpoint,
-        {
-          method: 'OPTIONS',
-        },
-        10000,
-      );
-      const latencyMs = Math.round(performance.now() - started);
-      if (response.status === 404) {
+      const res = await fetchWithTimeout(verifyEndpoint, { method: 'OPTIONS' }, 10000);
+      if (res.status === 404) {
         const notFound = new Error(
-          'verify-license returned HTTP 404 Not Found — deploy the Edge Function with npx supabase functions deploy verify-license --no-verify-jwt.',
+          'verify-license is not deployed yet (HTTP 404). Complete Step 2 below first.',
         );
         notFound.status = 502;
         throw notFound;
       }
-      setEdgeResult({
-        status: response.status,
-        latencyMs,
-      });
-      markDone('step5');
+      setEdgeOk(`verify-license is online (HTTP ${res.status}).`);
     } catch (err) {
-      const explained = rememberError(err, 'Step 5 Edge Function check');
-      setEdgeError(explained);
+      setEdgeError(rememberError(err, 'Test verify-license'));
     } finally {
       setEdgeBusy(false);
     }
   }
 
-  const adminGrantSql = useMemo(
-    () => buildAdminGrantSql(adminEmail),
-    [adminEmail],
-  );
-
-  const edgeDeployCommands = useMemo(() => {
-    const privPlaceholder = generatedKeys?.privateKeyEnv || '<PASTE_LICENSE_PRIVATE_KEY>';
-    return [
-      'npx supabase login',
-      `npx supabase link --project-ref ${projectRef}`,
-      `npx supabase secrets set LICENSE_PRIVATE_KEY="${privPlaceholder}"`,
-      'npx supabase functions deploy verify-license --no-verify-jwt',
-    ].join('\n');
-  }, [generatedKeys, projectRef]);
-
-  const oneLineDeployScript = useMemo(
-    () =>
-      projectRef === 'YOUR_AUTHORITY_PROJECT_REF'
-        ? 'npx supabase login\nnpm run deploy:signer -- --project-ref YOUR_AUTHORITY_PROJECT_REF'
-        : `npx supabase login\nnpm run deploy:signer -- --project-ref ${projectRef}`,
-    [projectRef],
-  );
-
-  const dashboardFunctionsUrl =
-    projectRef !== 'YOUR_AUTHORITY_PROJECT_REF'
-      ? `https://supabase.com/dashboard/project/${projectRef}/functions`
-      : 'https://supabase.com/dashboard';
-
   return (
     <div className="space-y-6">
-      {/* Header & Progress */}
-      <section className="console-panel rounded-2xl p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-400">
-              <BookOpen className="h-3.5 w-3.5" />
-              Interactive Step-by-Step Guide
-            </div>
-            <h2 className="text-lg font-semibold tracking-tight">
-              Set up myClinicLicenseAuthority &amp; connect myClinic
-            </h2>
-            <p
-              style={{ color: 'var(--text-secondary)' }}
-              className="max-w-3xl text-xs leading-relaxed"
-            >
-              Follow these 5 steps in order to initialize your Authority Supabase project,
-              deploy asymmetric RS256 token signing, issue a clinic license key, and connect{' '}
-              <a
-                href="https://github.com/rajeshlande/myClinic"
-                target="_blank"
-                rel="noreferrer"
-                className="font-semibold text-emerald-400 underline underline-offset-2"
-              >
-                rajeshlande/myClinic
-              </a>
-              . Click any step circle to track your progress.
-            </p>
-          </div>
-
-          <div
-            style={{
-              backgroundColor: 'var(--bg-well)',
-              border: '1px solid var(--border-subtle)',
-            }}
-            className="min-w-44 rounded-xl px-4 py-3 text-right"
+      {/* Overview Banner */}
+      <section className="console-panel rounded-2xl p-5">
+        <h2 className="text-base font-semibold">
+          Simple Setup Guide — Two Sides, 3 Steps Each
+        </h2>
+        <p style={{ color: 'var(--text-secondary)' }} className="mt-1 text-xs leading-relaxed">
+          You use <strong>2 separate Supabase projects</strong>: one for{' '}
+          <a
+            href="https://github.com/rajeshlande/myClinicLicenseAuthority"
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold text-emerald-400 underline underline-offset-2"
           >
-            <p
-              style={{ color: 'var(--text-muted)' }}
-              className="text-[11px] font-medium"
-            >
-              Checklist Progress
-            </p>
-            <p className="mt-0.5 font-mono text-lg font-bold text-emerald-400">
-              {completedCount} / 5 completed
-            </p>
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-              <div
-                style={{ width: `${(completedCount / 5) * 100}%` }}
-                className="h-full rounded-full bg-emerald-400 transition-all"
-              />
-            </div>
-          </div>
-        </div>
+            myClinicLicenseAuthority
+          </a>{' '}
+          (your vendor console, set up <strong>once</strong>) and one for each{' '}
+          <a
+            href="https://github.com/rajeshlande/myClinic"
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold text-emerald-400 underline underline-offset-2"
+          >
+            myClinic
+          </a>{' '}
+          app (set up when onboarding a clinic). Everything below can be done in the browser — no terminal needed.
+        </p>
 
         {copyError ? (
-          <div className="mt-4">
+          <div className="mt-3">
             <ErrorAlert
               error={copyError}
-              context="Clipboard warning"
+              context="Copy warning"
               onDismiss={() => setCopyError('')}
             />
           </div>
         ) : null}
       </section>
 
-      {/* STEP 1 */}
-      <section className="console-panel rounded-2xl p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <button
-              type="button"
-              onClick={() => toggleStep('step1')}
-              aria-label="Toggle Step 1 complete"
-              className="mt-0.5 text-emerald-400 transition hover:scale-105"
-            >
-              {completed.step1 ? (
-                <CheckCircle2 className="h-5 w-5" />
-              ) : (
-                <Circle style={{ color: 'var(--text-muted)' }} className="h-5 w-5" />
-              )}
-            </button>
-            <div>
-              <span className="font-mono text-[11px] font-semibold text-emerald-400">
-                STEP 1 OF 5
+      {/* SIDE-BY-SIDE: PART 1 (Authority) & PART 2 (myClinic) */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {/* ==================== SIDE 1: myClinicLicenseAuthority ==================== */}
+        <section className="console-panel flex flex-col justify-between space-y-5 rounded-2xl p-6">
+          <div className="space-y-5">
+            <div className="border-b border-slate-800/80 pb-4">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-emerald-400">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                SIDE 1 · DO ONCE
               </span>
-              <h3 className="text-sm font-semibold">
-                Apply Database Schema &amp; Grant Operator Admin Role
+              <h3 className="mt-2 text-base font-semibold">
+                myClinicLicenseAuthority Side (Your Vendor Project)
               </h3>
-              <p
-                style={{ color: 'var(--text-secondary)' }}
-                className="mt-1 text-xs leading-relaxed"
-              >
-                1) Open your Authority Supabase project → <strong>SQL Editor</strong>, paste{' '}
-                <code className="font-mono text-emerald-300">supabase/schema.sql</code>, and click{' '}
-                <strong>Run</strong>. 2) Create your user in{' '}
-                <strong>Authentication → Users</strong>, then run the SQL below to grant{' '}
-                <code className="font-mono text-emerald-300">app_metadata.role = &quot;admin&quot;</code>.
+              <p style={{ color: 'var(--text-muted)' }} className="mt-0.5 text-xs">
+                Done on your <strong>Authority Supabase</strong> project &amp; GitHub repo.
               </p>
             </div>
-          </div>
 
-          <button
-            type="button"
-            disabled={dbCheckBusy}
-            onClick={handleVerifyDatabaseStep}
-            className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold disabled:opacity-50"
-          >
-            <Database className="h-3.5 w-3.5" />
-            {dbCheckBusy ? 'Checking...' : 'Verify Database & Admin'}
-          </button>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div>
-            <label
-              htmlFor="guide-admin-email"
-              style={{ color: 'var(--text-secondary)' }}
-              className="block text-xs font-medium"
+            {/* Authority Step 1 */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-well)',
+                border: '1px solid var(--border-subtle)',
+              }}
+              className="space-y-3 rounded-xl p-4 text-xs"
             >
-              Operator Email
-            </label>
-            <input
-              id="guide-admin-email"
-              type="email"
-              value={adminEmail}
-              onChange={(e) => setAdminEmail(e.target.value)}
-              placeholder="ops@yourdomain.com"
-              className="console-input mt-1.5 w-full rounded-lg px-3 py-2 font-mono text-xs"
-            />
-          </div>
-
-          <div className="console-code overflow-hidden rounded-xl lg:col-span-2">
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-              <span className="font-mono text-[11px] text-slate-300">
-                Supabase SQL Editor — Grant Admin Standing
-              </span>
-              <button
-                type="button"
-                onClick={() => handleCopy('admin-sql', adminGrantSql)}
-                className="inline-flex items-center gap-1 rounded bg-slate-800 px-2.5 py-1 font-mono text-[11px] text-slate-200 hover:bg-slate-700"
-              >
-                {copiedId === 'admin-sql' ? (
-                  <>
-                    <Check className="h-3 w-3 text-emerald-400" /> Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3 w-3" /> Copy SQL
-                  </>
-                )}
-              </button>
-            </div>
-            <pre className="overflow-x-auto p-3.5 font-mono text-[11px] text-emerald-200">
-              {adminGrantSql}
-            </pre>
-          </div>
-        </div>
-
-        {dbCheckResult ? (
-          <div
-            role="status"
-            style={{
-              backgroundColor: 'var(--accent-soft)',
-              border: '1px solid var(--accent-border)',
-              color: 'var(--accent-primary)',
-            }}
-            className="mt-4 flex items-center gap-2 rounded-xl p-3 text-xs font-medium"
-          >
-            <CheckCircle2 className="h-4 w-4 shrink-0" />
-            <span>
-              Database schema &amp; admin RLS verified ({dbCheckResult.latencyMs} ms) —{' '}
-              {dbCheckResult.count} license(s) currently stored.
-            </span>
-          </div>
-        ) : null}
-
-        {dbCheckError ? (
-          <div className="mt-4">
-            <ErrorAlert
-              error={dbCheckError}
-              context="Database verification failed"
-              onRetry={handleVerifyDatabaseStep}
-            />
-          </div>
-        ) : null}
-      </section>
-
-      {/* STEP 2 */}
-      <section className="console-panel rounded-2xl p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <button
-              type="button"
-              onClick={() => toggleStep('step2')}
-              aria-label="Toggle Step 2 complete"
-              className="mt-0.5 text-emerald-400 transition hover:scale-105"
-            >
-              {completed.step2 ? (
-                <CheckCircle2 className="h-5 w-5" />
-              ) : (
-                <Circle style={{ color: 'var(--text-muted)' }} className="h-5 w-5" />
-              )}
-            </button>
-            <div>
-              <span className="font-mono text-[11px] font-semibold text-emerald-400">
-                STEP 2 OF 5
-              </span>
-              <h3 className="text-sm font-semibold">
-                Generate RS256 Keypair &amp; Deploy <code className="font-mono">verify-license</code>
-              </h3>
-              <p
-                style={{ color: 'var(--text-secondary)' }}
-                className="mt-1 text-xs leading-relaxed"
-              >
-                Click <strong>1. Generate RS256 Keypair</strong> below, then deploy{' '}
-                <code className="font-mono">verify-license</code> either{' '}
-                <strong>directly in the Supabase Dashboard (no terminal needed)</strong>, via our
-                one-command script, or with Supabase CLI.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            disabled={keyBusy}
-            onClick={handleGenerateStepKeys}
-            className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold disabled:opacity-50"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            {keyBusy ? 'Generating...' : '1. Generate RS256 Keypair'}
-          </button>
-        </div>
-
-        {/* Deployment Method Tabs */}
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-          <div
-            style={{
-              backgroundColor: 'var(--bg-well)',
-              border: '1px solid var(--border-subtle)',
-            }}
-            className="inline-flex flex-wrap rounded-xl p-1"
-          >
-            {[
-              {
-                id: 'dashboard',
-                label: 'Option A · Supabase Dashboard Script (No Terminal)',
-                icon: Globe,
-              },
-              {
-                id: 'script',
-                label: 'Option B · Automated Script (npm run deploy:signer)',
-                icon: FileCode2,
-              },
-              {
-                id: 'cli',
-                label: 'Option C · Manual CLI (Terminal)',
-                icon: Terminal,
-              },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const active = step2Mode === tab.id;
-              return (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold">
+                  1. Run <code className="font-mono text-emerald-400">supabase/schema.sql</code> &amp; make yourself Admin
+                </p>
                 <button
-                  key={tab.id}
                   type="button"
-                  onClick={() => setStep2Mode(tab.id)}
-                  style={
-                    active
-                      ? {
-                          backgroundColor: 'var(--accent-soft)',
-                          border: '1px solid var(--accent-border)',
-                          color: 'var(--text-primary)',
-                        }
-                      : {
-                          color: 'var(--text-secondary)',
-                          border: '1px solid transparent',
-                        }
-                  }
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition"
+                  disabled={dbBusy}
+                  onClick={handleCheckDatabase}
+                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium"
                 >
-                  <Icon className="h-3.5 w-3.5 text-emerald-400" />
-                  {tab.label}
+                  <Database className="h-3 w-3 text-emerald-400" />
+                  {dbBusy ? 'Checking...' : 'Test Step 1'}
                 </button>
-              );
-            })}
-          </div>
-
-          {step2Mode === 'dashboard' ? (
-            <a
-              href={dashboardFunctionsUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
-            >
-              Open Supabase Edge Functions
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          ) : null}
-        </div>
-
-        {keyError ? (
-          <div className="mt-4">
-            <ErrorAlert error={keyError} context="Keypair generation failed" />
-          </div>
-        ) : null}
-
-        {step2Mode === 'dashboard' ? (
-          <div className="mt-4 space-y-4">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-well)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-                className="space-y-2 rounded-xl p-3.5 text-xs"
+              </div>
+              <ol
+                style={{ color: 'var(--text-secondary)' }}
+                className="list-inside list-decimal space-y-1 leading-relaxed"
               >
-                <p className="font-semibold text-emerald-400">
-                  2a. Add Secret in Supabase Dashboard
-                </p>
-                <p style={{ color: 'var(--text-secondary)' }} className="leading-relaxed">
-                  Open <strong>Edge Functions → Secrets</strong>, create secret{' '}
-                  <code className="font-mono">LICENSE_PRIVATE_KEY</code>, and paste the private key:
-                </p>
+                <li>
+                  In Authority Supabase → <strong>SQL Editor</strong>, paste{' '}
+                  <code className="font-mono">supabase/schema.sql</code> and click <strong>Run</strong>.
+                </li>
+                <li>
+                  In <strong>Authentication → Users</strong>, add your email &amp; password (turn OFF public sign-ups under Providers → Email).
+                </li>
+                <li>
+                  Enter your email below, copy the SQL, and click <strong>Run</strong> in SQL Editor:
+                </li>
+              </ol>
+
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="email"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  placeholder="ops@yourdomain.com"
+                  className="console-input min-w-48 flex-1 rounded-lg px-3 py-1.5 font-mono text-xs"
+                />
                 <button
                   type="button"
-                  disabled={!generatedKeys}
-                  onClick={() =>
-                    handleCopy('dash-priv-key', generatedKeys?.privateKeyEnv || '')
-                  }
-                  className="console-btn-secondary inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-[11px] font-semibold disabled:opacity-40"
+                  onClick={() => handleCopy('admin-sql', adminGrantSql)}
+                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-xs font-medium"
                 >
-                  {copiedId === 'dash-priv-key' ? (
+                  {copiedId === 'admin-sql' ? (
                     <>
-                      <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied LICENSE_PRIVATE_KEY
+                      <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied SQL
                     </>
                   ) : (
                     <>
-                      <Copy className="h-3.5 w-3.5" />
-                      {generatedKeys
-                        ? 'Copy LICENSE_PRIVATE_KEY'
-                        : 'Click "1. Generate RS256 Keypair" first'}
+                      <Copy className="h-3.5 w-3.5" /> Copy Admin SQL
                     </>
                   )}
                 </button>
               </div>
 
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-well)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-                className="space-y-2 rounded-xl p-3.5 text-xs"
-              >
-                <p className="font-semibold text-emerald-400">
-                  2b. Paste Function Script in Browser Editor
+              {dbOk ? (
+                <p className="flex items-center gap-1.5 font-medium text-emerald-400">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> {dbOk}
                 </p>
-                <p style={{ color: 'var(--text-secondary)' }} className="leading-relaxed">
+              ) : null}
+              {dbError ? <ErrorAlert error={dbError} onRetry={handleCheckDatabase} /> : null}
+            </div>
+
+            {/* Authority Step 2 */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-well)',
+                border: '1px solid var(--border-subtle)',
+              }}
+              className="space-y-3 rounded-xl p-4 text-xs"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold">
+                  2. Generate Keys &amp; Paste <code className="font-mono text-emerald-400">verify-license</code> in Supabase
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={keyBusy}
+                    onClick={handleGenerateKeys}
+                    className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    {keyBusy ? 'Generating...' : 'Generate Keys'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={edgeBusy}
+                    onClick={handlePingSigner}
+                    className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px]"
+                  >
+                    <Activity className="h-3 w-3 text-emerald-400" />
+                    {edgeBusy ? '...' : 'Test Step 2'}
+                  </button>
+                </div>
+              </div>
+
+              <ol
+                style={{ color: 'var(--text-secondary)' }}
+                className="list-inside list-decimal space-y-1.5 leading-relaxed"
+              >
+                <li>
+                  Click <strong>Generate Keys</strong> above (creates your Private Key + Public Key).
+                </li>
+                <li>
+                  Open{' '}
+                  <a
+                    href={dashboardFunctionsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-emerald-400 underline"
+                  >
+                    Authority Supabase → Edge Functions <ExternalLink className="inline h-3 w-3" />
+                  </a>{' '}
+                  → <strong>Secrets</strong>, and add secret{' '}
+                  <code className="font-mono">LICENSE_PRIVATE_KEY</code>.
+                </li>
+                <li>
                   Click <strong>Deploy a new function → Via Editor</strong>, name it{' '}
                   <code className="font-mono">verify-license</code>, turn <strong>OFF</strong>{' '}
-                  <em>&quot;Verify JWT&quot;</em>, and paste this script:
-                </p>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleCopy('verify-license-ts', verifyLicenseScriptSource)
-                  }
-                  className="console-btn-primary inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-[11px] font-semibold"
-                >
-                  {copiedId === 'verify-license-ts' ? (
-                    <>
-                      <Check className="h-3.5 w-3.5" /> Copied verify-license Script!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" /> Copy verify-license Script (index.ts)
-                    </>
-                  )}
-                </button>
-              </div>
+                  <em>&quot;Verify JWT&quot;</em>, paste the script below, and click <strong>Deploy</strong>.
+                </li>
+              </ol>
 
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-well)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-                className="space-y-2 rounded-xl p-3.5 text-xs"
-              >
-                <p className="font-semibold text-emerald-400">
-                  2c. Save Public Key for myClinic
-                </p>
-                <p style={{ color: 'var(--text-secondary)' }} className="leading-relaxed">
-                  Keep this SPKI public key handy for Step 4 (<code className="font-mono">VITE_LICENSE_PUBLIC_KEY</code> &amp;{' '}
-                  <code className="font-mono">LICENSE_PUBLIC_KEY</code>):
-                </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <button
                   type="button"
                   disabled={!generatedKeys}
-                  onClick={() =>
-                    handleCopy('dash-pub-key', generatedKeys?.publicKeyEnv || '')
-                  }
-                  className="console-btn-secondary inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-[11px] font-semibold disabled:opacity-40"
+                  onClick={() => handleCopy('priv', generatedKeys?.privateKeyEnv || '')}
+                  className="console-btn-secondary inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 font-mono text-[11px] font-medium disabled:opacity-40"
                 >
-                  {copiedId === 'dash-pub-key' ? (
+                  {copiedId === 'priv' ? (
                     <>
-                      <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied Public Key
+                      <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied!
                     </>
                   ) : (
                     <>
-                      <Copy className="h-3.5 w-3.5" />
-                      {generatedKeys
-                        ? 'Copy LICENSE_PUBLIC_KEY'
-                        : 'Click "1. Generate RS256 Keypair" first'}
+                      <Copy className="h-3.5 w-3.5" /> 1. Private Key
                     </>
                   )}
                 </button>
-              </div>
-            </div>
 
-            <div className="console-code overflow-hidden rounded-xl">
-              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-                <span className="font-mono text-[11px] text-slate-300">
-                  Supabase Dashboard → Edge Functions → Via Editor → Function name: verify-license (JWT verification OFF)
-                </span>
                 <button
                   type="button"
-                  onClick={() =>
-                    handleCopy('verify-license-ts-preview', verifyLicenseScriptSource)
-                  }
-                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2.5 py-1 font-mono text-[11px] text-slate-200 hover:bg-slate-700"
+                  onClick={() => handleCopy('fn-script', verifyLicenseScriptSource)}
+                  className="console-btn-secondary inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 font-mono text-[11px] font-medium"
                 >
-                  {copiedId === 'verify-license-ts-preview' ? (
+                  {copiedId === 'fn-script' ? (
                     <>
-                      <Check className="h-3 w-3 text-emerald-400" /> Copied
+                      <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied!
                     </>
                   ) : (
                     <>
-                      <Copy className="h-3 w-3" /> Copy Full Script
+                      <Copy className="h-3.5 w-3.5" /> 2. Function Script
                     </>
                   )}
                 </button>
-              </div>
-              <pre className="max-h-48 overflow-auto p-3.5 font-mono text-[11px] text-emerald-200/90">
-                {verifyLicenseScriptSource}
-              </pre>
-            </div>
-          </div>
-        ) : step2Mode === 'script' ? (
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="console-code overflow-hidden rounded-xl">
-              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-                <span className="font-mono text-[11px] text-slate-300">
-                  Automated One-Command Deployer (scripts/deploy-signer.mjs)
-                </span>
+
                 <button
                   type="button"
-                  onClick={() => handleCopy('one-line-script', oneLineDeployScript)}
-                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2.5 py-1 font-mono text-[11px] text-slate-200 hover:bg-slate-700"
+                  disabled={!generatedKeys}
+                  onClick={() => handleCopy('pub', generatedKeys?.publicKeyEnv || '')}
+                  className="console-btn-secondary inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 font-mono text-[11px] font-medium disabled:opacity-40"
                 >
-                  {copiedId === 'one-line-script' ? (
+                  {copiedId === 'pub' ? (
                     <>
-                      <Check className="h-3 w-3 text-emerald-400" /> Copied
+                      <Check className="h-3.5 w-3.5 text-emerald-400" /> Copied!
                     </>
                   ) : (
                     <>
-                      <Copy className="h-3 w-3" /> Copy Script Command
+                      <Copy className="h-3.5 w-3.5" /> 3. Public Key
                     </>
                   )}
                 </button>
               </div>
-              <pre className="max-h-44 overflow-auto p-3.5 font-mono text-[11px] text-emerald-200">
-                {oneLineDeployScript}
-              </pre>
+
+              {keyError ? <ErrorAlert error={keyError} /> : null}
+              {edgeOk ? (
+                <p className="flex items-center gap-1.5 font-medium text-emerald-400">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> {edgeOk}
+                </p>
+              ) : null}
+              {edgeError ? <ErrorAlert error={edgeError} onRetry={handlePingSigner} /> : null}
             </div>
 
+            {/* Authority Step 3 */}
             <div
               style={{
                 backgroundColor: 'var(--bg-well)',
                 border: '1px solid var(--border-subtle)',
-                color: 'var(--text-secondary)',
               }}
-              className="space-y-2 rounded-xl p-4 text-xs leading-relaxed"
+              className="space-y-2.5 rounded-xl p-4 text-xs"
             >
-              <p style={{ color: 'var(--text-primary)' }} className="font-semibold">
-                What <code className="font-mono">npm run deploy:signer</code> automates:
-              </p>
-              <p>
-                1) Auto-detects your project ref from <code className="font-mono">.env.local</code> (or{' '}
-                <code className="font-mono">--project-ref</code>), 2) generates a 2048-bit RS256
-                keypair into gitignored <code className="font-mono">keys/</code> if none exists yet,
-                3) uploads <code className="font-mono">LICENSE_PRIVATE_KEY</code> to Supabase Secrets,
-                and 4) deploys <code className="font-mono">verify-license --no-verify-jwt</code> and
-                prints your <code className="font-mono">VITE_LICENSE_PUBLIC_KEY</code>.
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold">
+                  3. Issue a 32-Character <code className="font-mono text-emerald-400">LICENSE_KEY</code>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onQuickIssueLicense?.()}
+                  className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Issue License
+                </button>
+              </div>
+              <p style={{ color: 'var(--text-secondary)' }} className="leading-relaxed">
+                Click <strong>Issue License</strong>, pick a plan (<code className="font-mono">solo</code>,{' '}
+                <code className="font-mono">growth</code>, or <code className="font-mono">chain</code>),
+                and copy the 32-character <code className="font-mono">LICENSE_KEY</code> for Side 2.
               </p>
             </div>
           </div>
-        ) : (
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="console-code overflow-hidden rounded-xl">
-              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-                <span className="font-mono text-[11px] text-slate-300">
-                  2. Manual Supabase CLI Commands (Terminal)
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleCopy('edge-deploy', edgeDeployCommands)}
-                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2.5 py-1 font-mono text-[11px] text-slate-200 hover:bg-slate-700"
-                >
-                  {copiedId === 'edge-deploy' ? (
-                    <>
-                      <Check className="h-3 w-3 text-emerald-400" /> Copied
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3 w-3" /> Copy Commands
-                    </>
-                  )}
-                </button>
-              </div>
-              <pre className="max-h-44 overflow-auto p-3.5 font-mono text-[11px] text-slate-200">
-                {edgeDeployCommands}
-              </pre>
-            </div>
+        </section>
 
-            <div className="console-code overflow-hidden rounded-xl">
-              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-                <span className="font-mono text-[11px] text-emerald-300">
-                  3. Public Key for myClinic (VITE_LICENSE_PUBLIC_KEY)
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleCopy(
-                      'pub-key',
-                      generatedKeys?.publicKeyEnv ||
-                        'Generate a keypair first (or run `npm run keygen`)',
-                    )
-                  }
-                  disabled={!generatedKeys}
-                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2.5 py-1 font-mono text-[11px] text-slate-200 hover:bg-slate-700 disabled:opacity-40"
-                >
-                  {copiedId === 'pub-key' ? (
-                    <>
-                      <Check className="h-3 w-3 text-emerald-400" /> Copied
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3 w-3" /> Copy Public Key
-                    </>
-                  )}
-                </button>
-              </div>
-              <pre className="max-h-44 overflow-auto p-3.5 font-mono text-[11px] text-emerald-200/90">
-                {generatedKeys
-                  ? generatedKeys.publicKeyEnv
-                  : 'Click "1. Generate RS256 Keypair" above to generate a fresh SPKI public key in browser memory.'}
-              </pre>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* STEP 3 */}
-      <section className="console-panel rounded-2xl p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <button
-              type="button"
-              onClick={() => toggleStep('step3')}
-              aria-label="Toggle Step 3 complete"
-              className="mt-0.5 text-emerald-400 transition hover:scale-105"
-            >
-              {completed.step3 ? (
-                <CheckCircle2 className="h-5 w-5" />
-              ) : (
-                <Circle style={{ color: 'var(--text-muted)' }} className="h-5 w-5" />
-              )}
-            </button>
-            <div>
-              <span className="font-mono text-[11px] font-semibold text-emerald-400">
-                STEP 3 OF 5
+        {/* ==================== SIDE 2: myClinic ==================== */}
+        <section className="console-panel flex flex-col justify-between space-y-5 rounded-2xl p-6">
+          <div className="space-y-5">
+            <div className="border-b border-slate-800/80 pb-4">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-sky-400">
+                <KeyRound className="h-3.5 w-3.5" />
+                SIDE 2 · PER CLINIC
               </span>
-              <h3 className="text-sm font-semibold">
-                Issue a Clinic Subscription &amp; 32-Character License Key
+              <h3 className="mt-2 text-base font-semibold">
+                myClinic Side (Clinic App &amp; Clinic Supabase)
               </h3>
-              <p
-                style={{ color: 'var(--text-secondary)' }}
-                className="mt-1 text-xs leading-relaxed"
-              >
-                Record manual UPI / NEFT / PO payment details, pick the clinic tier and
-                allowed node count (<code className="font-mono">max_machines</code>), and mint a
-                cryptographic 32-character hex key.
+              <p style={{ color: 'var(--text-muted)' }} className="mt-0.5 text-xs">
+                Done on the clinic&apos;s{' '}
+                <a
+                  href="https://github.com/rajeshlande/myClinic"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sky-400 underline"
+                >
+                  myClinic
+                </a>{' '}
+                repo &amp; the clinic&apos;s own Supabase project.
               </p>
             </div>
-          </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              markDone('step3');
-              onQuickIssueLicense?.();
-            }}
-            className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Issue License Now
-          </button>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {[
-            {
-              tier: 'Solo',
-              code: 'solo',
-              seats: '1 Doctor · 1 Front Desk · 1 Branch',
-            },
-            {
-              tier: 'Growth',
-              code: 'growth',
-              seats: '5 Doctors · 3 Front Desk · 1 Branch',
-            },
-            {
-              tier: 'Multi-Clinic Chain',
-              code: 'chain',
-              seats: 'Unlimited Doctors, Desks & Branches',
-            },
-          ].map((plan) => (
+            {/* myClinic Step 1 */}
             <div
-              key={plan.code}
               style={{
                 backgroundColor: 'var(--bg-well)',
                 border: '1px solid var(--border-subtle)',
               }}
-              className="rounded-xl p-3.5 text-xs"
+              className="space-y-2.5 rounded-xl p-4 text-xs"
             >
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">{plan.tier}</span>
-                <code className="rounded bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-400">
-                  {plan.code}
-                </code>
+              <p className="font-semibold">
+                1. Add <code className="font-mono text-sky-400">VITE_LICENSE_PUBLIC_KEY</code> to myClinic
+              </p>
+              <p style={{ color: 'var(--text-secondary)' }} className="leading-relaxed">
+                In the clinic&apos;s GitHub repo (<strong>Settings → Secrets and variables → Actions → Variables</strong>)
+                or in <code className="font-mono">myClinic/.env.local</code>, add:
+              </p>
+              <div className="console-code rounded-lg px-3 py-2 font-mono text-[11px] text-emerald-300">
+                VITE_LICENSE_PUBLIC_KEY=&quot;{generatedKeys ? `${generatedKeys.publicKeyEnv.slice(0, 44)}...` : '<Public Key from Side 1 Step 2>'}&quot;
               </div>
-              <p style={{ color: 'var(--text-muted)' }} className="mt-1.5">
-                {plan.seats}
-              </p>
             </div>
-          ))}
-        </div>
-      </section>
 
-      {/* STEP 4 */}
-      <section className="console-panel rounded-2xl p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <button
-              type="button"
-              onClick={() => toggleStep('step4')}
-              aria-label="Toggle Step 4 complete"
-              className="mt-0.5 text-emerald-400 transition hover:scale-105"
-            >
-              {completed.step4 ? (
-                <CheckCircle2 className="h-5 w-5" />
-              ) : (
-                <Circle style={{ color: 'var(--text-muted)' }} className="h-5 w-5" />
-              )}
-            </button>
-            <div>
-              <span className="font-mono text-[11px] font-semibold text-emerald-400">
-                STEP 4 OF 5
-              </span>
-              <h3 className="text-sm font-semibold">
-                Connect <code className="font-mono">myClinic</code> (Cloud / GitHub Pages or Docker)
-              </h3>
-              <p
-                style={{ color: 'var(--text-secondary)' }}
-                className="mt-1 text-xs leading-relaxed"
-              >
-                Open the Deployment generator to export ready-to-paste secrets for{' '}
-                <code className="font-mono">myClinic</code>&apos;s{' '}
-                <code className="font-mono">sync-clinic-license</code> Edge Function or an
-                on-premises Docker Compose gateway.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              markDone('step4');
-              onNavigate?.('node-agent');
-            }}
-            className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold"
-          >
-            <Container className="h-3.5 w-3.5 text-emerald-400" />
-            Open Deployment Generator
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        <ol
-          style={{ color: 'var(--text-secondary)' }}
-          className="mt-4 grid grid-cols-1 gap-3 text-xs md:grid-cols-3"
-        >
-          <li
-            style={{
-              backgroundColor: 'var(--bg-well)',
-              border: '1px solid var(--border-subtle)',
-            }}
-            className="rounded-xl p-3.5"
-          >
-            <strong style={{ color: 'var(--text-primary)' }}>
-              4a. Set Public Key on myClinic
-            </strong>
-            <p className="mt-1">
-              Add <code className="font-mono">VITE_LICENSE_PUBLIC_KEY</code> in{' '}
-              <code className="font-mono">myClinic/.env.local</code> or GitHub Actions
-              Repository Variables.
-            </p>
-          </li>
-          <li
-            style={{
-              backgroundColor: 'var(--bg-well)',
-              border: '1px solid var(--border-subtle)',
-            }}
-            className="rounded-xl p-3.5"
-          >
-            <strong style={{ color: 'var(--text-primary)' }}>
-              4b. Set Clinic Supabase Secrets
-            </strong>
-            <p className="mt-1">
-              Set <code className="font-mono">AUTHORITY_VERIFY_URL</code>,{' '}
-              <code className="font-mono">LICENSE_KEY</code>,{' '}
-              <code className="font-mono">LICENSE_PUBLIC_KEY</code>, and{' '}
-              <code className="font-mono">MYCLINIC_ORIGINS</code> on the clinic&apos;s Supabase project.
-            </p>
-          </li>
-          <li
-            style={{
-              backgroundColor: 'var(--bg-well)',
-              border: '1px solid var(--border-subtle)',
-            }}
-            className="rounded-xl p-3.5"
-          >
-            <strong style={{ color: 'var(--text-primary)' }}>
-              4c. Sync in myClinic Subscription Tab
-            </strong>
-            <p className="mt-1">
-              Deploy <code className="font-mono">sync-clinic-license</code> and click{' '}
-              <strong>&quot;Check the licence now&quot;</strong> inside myClinic.
-            </p>
-          </li>
-        </ol>
-      </section>
-
-      {/* STEP 5 */}
-      <section className="console-panel rounded-2xl p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <button
-              type="button"
-              onClick={() => toggleStep('step5')}
-              aria-label="Toggle Step 5 complete"
-              className="mt-0.5 text-emerald-400 transition hover:scale-105"
-            >
-              {completed.step5 ? (
-                <CheckCircle2 className="h-5 w-5" />
-              ) : (
-                <Circle style={{ color: 'var(--text-muted)' }} className="h-5 w-5" />
-              )}
-            </button>
-            <div>
-              <span className="font-mono text-[11px] font-semibold text-emerald-400">
-                STEP 5 OF 5
-              </span>
-              <h3 className="text-sm font-semibold">
-                Test Live Heartbeat &amp; Offline RS256 Verification
-              </h3>
-              <p
-                style={{ color: 'var(--text-secondary)' }}
-                className="mt-1 text-xs leading-relaxed"
-              >
-                Ping <code className="font-mono">{verifyEndpoint}</code> below to confirm
-                HTTPS + CORS reachability, or open <strong>Key Tools</strong> to simulate a full
-                7-day capability JWT handshake.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={edgeBusy}
-              onClick={handleProbeEdgeFunction}
-              className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold disabled:opacity-50"
-            >
-              <Activity className="h-3.5 w-3.5" />
-              {edgeBusy ? 'Probing...' : 'Ping verify-license'}
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigate?.('simulator')}
-              className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium"
-            >
-              <FlaskConical className="h-3.5 w-3.5 text-emerald-400" />
-              Open Key Tools
-            </button>
-          </div>
-        </div>
-
-        {edgeResult ? (
-          <div
-            role="status"
-            style={{
-              backgroundColor: 'var(--accent-soft)',
-              border: '1px solid var(--accent-border)',
-              color: 'var(--accent-primary)',
-            }}
-            className="mt-4 flex items-center gap-2 rounded-xl p-3 text-xs font-medium"
-          >
-            <ShieldCheck className="h-4 w-4 shrink-0" />
-            <span>
-              verify-license endpoint is online and reachable (HTTP {edgeResult.status} in{' '}
-              {edgeResult.latencyMs} ms).
-            </span>
-          </div>
-        ) : null}
-
-        {edgeError ? (
-          <div className="mt-4">
-            <ErrorAlert
-              error={edgeError}
-              context="Edge Function reachability check"
-              onRetry={handleProbeEdgeFunction}
-            />
-          </div>
-        ) : null}
-      </section>
-
-      {/* Built-in Error & Troubleshooting Reference */}
-      <section className="console-panel rounded-2xl p-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
-            <span
+            {/* myClinic Step 2 */}
+            <div
               style={{
-                backgroundColor: 'var(--accent-soft)',
-                border: '1px solid var(--accent-border)',
+                backgroundColor: 'var(--bg-well)',
+                border: '1px solid var(--border-subtle)',
               }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg"
+              className="space-y-2.5 rounded-xl p-4 text-xs"
             >
-              <HelpCircle
-                style={{ color: 'var(--accent-primary)' }}
-                className="h-4 w-4"
-              />
-            </span>
-            <div>
-              <h3 className="text-sm font-semibold">
-                Troubleshooting &amp; Error Reference
-              </h3>
-              <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                Instant fixes for common setup, database, and clinic sync errors.
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold">
+                  2. Add 3 Secrets &amp; Deploy <code className="font-mono text-sky-400">sync-clinic-license</code>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onNavigate?.('node-agent')}
+                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium"
+                >
+                  <Container className="h-3 w-3 text-sky-400" />
+                  Pre-fill Values
+                </button>
+              </div>
+              <ol
+                style={{ color: 'var(--text-secondary)' }}
+                className="list-inside list-decimal space-y-1.5 leading-relaxed"
+              >
+                <li>
+                  Ensure <code className="font-mono">myClinic/supabase/schema.sql</code> (schema 18) has been run in the clinic&apos;s SQL Editor.
+                </li>
+                <li>
+                  In the <strong>Clinic&apos;s Supabase → Edge Functions → Secrets</strong>, add these 3 secrets:
+                </li>
+              </ol>
+
+              <div className="console-code space-y-1.5 rounded-lg p-3 font-mono text-[11px]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-slate-200">
+                    AUTHORITY_VERIFY_URL = <span className="text-emerald-300">{verifyEndpoint}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy('verify-url', verifyEndpoint)}
+                    className="shrink-0 rounded bg-slate-800 px-2 py-0.5 text-[10px] text-slate-200 hover:bg-slate-700"
+                  >
+                    {copiedId === 'verify-url' ? 'Copied' : 'Copy URL'}
+                  </button>
+                </div>
+                <div className="text-slate-200">
+                  LICENSE_KEY = <span className="text-amber-300">&lt;32-char key from Side 1 Step 3&gt;</span>
+                </div>
+                <div className="text-slate-200">
+                  LICENSE_PUBLIC_KEY = <span className="text-emerald-300">&lt;Public Key from Side 1 Step 2&gt;</span>
+                </div>
+              </div>
+
+              <p style={{ color: 'var(--text-secondary)' }} className="leading-relaxed">
+                3. Deploy <code className="font-mono">myClinic/supabase/functions/sync-clinic-license/index.ts</code> on the clinic&apos;s Supabase project (via Dashboard Editor named <code className="font-mono">sync-clinic-license</code> with <em>&quot;Verify JWT&quot;</em> OFF, or via CLI).
+              </p>
+            </div>
+
+            {/* myClinic Step 3 */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-well)',
+                border: '1px solid var(--border-subtle)',
+              }}
+              className="space-y-2 rounded-xl p-4 text-xs"
+            >
+              <p className="font-semibold">
+                3. Click &quot;Check the licence now&quot; in myClinic
+              </p>
+              <p style={{ color: 'var(--text-secondary)' }} className="leading-relaxed">
+                Sign in to <strong>myClinic</strong> as the clinic <strong>Owner</strong> → open{' '}
+                <strong>Subscription</strong> → click <strong>&quot;Check the licence now&quot;</strong>.
+                myClinic fetches, verifies, and enforces the 7-day RS256 license automatically!
               </p>
             </div>
           </div>
+        </section>
+      </div>
 
-          <a
-            href="https://github.com/rajeshlande/myClinicLicenseAuthority"
-            target="_blank"
-            rel="noreferrer"
-            className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
-          >
-            myClinicLicenseAuthority Repo
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-        </div>
+      {/* Calm Collapsible Troubleshooting */}
+      <details className="console-panel group rounded-2xl p-5">
+        <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold">
+          <span className="inline-flex items-center gap-2">
+            <HelpCircle className="h-4 w-4 text-emerald-400" />
+            Common Errors &amp; Quick Fixes (click to expand)
+          </span>
+          <span style={{ color: 'var(--text-muted)' }} className="font-mono text-[11px]">
+            4 quick answers
+          </span>
+        </summary>
 
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-          {TROUBLESHOOTING_ITEMS.map((item) => (
+          {COMMON_FIXES.map((item) => (
             <div
-              key={item.symptom}
+              key={item.problem}
               style={{
                 backgroundColor: 'var(--bg-well)',
                 border: '1px solid var(--border-subtle)',
               }}
-              className="space-y-1.5 rounded-xl p-4 text-xs"
+              className="space-y-1 rounded-xl p-3.5 text-xs"
             >
-              <p className="font-mono font-semibold text-emerald-400">
-                {item.symptom}
-              </p>
-              <p style={{ color: 'var(--text-muted)' }}>{item.cause}</p>
-              <p style={{ color: 'var(--text-primary)' }}>
-                <strong>Fix:</strong> {item.fix}
-              </p>
+              <p className="font-semibold text-emerald-400">{item.problem}</p>
+              <p style={{ color: 'var(--text-secondary)' }}>{item.fix}</p>
             </div>
           ))}
         </div>
-      </section>
+      </details>
     </div>
   );
 }

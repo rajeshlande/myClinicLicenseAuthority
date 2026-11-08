@@ -2,6 +2,11 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [1.5.2] - 2026-11-06
+
+### Changed
+- **Simplified 2-Side Setup Guide (`src/pages/GuidePage.jsx`, `README.md`):** Replaced the long 5-step multi-tab wall with a calm, side-by-side **Side 1 (`myClinicLicenseAuthority` — 3 steps, done once)** and **Side 2 (`myClinic` — 3 steps, done per clinic)** browser-only workflow with collapsible troubleshooting.
+
 ## [1.5.1] - 2026-11-06
 
 ### Added
