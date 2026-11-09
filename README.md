@@ -1,4 +1,4 @@
-# myClinicLicenseAuthority (`v1.6.0` · Schema v2)
+# myClinicLicenseAuthority (`v2.0.0` · Schema v2)
 
 Central subscription management & **Keyless Auto-Sync** server for [`myClinic`](https://github.com/rajeshlande/myClinic) — manage every clinic's plan, seats, expiry, and pause/kill-switch from one Central Supabase dashboard with **zero Edge Functions, zero RSA keys, and zero manual license keys required**.
 

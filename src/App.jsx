@@ -1,5 +1,4 @@
 import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import AppShell from './components/AppShell.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import {
@@ -14,136 +13,186 @@ import {
   resolveInitialTheme,
 } from './lib/theme.mjs';
 
-const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
 const EntitlementsPage = lazy(() => import('./pages/EntitlementsPage.jsx'));
-const ValidatorLabPage = lazy(() => import('./pages/ValidatorLabPage.jsx'));
+const GuidePage = lazy(() => import('./pages/GuidePage.jsx'));
+const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
 const NodeAgentPage = lazy(() => import('./pages/NodeAgentPage.jsx'));
 const SetupPage = lazy(() => import('./pages/SetupPage.jsx'));
-const GuidePage = lazy(() => import('./pages/GuidePage.jsx'));
+const ValidatorLabPage = lazy(() => import('./pages/ValidatorLabPage.jsx'));
 
-const VALID_ROUTES = ['dashboard', 'guide', 'node-agent', 'simulator', 'setup'];
+const ROUTE_META = {
+  dashboard: {
+    title: 'Clinics & Plans',
+    subtitle:
+      'Keyless Central Auto-Sync — manage clinic subscriptions by Owner Email, Website URL, or both.',
+  },
+  guide: {
+    title: 'Quickstart Guide',
+    subtitle:
+      '2-side setup for Central Supabase (Schema v2) and universal myClinic client auto-sync.',
+  },
+  'node-agent': {
+    title: 'Client SDK & Obfuscator',
+    subtitle:
+      'Universal myClinic integration snippets + scoped production Vite obfuscator.',
+  },
+  simulator: {
+    title: 'Sync & Security Lab',
+    subtitle:
+      'Live sync_clinic_subscription RPC tester and Central database firewall verification.',
+  },
+  setup: {
+    title: 'Settings & Health',
+    subtitle:
+      'Central Supabase endpoint, 3-point health check, operator password, and sanitized diagnostics.',
+  },
+};
 
-function readCurrentRoute() {
-  const raw = window.location.hash.replace(/^#\/?/, '').split('?')[0];
-  if (VALID_ROUTES.includes(raw)) {
-    return raw;
+function parseHashRoute(hash) {
+  const cleaned = String(hash || '')
+    .replace(/^#\/?/, '')
+    .split('?')[0]
+    .trim()
+    .toLowerCase();
+  if (cleaned === 'guide' || cleaned === 'docs' || cleaned === 'onboarding') {
+    return 'guide';
   }
+  if (cleaned === 'node-agent' || cleaned === 'sdk') return 'node-agent';
+  if (cleaned === 'simulator' || cleaned === 'validator-lab') return 'simulator';
+  if (cleaned === 'setup' || cleaned === 'settings') return 'setup';
   return 'dashboard';
 }
 
+function PageFallback() {
+  return (
+    <div
+      style={{ color: 'var(--text-secondary)' }}
+      className="flex min-h-[280px] items-center justify-center gap-2.5 text-xs font-medium"
+    >
+      <div
+        style={{
+          borderColor: 'var(--border-strong)',
+          borderTopColor: 'var(--cf-orange)',
+        }}
+        className="h-4 w-4 animate-spin rounded-full border-2"
+      />
+      <span>Loading module...</span>
+    </div>
+  );
+}
+
 export default function App() {
-  const [route, setRoute] = useState(readCurrentRoute);
-  const [backend, setBackend] = useState(resolveAuthorityBackend);
-  const [session, setSession] = useState(null);
-  const [authLoading, setAuthLoading] = useState(
-    () => resolveAuthorityBackend().configured,
-  );
-  const [isOnline, setIsOnline] = useState(
-    () => globalThis.navigator?.onLine !== false,
-  );
-  const [recoveryMode, setRecoveryMode] = useState(() =>
-    detectRecoveryFlowFromUrl(),
-  );
-  const [selectedLicense, setSelectedLicense] = useState(null);
-  const [issueDrawerSignal, setIssueDrawerSignal] = useState(0);
+  const [backendVersion, setBackendVersion] = useState(0);
+  const [backend, setBackend] = useState(() => resolveAuthorityBackend());
+
   const [theme, setTheme] = useState(() => {
-    const initial = resolveInitialTheme();
-    applyDocumentTheme(initial);
+    const initial = resolveInitialTheme(
+      typeof window !== 'undefined' ? window.localStorage : null,
+    );
+    if (typeof document !== 'undefined') {
+      applyDocumentTheme(
+        initial,
+        document,
+        typeof window !== 'undefined' ? window.localStorage : null,
+      );
+    }
     return initial;
   });
 
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(() =>
+    Boolean(backend.configured && backend.supabase),
+  );
+  const [recoveryMode, setRecoveryMode] = useState(() =>
+    typeof window !== 'undefined'
+      ? detectRecoveryFlowFromUrl(window.location)
+      : false,
+  );
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine !== false : true,
+  );
+
+  const [activeRoute, setActiveRoute] = useState(() =>
+    typeof window !== 'undefined'
+      ? parseHashRoute(window.location.hash)
+      : 'dashboard',
+  );
+  const [issueDrawerSignal, setIssueDrawerSignal] = useState(0);
+  const [selectedLicenseForKit, setSelectedLicenseForKit] = useState(null);
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = nextTheme(prev);
+      if (typeof document !== 'undefined') {
+        applyDocumentTheme(
+          next,
+          document,
+          typeof window !== 'undefined' ? window.localStorage : null,
+        );
+      }
+      return next;
+    });
+  }, []);
+
+  const refreshBackend = useCallback(() => {
+    const next = resolveAuthorityBackend();
+    setBackend(next);
+    setBackendVersion((v) => v + 1);
+  }, []);
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
   useEffect(() => {
     const onHashChange = () => {
-      if (detectRecoveryFlowFromUrl()) {
+      if (detectRecoveryFlowFromUrl(window.location)) {
         setRecoveryMode(true);
       }
-      setRoute(readCurrentRoute());
+      setActiveRoute(parseHashRoute(window.location.hash));
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  // Capture uncaught background errors into sanitized diagnostics
   useEffect(() => {
-    const onUnhandledRejection = (event) => {
-      rememberError(
-        event?.reason ?? 'Unhandled promise rejection',
-        'Background async operation',
-      );
-    };
-    const onWindowError = (event) => {
-      if (event?.error || event?.message) {
-        rememberError(event.error ?? event.message, 'Runtime script error');
-      }
-    };
-    window.addEventListener('unhandledrejection', onUnhandledRejection);
-    window.addEventListener('error', onWindowError);
-    return () => {
-      window.removeEventListener('unhandledrejection', onUnhandledRejection);
-      window.removeEventListener('error', onWindowError);
-    };
-  }, []);
-
-  // Auto-reconnect Supabase session refresh whenever internet connectivity resumes
-  useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      if (backend.supabase?.auth) {
-        backend.supabase.auth.startAutoRefresh?.();
-        backend.supabase.auth
-          .getSession()
-          .then(({ data }) => {
-            if (data?.session) setSession(data.session);
-          })
-          .catch((err) => {
-            rememberError(err, 'Session refresh on reconnect');
-          });
-      }
-    };
-    const handleOffline = () => {
-      setIsOnline(false);
-      backend.supabase?.auth?.stopAutoRefresh?.();
-    };
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, [backend]);
-
-  useEffect(() => {
-    if (!backend.configured || !backend.supabase?.auth) {
+    const client = backend.supabase;
+    if (!backend.configured || !client) {
       setSession(null);
       setAuthLoading(false);
       return undefined;
     }
 
-    let mounted = true;
+    let cancelled = false;
     setAuthLoading(true);
 
-    backend.supabase.auth
+    client.auth
       .getSession()
       .then(({ data, error }) => {
+        if (cancelled) return;
         if (error) {
-          rememberError(error, 'Initial session check');
+          rememberError(error, 'Restore operator session');
         }
-        if (mounted) {
-          setSession(data?.session ?? null);
-          setAuthLoading(false);
-        }
+        setSession(data?.session ?? null);
+        setAuthLoading(false);
       })
       .catch((err) => {
-        rememberError(err, 'Initial session check');
-        if (mounted) {
-          setSession(null);
-          setAuthLoading(false);
-        }
+        if (cancelled) return;
+        rememberError(err, 'Restore operator session');
+        setSession(null);
+        setAuthLoading(false);
       });
 
-    const { data: listener } = backend.supabase.auth.onAuthStateChange(
+    const { data: listener } = client.auth.onAuthStateChange(
       (event, nextSession) => {
-        if (!mounted) return;
+        if (cancelled) return;
         setSession(nextSession ?? null);
         if (event === 'PASSWORD_RECOVERY') {
           setRecoveryMode(true);
@@ -155,147 +204,146 @@ export default function App() {
     );
 
     return () => {
-      mounted = false;
-      listener?.subscription?.unsubscribe?.();
+      cancelled = true;
+      listener?.subscription?.unsubscribe();
     };
-  }, [backend]);
+  }, [backend, backendVersion]);
 
-  const refreshBackend = useCallback(() => {
-    setBackend(resolveAuthorityBackend());
+  const navigate = useCallback((routeId) => {
+    window.location.hash = `#/${routeId}`;
+    setActiveRoute(routeId);
   }, []);
 
-  const handleToggleTheme = useCallback(() => {
-    setTheme((cur) => {
-      const updated = nextTheme(cur);
-      applyDocumentTheme(updated);
-      return updated;
-    });
-  }, []);
-
-  const handleNavigate = useCallback((targetRoute) => {
-    window.location.hash = `#/${targetRoute}`;
-  }, []);
-
-  const handleQuickIssueLicense = useCallback(() => {
-    if (readCurrentRoute() !== 'dashboard') {
-      window.location.hash = '#/dashboard';
+  const handleTriggerNewEntitlement = useCallback(() => {
+    if (activeRoute !== 'dashboard') {
+      navigate('dashboard');
     }
     setIssueDrawerSignal((n) => n + 1);
-  }, []);
+  }, [activeRoute, navigate]);
 
   const handleSignOut = useCallback(async () => {
     try {
-      if (backend.supabase?.auth) {
+      if (backend.supabase) {
         await backend.supabase.auth.signOut();
       }
     } catch (err) {
       rememberError(err, 'Sign out');
+    } finally {
+      setSession(null);
+      setRecoveryMode(false);
     }
-    setSession(null);
-    setRecoveryMode(false);
   }, [backend]);
 
-  const handleRecoveryCompleted = useCallback(() => {
-    setRecoveryMode(false);
-    if (window.location.hash.startsWith('#/reset-password')) {
-      window.location.hash = '#/dashboard';
-    }
-  }, []);
-
-  const spinnerFallback = (
-    <div
-      style={{
-        backgroundColor: 'var(--bg-canvas)',
-        color: 'var(--text-secondary)',
-      }}
-      className="flex min-h-screen items-center justify-center text-xs font-medium"
-    >
-      <Loader2 className="mr-2 h-4 w-4 animate-spin text-emerald-400" />
-      Loading...
-    </div>
-  );
-
   if (authLoading) {
-    return spinnerFallback;
-  }
-
-  const isAuthorized =
-    backend.configured &&
-    isAuthorizedAdminUser(session?.user) &&
-    !recoveryMode;
-
-  if (!isAuthorized) {
     return (
-      <Suspense fallback={spinnerFallback}>
-        <LoginPage
-          backend={backend}
-          session={session}
-          isOnline={isOnline}
-          recoveryMode={recoveryMode}
-          theme={theme}
-          onToggleTheme={handleToggleTheme}
-          onBackendChanged={refreshBackend}
-          onSessionRefreshed={setSession}
-          onRecoveryCompleted={handleRecoveryCompleted}
+      <div
+        style={{
+          backgroundColor: 'var(--bg-canvas)',
+          color: 'var(--text-secondary)',
+        }}
+        className="cf-grid-bg flex min-h-screen items-center justify-center gap-3 text-xs font-medium"
+      >
+        <div
+          style={{
+            borderColor: 'var(--border-strong)',
+            borderTopColor: 'var(--cf-orange)',
+          }}
+          className="h-4 w-4 animate-spin rounded-full border-2"
         />
-      </Suspense>
+        <span>Verifying Central operator session...</span>
+      </div>
     );
   }
 
+  const isAuthenticatedAdmin =
+    backend.configured &&
+    Boolean(session?.user) &&
+    isAuthorizedAdminUser(session.user) &&
+    !recoveryMode;
+
+  if (!isAuthenticatedAdmin) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<PageFallback />}>
+          <LoginPage
+            backend={backend}
+            session={session}
+            isOnline={isOnline}
+            recoveryMode={recoveryMode}
+            theme={theme}
+            onToggleTheme={handleToggleTheme}
+            onBackendChanged={refreshBackend}
+            onSessionRefreshed={(nextSession) => setSession(nextSession)}
+            onRecoveryCompleted={() => {
+              setRecoveryMode(false);
+              if (
+                typeof window !== 'undefined' &&
+                window.location.hash.includes('type=recovery')
+              ) {
+                window.location.hash = '#/dashboard';
+              }
+            }}
+          />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  const meta = ROUTE_META[activeRoute] ?? ROUTE_META.dashboard;
+
   return (
-    <AppShell
-      activeRoute={route}
-      isOnline={isOnline}
-      operatorEmail={session?.user?.email ?? ''}
-      theme={theme}
-      onToggleTheme={handleToggleTheme}
-      onQuickIssueLicense={handleQuickIssueLicense}
-      onSignOut={handleSignOut}
-    >
-      <ErrorBoundary key={route}>
-        <Suspense
-          fallback={
-            <div
-              style={{ color: 'var(--text-secondary)' }}
-              className="flex items-center justify-center py-24 text-xs font-medium"
-            >
-              <Loader2 className="mr-2 h-4 w-4 animate-spin text-emerald-400" />
-              Loading...
-            </div>
-          }
-        >
-          {route === 'guide' ? (
-            <GuidePage
-              backend={backend}
-              session={session}
-              onQuickIssueLicense={handleQuickIssueLicense}
-              onNavigate={handleNavigate}
-            />
-          ) : route === 'simulator' ? (
-            <ValidatorLabPage backend={backend} />
-          ) : route === 'node-agent' ? (
-            <NodeAgentPage
-              backend={backend}
-              selectedLicense={selectedLicense}
-            />
-          ) : route === 'setup' ? (
-            <SetupPage
-              backend={backend}
-              session={session}
-              isOnline={isOnline}
-              onBackendChanged={refreshBackend}
-              onSignOut={handleSignOut}
-            />
-          ) : (
+    <ErrorBoundary>
+      <AppShell
+        activeRoute={activeRoute}
+        onNavigate={navigate}
+        routeTitle={meta.title}
+        routeSubtitle={meta.subtitle}
+        backendHealth={backend.health}
+        operatorEmail={session?.user?.email ?? ''}
+        isOnline={isOnline}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+        onSignOut={handleSignOut}
+        onNewEntitlement={handleTriggerNewEntitlement}
+      >
+        <Suspense fallback={<PageFallback />}>
+          {activeRoute === 'dashboard' && (
             <EntitlementsPage
               backend={backend}
               issueDrawerSignal={issueDrawerSignal}
-              onSelectLicenseForKit={setSelectedLicense}
-              onOpenGuide={() => handleNavigate('guide')}
+              onSelectLicenseForKit={(row) => setSelectedLicenseForKit(row)}
+              onOpenGuide={() => navigate('guide')}
+            />
+          )}
+          {activeRoute === 'guide' && (
+            <GuidePage
+              backend={backend}
+              session={session}
+              onNavigate={navigate}
+            />
+          )}
+          {activeRoute === 'node-agent' && (
+            <NodeAgentPage
+              backend={backend}
+              selectedLicense={selectedLicenseForKit}
+            />
+          )}
+          {activeRoute === 'simulator' && (
+            <ValidatorLabPage
+              backend={backend}
+              selectedLicense={selectedLicenseForKit}
+            />
+          )}
+          {activeRoute === 'setup' && (
+            <SetupPage
+              backend={backend}
+              session={session}
+              onBackendChanged={refreshBackend}
+              onSignOut={handleSignOut}
             />
           )}
         </Suspense>
-      </ErrorBoundary>
-    </AppShell>
+      </AppShell>
+    </ErrorBoundary>
   );
 }

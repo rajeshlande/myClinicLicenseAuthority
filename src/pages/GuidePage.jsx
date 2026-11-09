@@ -33,11 +33,11 @@ function CopyButton({ id, text, copiedId, onCopy, label = 'Copy', primary = fals
       onClick={() => onCopy(id, text)}
       className={`${
         primary ? 'console-btn-primary' : 'console-btn-secondary'
-      } inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[11px] font-medium`}
+      } inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[11px] font-semibold`}
     >
       {isCopied ? (
         <>
-          <Check className="h-3.5 w-3.5 text-emerald-400" />
+          <Check className="h-3.5 w-3.5" />
           Copied
         </>
       ) : (
@@ -58,19 +58,17 @@ export default function GuidePage({ backend, session, onNavigate }) {
   const [copiedId, setCopiedId] = useState(null);
   const [copyWarning, setCopyWarning] = useState(null);
 
-  // Step 1 verification state (DB + Keyless Auto-Sync RPC)
   const [dbBusy, setDbBusy] = useState(false);
   const [dbOk, setDbOk] = useState(null);
   const [dbError, setDbError] = useState(null);
 
-  // Live Auto-Sync simulator state
   const [simEmail, setSimEmail] = useState('');
   const [simOrigin, setSimOrigin] = useState('https://rajeshlande.github.io');
   const [simBusy, setSimBusy] = useState(false);
   const [simResult, setSimResult] = useState(null);
   const [simError, setSimError] = useState(null);
 
-  const [faqOpen, setFaqOpen] = useState(false);
+  const [faqOpen, setFaqOpen] = useState(true);
 
   const adminGrantSql = useMemo(
     () => buildAdminGrantSql(operatorEmail),
@@ -155,73 +153,85 @@ export default function GuidePage({ backend, session, onNavigate }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header Banner */}
-      <section className="console-panel rounded-2xl p-6">
+      <section className="console-panel relative overflow-hidden rounded-2xl p-5 sm:p-6">
+        <span className="cf-top-stripe absolute inset-x-0 top-0 h-[3px]" />
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 font-mono text-[11px] font-semibold text-emerald-400">
+            <div
+              style={{
+                backgroundColor: 'var(--cf-orange-soft)',
+                border: '1px solid var(--cf-orange-border)',
+                color: 'var(--cf-orange)',
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-[11px] font-semibold"
+            >
               <Sparkles className="h-3.5 w-3.5" />
-              Keyless Central Auto-Sync · Zero Edge Functions · Email &amp; URL Matching
+              Keyless Central Auto-Sync · Zero Edge Functions · Email &amp; URL
             </div>
-            <h1 className="mt-3 text-xl font-semibold tracking-tight sm:text-2xl">
+            <h2 className="mt-3 text-lg font-bold tracking-tight sm:text-xl">
               2-Side Keyless Auto-Sync Setup Guide
-            </h1>
+            </h2>
             <p
               style={{ color: 'var(--text-secondary)' }}
-              className="mt-1.5 text-sm leading-relaxed"
+              className="mt-1 text-xs leading-relaxed sm:text-sm"
             >
-              No <code className="font-mono text-xs">LICENSE_KEY</code>, no{' '}
-              <code className="font-mono text-xs">PRIVATE / PUBLIC KEY</code>, and{' '}
-              <strong>no Edge Functions</strong> needed. Manage clinic plans centrally by{' '}
-              <strong>Owner Email</strong>, <strong>Clinic URL</strong>, or{' '}
-              <strong>both</strong> — client <code className="font-mono text-xs">myClinic</code>{' '}
-              apps auto-sync securely via hardened Postgres RPC + FORCE RLS.
+              No <code className="font-mono">LICENSE_KEY</code>, no{' '}
+              <code className="font-mono">PRIVATE / PUBLIC KEY</code>, and{' '}
+              <strong>no Edge Functions</strong> needed. Manage clinic plans centrally
+              by <strong>Owner Email</strong>, <strong>Clinic URL</strong>, or{' '}
+              <strong>both</strong> — client <code className="font-mono">myClinic</code>{' '}
+              deployments auto-sync via hardened Postgres RPC + FORCE RLS.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onNavigate?.('dashboard')}
-              className="console-btn-primary inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold"
-            >
-              Manage Subscriptions
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => onNavigate?.('dashboard')}
+            className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold"
+          >
+            Open Clinics &amp; Plans
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
         </div>
 
         {copyWarning ? (
-          <p className="mt-3 text-xs text-amber-400">{copyWarning}</p>
+          <p className="mt-3 text-xs text-amber-500">{copyWarning}</p>
         ) : null}
       </section>
 
       {/* Two-Column Side-by-Side Architecture */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {/* ==================== SIDE 1: CENTRAL AUTHORITY ==================== */}
-        <section className="console-panel flex flex-col justify-between space-y-5 rounded-2xl p-6">
-          <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        {/* SIDE 1: CENTRAL AUTHORITY */}
+        <section className="console-panel flex flex-col justify-between space-y-4 rounded-2xl p-5 sm:p-6">
+          <div className="space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <span className="font-mono text-[10.5px] font-semibold tracking-wider text-emerald-400 uppercase">
+                <span
+                  style={{ color: 'var(--cf-orange)' }}
+                  className="font-mono text-[10.5px] font-bold tracking-wider uppercase"
+                >
                   Side 1 · Central Supabase (Do Once)
                 </span>
-                <h2 className="mt-1 text-base font-semibold">
-                  Central Subscription Server (`myClinicLicenseAuthority`)
-                </h2>
+                <h3 className="mt-1 text-base font-bold">
+                  Central Control Plane (`myClinicLicenseAuthority`)
+                </h3>
                 <p style={{ color: 'var(--text-muted)' }} className="mt-0.5 text-xs">
                   Your private vendor Supabase — clients have zero table access (`FORCE RLS`).
                 </p>
               </div>
-              <ShieldCheck className="h-6 w-6 shrink-0 text-emerald-400" />
+              <ShieldCheck
+                style={{ color: 'var(--cf-orange)' }}
+                className="h-6 w-6 shrink-0"
+              />
             </div>
 
             {/* Central Step 1 */}
             <div className="console-well space-y-3 rounded-xl p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-mono text-xs font-semibold">
-                  Step 1 — Paste `supabase/schema.sql` (v2) &amp; Grant Admin
+                  Step 1 — Run `supabase/schema.sql` (v2) &amp; Grant Admin
                 </span>
                 <button
                   type="button"
@@ -230,11 +240,14 @@ export default function GuidePage({ backend, session, onNavigate }) {
                   className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-[11px]"
                 >
                   {dbBusy ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Database className="h-3.5 w-3.5 text-emerald-400" />
+                    <Database
+                      style={{ color: 'var(--cf-orange)' }}
+                      className="h-3.5 w-3.5"
+                    />
                   )}
-                  Test Step 1
+                  Verify Step 1
                 </button>
               </div>
 
@@ -243,19 +256,18 @@ export default function GuidePage({ backend, session, onNavigate }) {
                 className="list-decimal space-y-1.5 pl-4 text-xs leading-relaxed"
               >
                 <li>
-                  Open <strong>Central Supabase Dashboard → SQL Editor → New query</strong>, click{' '}
-                  <strong>Copy Full `schema.sql` (v2)</strong> below, paste it, and click{' '}
+                  Open <strong>Central Supabase → SQL Editor → New query</strong>, click{' '}
+                  <strong>Copy Full schema.sql (v2)</strong>, paste, and click{' '}
                   <strong>Run</strong>.
                 </li>
                 <li>
-                  Run the 3-line Admin Grant SQL below once for{' '}
-                  <code className="font-mono">{operatorEmail}</code> (and turn OFF{' '}
-                  <em>Allow new users to sign up</em> under{' '}
-                  <strong>Authentication → Providers → Email</strong> so strangers cannot register).
+                  Run the Admin Grant SQL once for{' '}
+                  <code className="font-mono">{operatorEmail}</code> (and disable{' '}
+                  <em>Allow new users to sign up</em> in Auth → Email).
                 </li>
               </ol>
 
-              <div className="flex flex-wrap items-center gap-2 pt-1">
+              <div className="flex flex-wrap items-center gap-2 pt-0.5">
                 <CopyButton
                   id="copy-schema-v2"
                   text={schemaSqlRaw}
@@ -277,9 +289,9 @@ export default function GuidePage({ backend, session, onNavigate }) {
                 <div
                   role="status"
                   style={{
-                    backgroundColor: 'var(--accent-soft)',
-                    border: '1px solid var(--accent-border)',
-                    color: 'var(--accent-primary)',
+                    backgroundColor: 'var(--ok-soft)',
+                    border: '1px solid var(--ok-border)',
+                    color: 'var(--ok-text)',
                   }}
                   className="flex items-start gap-2 rounded-lg p-2.5 text-xs"
                 >
@@ -291,7 +303,7 @@ export default function GuidePage({ backend, session, onNavigate }) {
               {dbError ? (
                 <ErrorAlert
                   error={dbError}
-                  context="Test Step 1"
+                  context="Verify Central Setup"
                   onRetry={handleTestCentralSetup}
                   onDismiss={() => setDbError(null)}
                 />
@@ -309,7 +321,7 @@ export default function GuidePage({ backend, session, onNavigate }) {
                   onClick={() => onNavigate?.('dashboard')}
                   className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[11px]"
                 >
-                  Open Subscriptions
+                  Add Clinic
                   <ArrowRight className="h-3 w-3" />
                 </button>
               </div>
@@ -321,30 +333,29 @@ export default function GuidePage({ backend, session, onNavigate }) {
                 <li>
                   <strong>Email + URL (Recommended):</strong> Enter both{' '}
                   <code className="font-mono">dr.sharma@gmail.com</code> and{' '}
-                  <code className="font-mono">https://sharmaclinic.github.io</code> — requires both
-                  to match.
+                  <code className="font-mono">https://sharmaclinic.github.io</code>.
                 </li>
                 <li>
-                  <strong>Email Only:</strong> Enter <code className="font-mono">dr.sharma@gmail.com</code>{' '}
-                  (keep <em>Auto-lock to first cloud URL</em> checked to pin their domain on first
-                  open).
+                  <strong>Email Only:</strong> Enter owner email + leave{' '}
+                  <em>Auto-lock first cloud URL</em> checked.
                 </li>
                 <li>
                   <strong>URL Only:</strong> Leave email blank and enter{' '}
-                  <code className="font-mono">https://sharmaclinic.github.io</code> — unlocks every
-                  staff login on that domain automatically.
+                  <code className="font-mono">https://sharmaclinic.github.io</code>.
                 </li>
               </ul>
 
-              {/* Live Auto-Sync Simulator */}
               <form
                 onSubmit={handleSimulateAutoSync}
                 style={{ borderTop: '1px solid var(--border-subtle)' }}
                 className="space-y-2.5 pt-3"
               >
-                <div className="flex items-center gap-1.5 font-mono text-[11px] font-semibold text-sky-400">
+                <div
+                  style={{ color: 'var(--cf-orange)' }}
+                  className="flex items-center gap-1.5 font-mono text-[11px] font-semibold"
+                >
                   <Activity className="h-3.5 w-3.5" />
-                  Test Live Clinic Auto-Sync Response
+                  Quick Auto-Sync Test
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <input
@@ -352,14 +363,14 @@ export default function GuidePage({ backend, session, onNavigate }) {
                     value={simEmail}
                     onChange={(e) => setSimEmail(e.target.value)}
                     placeholder="Clinic email (optional)"
-                    className="console-input rounded-lg px-2.5 py-1.5 text-xs"
+                    className="console-input rounded-lg px-2.5 py-2 text-xs"
                   />
                   <input
                     type="url"
                     value={simOrigin}
                     onChange={(e) => setSimOrigin(e.target.value)}
                     placeholder="https://clinic.github.io"
-                    className="console-input rounded-lg px-2.5 py-1.5 font-mono text-xs"
+                    className="console-input rounded-lg px-2.5 py-2 font-mono text-xs"
                   />
                 </div>
                 <button
@@ -370,21 +381,20 @@ export default function GuidePage({ backend, session, onNavigate }) {
                   {simBusy ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Play className="h-3.5 w-3.5 text-emerald-400" />
+                    <Play
+                      style={{ color: 'var(--cf-orange)' }}
+                      className="h-3.5 w-3.5"
+                    />
                   )}
                   Simulate Auto-Sync
                 </button>
 
                 {simResult ? (
-                  <pre
-                    style={{
-                      backgroundColor: 'var(--bg-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                    className="overflow-x-auto rounded-lg p-2.5 font-mono text-[11px] leading-relaxed"
-                  >
-                    {JSON.stringify(simResult, null, 2)}
-                  </pre>
+                  <div className="console-code overflow-hidden rounded-lg">
+                    <pre className="overflow-x-auto p-2.5 font-mono text-[11px] leading-relaxed">
+                      {JSON.stringify(simResult, null, 2)}
+                    </pre>
+                  </div>
                 ) : null}
 
                 {simError ? (
@@ -399,22 +409,25 @@ export default function GuidePage({ backend, session, onNavigate }) {
           </div>
         </section>
 
-        {/* ==================== SIDE 2: CLIENT APP (myClinic) ==================== */}
-        <section className="console-panel flex flex-col justify-between space-y-5 rounded-2xl p-6">
-          <div className="space-y-5">
+        {/* SIDE 2: CLIENT APP (myClinic) */}
+        <section className="console-panel flex flex-col justify-between space-y-4 rounded-2xl p-5 sm:p-6">
+          <div className="space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <span className="font-mono text-[10.5px] font-semibold tracking-wider text-sky-400 uppercase">
-                  Side 2 · Client App (`myClinic` — Build Once, Ship to All Clinics)
+                <span
+                  style={{ color: 'var(--cf-blue)' }}
+                  className="font-mono text-[10.5px] font-bold tracking-wider uppercase"
+                >
+                  Side 2 · Client App (`myClinic` — Ship 1 Build to All Clinics)
                 </span>
-                <h2 className="mt-1 text-base font-semibold">
+                <h3 className="mt-1 text-base font-bold">
                   Client Auto-Sync + Vite Obfuscation
-                </h2>
+                </h3>
                 <p style={{ color: 'var(--text-muted)' }} className="mt-0.5 text-xs">
-                  Zero client Supabase Edge Functions or secrets — clients never type a key.
+                  Zero client Supabase Edge Functions or secrets — clients never enter a key.
                 </p>
               </div>
-              <Globe className="h-6 w-6 shrink-0 text-sky-400" />
+              <Globe style={{ color: 'var(--cf-blue)' }} className="h-6 w-6 shrink-0" />
             </div>
 
             {/* Client Step 1 */}
@@ -433,20 +446,15 @@ export default function GuidePage({ backend, session, onNavigate }) {
                 />
               </div>
               <p style={{ color: 'var(--text-secondary)' }} className="text-xs leading-relaxed">
-                Paste into <code className="font-mono">myClinic/.env.production</code> (or GitHub
-                Actions Variables). Uses <strong>only</strong> your publishable{' '}
-                <code className="font-mono">anon</code> key — Central <code className="font-mono">FORCE RLS</code>{' '}
-                blocks all table reads/writes.
+                Paste into <code className="font-mono">myClinic/.env.production</code> (or
+                GitHub Actions Variables). Uses <strong>only</strong> your publishable{' '}
+                <code className="font-mono">anon</code> key.
               </p>
-              <pre
-                style={{
-                  backgroundColor: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-                className="overflow-x-auto rounded-lg p-2.5 font-mono text-[11px]"
-              >
-                {clientKit.envVars}
-              </pre>
+              <div className="console-code overflow-hidden rounded-lg">
+                <pre className="overflow-x-auto p-3 font-mono text-[11px]">
+                  {clientKit.envVars}
+                </pre>
+              </div>
             </div>
 
             {/* Client Step 2 */}
@@ -455,14 +463,19 @@ export default function GuidePage({ backend, session, onNavigate }) {
                 <span className="font-mono text-xs font-semibold">
                   Step 2 — Drop In Auto-Sync Client + Scoped Vite Obfuscator
                 </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate?.('node-agent')}
+                  className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[11px]"
+                >
+                  Open Full Client SDK
+                  <ArrowRight className="h-3 w-3" />
+                </button>
               </div>
               <p style={{ color: 'var(--text-secondary)' }} className="text-xs leading-relaxed">
-                1) Save <code className="font-mono">src/lib/central-subscription.mjs</code> in{' '}
-                <code className="font-mono">myClinic</code> and call{' '}
-                <code className="font-mono">syncMyClinicSubscription(ownerEmail)</code> on boot /
-                tab focus. 2) Add the scoped Vite obfuscator to{' '}
-                <code className="font-mono">vite.config.js</code> so only the subscription guard is
-                scrambled while keeping React &amp; drug search fast.
+                Save <code className="font-mono">src/lib/central-subscription.mjs</code>{' '}
+                in <code className="font-mono">myClinic</code> and add the scoped Vite
+                obfuscator to <code className="font-mono">vite.config.js</code>.
               </p>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -479,30 +492,30 @@ export default function GuidePage({ backend, session, onNavigate }) {
                   text={clientKit.viteObfuscatorSnippet}
                   copiedId={copiedId}
                   onCopy={handleCopy}
-                  label="Copy Vite Obfuscator Plugin"
+                  label="Copy Vite Obfuscator"
                 />
               </div>
 
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                  color: 'var(--text-secondary)',
-                }}
-                className="rounded-lg p-3 text-[11px] leading-relaxed"
-              >
-                <div className="flex items-center gap-1.5 font-semibold text-emerald-400">
+              <div className="console-elevated rounded-lg p-3 text-[11px] leading-relaxed">
+                <div
+                  style={{ color: 'var(--ok-text)' }}
+                  className="flex items-center gap-1.5 font-semibold"
+                >
                   <RefreshCw className="h-3.5 w-3.5" />
                   How Auto-Sync Behaves in Production
                 </div>
-                <ul className="mt-1.5 list-disc space-y-1 pl-4">
+                <ul
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="mt-1.5 list-disc space-y-1 pl-4"
+                >
                   <li>
                     <strong>Pause / Expire / Upgrade in Central:</strong> Client updates
                     automatically on next page load, tab switch, or 30-min heartbeat.
                   </li>
                   <li>
-                    <strong>Clinic Wi-Fi Down:</strong> Continues working up to 7 days on its
-                    SHA-256 sealed offline lease (never past <code className="font-mono">expires_at</code>).
+                    <strong>Clinic Wi-Fi Down:</strong> Continues working up to 7 days on
+                    its SHA-256 sealed offline lease (never past{' '}
+                    <code className="font-mono">expires_at</code>).
                   </li>
                 </ul>
               </div>
@@ -519,9 +532,9 @@ export default function GuidePage({ backend, session, onNavigate }) {
           className="flex w-full items-center justify-between text-left"
         >
           <div className="flex items-center gap-2">
-            <HelpCircle className="h-4 w-4 text-emerald-400" />
-            <span className="text-sm font-semibold">
-              Central Database Security Protections (7 Active Defenses)
+            <HelpCircle style={{ color: 'var(--cf-orange)' }} className="h-4 w-4" />
+            <span className="text-sm font-bold">
+              Central Database Security Protections (Zero-Trust Architecture)
             </span>
           </div>
           <ChevronDown
@@ -535,25 +548,32 @@ export default function GuidePage({ backend, session, onNavigate }) {
             className="mt-4 grid grid-cols-1 gap-3 text-xs leading-relaxed md:grid-cols-2"
           >
             <div className="console-well rounded-xl p-3.5">
-              <strong className="text-emerald-400">1. Zero Table / View Access (`FORCE RLS`):</strong>{' '}
-              `anon` has `REVOKE ALL` on every table and view. Even a rogue `authenticated` signup
-              sees 0 rows without server-only `app_metadata.role = "admin"`.
+              <strong style={{ color: 'var(--text-primary)' }}>
+                1. Zero Table / View Access (`FORCE RLS`):
+              </strong>{' '}
+              `anon` has `REVOKE ALL` on every table and view. Even a rogue
+              `authenticated` signup sees 0 rows without `app_metadata.role = "admin"`.
             </div>
             <div className="console-well rounded-xl p-3.5">
-              <strong className="text-emerald-400">2. Unforgeable Browser Origin Check:</strong>{' '}
-              Postgres reads PostgREST <code className="font-mono">request.headers</code> Origin
-              directly — unauthorized domains cannot spoof another clinic&apos;s URL (
-              <code className="font-mono">ORIGIN_MISMATCH</code>).
+              <strong style={{ color: 'var(--text-primary)' }}>
+                2. Unforgeable Browser Origin Check:
+              </strong>{' '}
+              Postgres reads PostgREST <code className="font-mono">request.headers</code>{' '}
+              Origin directly — unauthorized domains cannot spoof another clinic&apos;s URL.
             </div>
             <div className="console-well rounded-xl p-3.5">
-              <strong className="text-emerald-400">3. SHA-256 IP Rate Limiting:</strong>{' '}
-              `sync_clinic_subscription` caps lookups to 60/min and 15 unmatched attempts/5min per
-              hashed IP to stop customer email enumeration.
+              <strong style={{ color: 'var(--text-primary)' }}>
+                3. SHA-256 IP Rate Limiting:
+              </strong>{' '}
+              `sync_clinic_subscription` caps lookups to 60/min and 15 unmatched
+              attempts/5min per hashed IP to stop customer email enumeration.
             </div>
             <div className="console-well rounded-xl p-3.5">
-              <strong className="text-emerald-400">4. Cross-Supabase JWT Isolation:</strong>{' '}
-              `myClinic` calls Central PostgREST via raw `fetch` with only Central&apos;s publishable
-              `anon` key — client user session JWTs never cross projects.
+              <strong style={{ color: 'var(--text-primary)' }}>
+                4. Cross-Supabase JWT Isolation:
+              </strong>{' '}
+              `myClinic` calls Central PostgREST via raw `fetch` with only Central&apos;s
+              publishable `anon` key — client user session JWTs never cross projects.
             </div>
           </div>
         ) : null}

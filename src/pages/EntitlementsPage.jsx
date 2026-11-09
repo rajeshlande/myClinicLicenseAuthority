@@ -2,17 +2,18 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowUpRight,
+  Blocks,
   BookOpen,
+  Building2,
   Calendar,
   Check,
   Clock,
-  Container,
   Copy,
   Cpu,
   Download,
   Globe,
-  KeyRound,
   Loader2,
+  Mail,
   Minus,
   Plus,
   Power,
@@ -38,41 +39,34 @@ import {
   defaultExpirationDate,
   describeClinicIdentity,
   formatDisplayDate,
-  getTierMeta,
   sanitizeCsvCell,
   validateProvisionInput,
   validateRoutingUpdateInput,
 } from '../lib/entitlements.mjs';
 import { errorLine, rememberError } from '../lib/errors.mjs';
 
-function formatCompactKey(rawKey = '') {
-  const clean = String(rawKey).trim().toUpperCase();
-  if (clean.length <= 12) return clean;
-  return `${clean.slice(0, 6)}…${clean.slice(-4)}`;
-}
-
 function buildStandingPillStyle(standing) {
   if (standing.isOperational) {
     return {
-      bg: 'var(--accent-soft)',
-      border: 'var(--accent-border)',
-      text: 'var(--accent-primary)',
-      dot: 'bg-emerald-400',
+      bg: 'var(--ok-soft)',
+      border: 'var(--ok-border)',
+      text: 'var(--ok-text)',
+      dot: 'bg-emerald-500',
     };
   }
   if (standing.stateCode === 'KEY_KILLED') {
     return {
       bg: 'var(--danger-soft)',
-      border: 'rgba(244, 63, 94, 0.35)',
+      border: 'rgba(239, 68, 68, 0.35)',
       text: 'var(--danger-text)',
-      dot: 'bg-rose-400',
+      dot: 'bg-rose-500',
     };
   }
   return {
     bg: 'var(--warn-soft)',
     border: 'rgba(245, 158, 11, 0.35)',
     text: 'var(--warn-text)',
-    dot: 'bg-amber-400',
+    dot: 'bg-amber-500',
   };
 }
 
@@ -94,7 +88,7 @@ export default function EntitlementsPage({
   const [statusFilter, setStatusFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
 
-  const [copiedKeyId, setCopiedKeyId] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
   const [togglingIds, setTogglingIds] = useState({});
 
   // Slide-over drawers
@@ -110,7 +104,7 @@ export default function EntitlementsPage({
   const [savingRouting, setSavingRouting] = useState(false);
   const [savingTier, setSavingTier] = useState(false);
 
-  // Provision form state (supports Email, Clinic URL, or BOTH)
+  // Provision form state (Email, Clinic URL, or BOTH)
   const [customerEmail, setCustomerEmail] = useState('');
   const [allowedOrigin, setAllowedOrigin] = useState('');
   const [lockFirstOrigin, setLockFirstOrigin] = useState(true);
@@ -126,7 +120,7 @@ export default function EntitlementsPage({
 
   useEffect(() => {
     if (!toast) return undefined;
-    const timer = setTimeout(() => setToast(null), 3800);
+    const timer = setTimeout(() => setToast(null), 3600);
     return () => clearTimeout(timer);
   }, [toast]);
 
@@ -150,7 +144,7 @@ export default function EntitlementsPage({
         if (error) throw error;
         setRecords(Array.isArray(data) ? data : []);
       } catch (err) {
-        setErrorBanner(rememberError(err, 'Load clinic licenses'));
+        setErrorBanner(rememberError(err, 'Load clinic subscriptions'));
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -185,9 +179,9 @@ export default function EntitlementsPage({
       if (error) throw error;
       setBoundMachines(Array.isArray(data) ? data : []);
     } catch (err) {
-      rememberError(err, 'Fetch bound machines');
+      rememberError(err, 'Fetch bound deployments');
       showToast(
-        errorLine(err, { context: 'Could not load bound machines' }),
+        errorLine(err, { context: 'Could not load bound deployments' }),
         'error',
       );
     } finally {
@@ -226,7 +220,7 @@ export default function EntitlementsPage({
       } else {
         await fetchEntitlements({ silent: true });
       }
-      showToast('Updated clinic auto-sync email / URL routing.');
+      showToast('Saved clinic Email / URL auto-sync rules.');
     } catch (err) {
       rememberError(err, 'Update clinic routing');
       showToast(
@@ -248,7 +242,7 @@ export default function EntitlementsPage({
         .eq('id', inspectedRow.subscription_id);
       if (error) throw error;
       await fetchEntitlements({ silent: true });
-      showToast(`Changed clinic plan to ${nextTier.toUpperCase()} — auto-syncs on client.`);
+      showToast(`Updated plan to ${nextTier.toUpperCase()} — auto-syncs on client.`);
     } catch (err) {
       rememberError(err, 'Change subscription tier');
       showToast(errorLine(err, { context: 'Could not change tier' }), 'error');
@@ -265,11 +259,11 @@ export default function EntitlementsPage({
       if (error) throw error;
       setBoundMachines((prev) => prev.filter((m) => m.id !== machineId));
       await fetchEntitlements({ silent: true });
-      showToast('Released hardware/origin node seat.');
+      showToast('Released deployment seat.');
     } catch (err) {
       rememberError(err, 'Release machine node');
       showToast(
-        errorLine(err, { context: 'Could not release node seat' }),
+        errorLine(err, { context: 'Could not release deployment seat' }),
         'error',
       );
     }
@@ -288,7 +282,7 @@ export default function EntitlementsPage({
 
       setRenewDateInput(nextDateStr);
       await fetchEntitlements({ silent: true });
-      showToast(`Extended subscription term to ${nextDateStr}.`);
+      showToast(`Extended paid term to ${nextDateStr}.`);
     } catch (err) {
       rememberError(err, 'Extend subscription term');
       showToast(
@@ -350,7 +344,7 @@ export default function EntitlementsPage({
         `Added ${validation.payload.p_tier.toUpperCase()} subscription for ${targetLabel}.`,
       );
     } catch (err) {
-      const explained = rememberError(err, 'Issue clinic license');
+      const explained = rememberError(err, 'Add clinic subscription');
       setErrorBanner(explained);
       showToast(explained.message, 'error');
     } finally {
@@ -377,17 +371,16 @@ export default function EntitlementsPage({
             : item,
         ),
       );
-
       showToast(
         nextActiveState
-          ? `Restored license key for ${row.customer_email}.`
-          : `Kill-switch engaged: revoked ${row.customer_email} key.`,
+          ? 'Subscription resumed — clinic can auto-sync.'
+          : 'Subscription paused — clinic enters read-only on next sync.',
         nextActiveState ? 'success' : 'warn',
       );
     } catch (err) {
-      rememberError(err, 'Toggle kill-switch');
+      rememberError(err, 'Toggle pause switch');
       showToast(
-        errorLine(err, { context: 'Could not toggle kill-switch' }),
+        errorLine(err, { context: 'Could not update subscription state' }),
         'error',
       );
     } finally {
@@ -395,55 +388,17 @@ export default function EntitlementsPage({
     }
   };
 
-  const handleCopyLicenseKey = async (licenseId, licenseKey) => {
-    const res = await copyTextToClipboard(licenseKey);
+  const handleCopyValue = async (id, text, label = 'Copied') => {
+    const res = await copyTextToClipboard(text);
     if (!res.ok) {
       showToast(res.error, 'error');
       return;
     }
-    setCopiedKeyId(licenseId);
+    setCopiedId(id);
+    showToast(label);
     setTimeout(() => {
-      setCopiedKeyId((current) => (current === licenseId ? null : current));
+      setCopiedId((cur) => (cur === id ? null : cur));
     }, 1800);
-  };
-
-  const handleExportCsv = () => {
-    const headers = [
-      'customer_email',
-      'license_key',
-      'tier',
-      'standing',
-      'registered_machines',
-      'max_machines',
-      'expires_at',
-    ];
-    const csvLines = [
-      headers.join(','),
-      ...filteredRecords.map((row) => {
-        const standing = computeStanding(row);
-        return [
-          row.customer_email,
-          row.license_key,
-          row.tier,
-          standing.label,
-          row.registered_machines,
-          row.max_machines,
-          row.expires_at,
-        ]
-          .map(sanitizeCsvCell)
-          .join(',');
-      }),
-    ];
-    const blob = new Blob([csvLines.join('\n')], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    const blobUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = `myclinic-entitlements-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(blobUrl);
-    showToast(`Exported ${filteredRecords.length} license records to CSV.`);
   };
 
   const metrics = useMemo(() => computeFleetMetrics(records), [records]);
@@ -483,7 +438,40 @@ export default function EntitlementsPage({
     });
   }, [records, searchQuery, statusFilter, tierFilter]);
 
-  const openDeploymentKit = (row) => {
+  const handleExportCsv = () => {
+    if (filteredRecords.length === 0) return;
+    const csvLines = [
+      'customer_email,allowed_origin,match_mode,tier,status,registered_machines,max_machines,expires_at',
+      ...filteredRecords.map((row) => {
+        const standing = computeStanding(row);
+        const identity = describeClinicIdentity(row);
+        return [
+          row.customer_email ?? '',
+          row.allowed_origin ?? '',
+          identity.mode,
+          row.tier,
+          standing.label,
+          row.registered_machines,
+          row.max_machines,
+          row.expires_at,
+        ]
+          .map(sanitizeCsvCell)
+          .join(',');
+      }),
+    ];
+    const blob = new Blob([csvLines.join('\n')], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = `myclinic-subscriptions-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(blobUrl);
+    showToast(`Exported ${filteredRecords.length} clinic records.`);
+  };
+
+  const openClientSdk = (row) => {
     onSelectLicenseForKit?.(row);
     window.location.hash = '#/node-agent';
   };
@@ -495,144 +483,114 @@ export default function EntitlementsPage({
         <div
           role="status"
           style={{
-            backgroundColor: 'var(--bg-elevated)',
+            backgroundColor: 'var(--bg-surface)',
             border: '1px solid var(--border-strong)',
             color: 'var(--text-primary)',
+            boxShadow: 'var(--shadow-float)',
           }}
-          className="fixed right-5 bottom-5 z-50 flex items-center gap-2.5 rounded-xl px-4 py-3 text-xs font-medium shadow-2xl"
+          className="fixed right-4 bottom-20 z-50 flex max-w-[92vw] items-center gap-2.5 rounded-xl px-4 py-3 text-xs font-medium lg:right-6 lg:bottom-6"
         >
           {toast.tone === 'error' ? (
-            <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+            <AlertCircle className="h-4 w-4 shrink-0 text-rose-500" />
           ) : toast.tone === 'warn' ? (
-            <ShieldAlert className="h-4 w-4 shrink-0 text-amber-400" />
+            <ShieldAlert className="h-4 w-4 shrink-0 text-amber-500" />
           ) : (
-            <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400" />
+            <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-500" />
           )}
-          <span>{toast.message}</span>
+          <span className="truncate">{toast.message}</span>
         </div>
       ) : null}
 
       {errorBanner ? (
         <ErrorAlert
           error={errorBanner}
-          context="License registry error"
+          context="Subscription registry error"
           onRetry={() => fetchEntitlements()}
           onDismiss={() => setErrorBanner(null)}
         />
       ) : null}
 
-      {/* 1. Precision 4-Card KPI Telemetry Strip */}
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      {/* 1. Cloudflare 4-Metric Zone Overview Strip */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <button
           type="button"
           onClick={() => setStatusFilter('active')}
-          className="console-panel rounded-xl p-4 text-left transition hover:opacity-95"
+          className="console-panel relative overflow-hidden rounded-xl p-4 text-left transition hover:opacity-95"
         >
+          <span className="absolute inset-x-0 top-0 h-[2.5px] bg-emerald-500" />
           <div className="flex items-center justify-between gap-2">
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="font-mono text-[10.5px] font-semibold tracking-wider uppercase"
+              className="font-mono text-[10px] font-semibold tracking-wider uppercase"
             >
-              Operational Keys
+              Active Clinics
             </span>
-            <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400" />
+            <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
-            <span className="tabular-nums text-2xl font-semibold tracking-tight">
+            <span className="tabular-nums text-2xl font-bold tracking-tight">
               {metrics.activeCount}
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
               className="tabular-nums font-mono text-xs"
             >
-              / {metrics.total} issued
+              / {metrics.total}
             </span>
-          </div>
-          <div
-            style={{ backgroundColor: 'var(--bg-well)' }}
-            className="mt-3 h-1.5 w-full overflow-hidden rounded-full"
-          >
-            <div
-              className="h-full rounded-full bg-emerald-500 transition-all"
-              style={{
-                width: `${
-                  metrics.total > 0
-                    ? Math.round((metrics.activeCount / metrics.total) * 100)
-                    : 0
-                }%`,
-              }}
-            />
           </div>
         </button>
 
-        <div className="console-panel rounded-xl p-4 text-left">
+        <div className="console-panel relative overflow-hidden rounded-xl p-4 text-left">
+          <span
+            style={{ backgroundColor: 'var(--cf-orange)' }}
+            className="absolute inset-x-0 top-0 h-[2.5px]"
+          />
           <div className="flex items-center justify-between gap-2">
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="font-mono text-[10.5px] font-semibold tracking-wider uppercase"
+              className="font-mono text-[10px] font-semibold tracking-wider uppercase"
             >
-              Hardware Seat Locks
+              Synced Deployments
             </span>
-            <Cpu className="h-4 w-4 shrink-0 text-sky-400" />
+            <Globe style={{ color: 'var(--cf-orange)' }} className="h-4 w-4 shrink-0" />
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
-            <span className="tabular-nums text-2xl font-semibold tracking-tight">
+            <span className="tabular-nums text-2xl font-bold tracking-tight">
               {metrics.totalRegisteredNodes}
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
               className="tabular-nums font-mono text-xs"
             >
-              / {metrics.totalCapacityNodes} seats
+              / {metrics.totalCapacityNodes}
             </span>
-          </div>
-          <div
-            style={{ backgroundColor: 'var(--bg-well)' }}
-            className="mt-3 h-1.5 w-full overflow-hidden rounded-full"
-          >
-            <div
-              className="h-full rounded-full bg-sky-400 transition-all"
-              style={{
-                width: `${
-                  metrics.totalCapacityNodes > 0
-                    ? Math.min(
-                        100,
-                        Math.round(
-                          (metrics.totalRegisteredNodes /
-                            metrics.totalCapacityNodes) *
-                            100,
-                        ),
-                      )
-                    : 0
-                }%`,
-              }}
-            />
           </div>
         </div>
 
         <button
           type="button"
           onClick={() => setStatusFilter('expiring')}
-          className="console-panel rounded-xl p-4 text-left transition hover:opacity-95"
+          className="console-panel relative overflow-hidden rounded-xl p-4 text-left transition hover:opacity-95"
         >
+          <span className="absolute inset-x-0 top-0 h-[2.5px] bg-amber-500" />
           <div className="flex items-center justify-between gap-2">
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="font-mono text-[10.5px] font-semibold tracking-wider uppercase"
+              className="font-mono text-[10px] font-semibold tracking-wider uppercase"
             >
-              Renewals ≤ 14 Days
+              Expiring &le; 14d
             </span>
-            <Clock className="h-4 w-4 shrink-0 text-amber-400" />
+            <Clock className="h-4 w-4 shrink-0 text-amber-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
-            <span className="tabular-nums text-2xl font-semibold tracking-tight">
+            <span className="tabular-nums text-2xl font-bold tracking-tight">
               {metrics.expiringSoonCount}
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
               className="font-mono text-xs"
             >
-              due soon
+              renew soon
             </span>
           </div>
         </button>
@@ -640,55 +598,47 @@ export default function EntitlementsPage({
         <button
           type="button"
           onClick={() => setStatusFilter('revoked')}
-          className="console-panel rounded-xl p-4 text-left transition hover:opacity-95"
+          className="console-panel relative overflow-hidden rounded-xl p-4 text-left transition hover:opacity-95"
         >
+          <span className="absolute inset-x-0 top-0 h-[2.5px] bg-rose-500" />
           <div className="flex items-center justify-between gap-2">
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="font-mono text-[10.5px] font-semibold tracking-wider uppercase"
+              className="font-mono text-[10px] font-semibold tracking-wider uppercase"
             >
-              Blocked / Expired
+              Paused / Lapsed
             </span>
-            <ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
+            <ShieldAlert className="h-4 w-4 shrink-0 text-rose-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
-            <span className="tabular-nums text-2xl font-semibold tracking-tight">
+            <span className="tabular-nums text-2xl font-bold tracking-tight">
               {metrics.revokedOrExpiredCount}
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
               className="font-mono text-xs"
             >
-              blocked
+              read-only
             </span>
           </div>
         </button>
       </div>
 
-      {/* 2. Full-Width Enterprise Registry Panel */}
+      {/* 2. Cloudflare Registry Card (Toolbar + Responsive List/Table) */}
       <section className="console-panel overflow-hidden rounded-2xl">
-        {/* Clean Two-Row Command Header (Zero Awkward Wrapping) */}
+        {/* Toolbar */}
         <div
           style={{ borderBottom: '1px solid var(--border-subtle)' }}
-          className="space-y-3 p-4"
+          className="space-y-3 p-3.5 sm:p-4"
         >
-          {/* Row A: Segmented Standing Tabs + Primary Actions */}
           <div className="flex flex-wrap items-center justify-between gap-2.5">
-            <div
-              style={{
-                backgroundColor: 'var(--bg-well)',
-                border: '1px solid var(--border-subtle)',
-              }}
-              className="inline-flex flex-wrap items-center rounded-lg p-0.5 text-xs"
-            >
+            {/* Scrollable Filter Chips on Mobile */}
+            <div className="no-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg p-1 console-well">
               {[
                 { id: 'all', label: `All (${metrics.total})` },
                 { id: 'active', label: `Active (${metrics.activeCount})` },
                 { id: 'expiring', label: `Expiring (${metrics.expiringSoonCount})` },
-                {
-                  id: 'revoked',
-                  label: `Blocked (${metrics.revokedOrExpiredCount})`,
-                },
+                { id: 'revoked', label: `Paused (${metrics.revokedOrExpiredCount})` },
               ].map((tab) => {
                 const active = statusFilter === tab.id;
                 return (
@@ -699,16 +649,16 @@ export default function EntitlementsPage({
                     style={
                       active
                         ? {
-                            backgroundColor: 'var(--bg-elevated)',
+                            backgroundColor: 'var(--bg-surface)',
+                            border: '1px solid var(--cf-orange-border)',
                             color: 'var(--text-primary)',
-                            border: '1px solid var(--border-strong)',
                           }
                         : {
-                            color: 'var(--text-secondary)',
                             border: '1px solid transparent',
+                            color: 'var(--text-muted)',
                           }
                     }
-                    className="rounded-md px-2.5 py-1 font-mono text-[11px] font-medium transition"
+                    className="shrink-0 rounded-md px-2 py-1 font-mono text-[10.5px] font-semibold transition-all sm:px-2.5 sm:text-[11px]"
                   >
                     {tab.label}
                   </button>
@@ -719,39 +669,40 @@ export default function EntitlementsPage({
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                disabled={filteredRecords.length === 0}
                 onClick={handleExportCsv}
-                className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+                className="console-btn-secondary inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium disabled:opacity-40"
               >
                 <Download className="h-3.5 w-3.5" />
-                CSV
+                <span className="hidden sm:inline">Export CSV</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => fetchEntitlements()}
                 disabled={refreshing}
-                className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+                onClick={() => fetchEntitlements()}
+                className="console-btn-secondary inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium"
               >
                 <RefreshCw
                   className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`}
                 />
-                Refresh
+                <span className="hidden sm:inline">Refresh</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setIssueOpen(true)}
-                className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs"
+                className="console-btn-primary inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold"
               >
-                <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
-                Issue License
+                <Plus className="h-3.5 w-3.5 stroke-[2.4]" />
+                <span>Add Clinic</span>
               </button>
             </div>
           </div>
 
-          {/* Row B: Full-Flex Search + Plan Tier Filter */}
-          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
+          {/* Search & Plan Filter */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 flex-1">
               <Search
                 style={{ color: 'var(--text-muted)' }}
                 className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2"
@@ -760,8 +711,8 @@ export default function EntitlementsPage({
                 type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search clinic email, 32-char hex license key, tier, PO/UTR reference..."
-                className="console-input w-full rounded-lg py-1.5 pr-8 pl-8 text-xs"
+                placeholder="Search by clinic owner email, https:// URL, plan, or billing note..."
+                className="console-input w-full rounded-lg py-2 pr-8 pl-8 text-xs"
               />
               {searchQuery ? (
                 <button
@@ -769,7 +720,7 @@ export default function EntitlementsPage({
                   onClick={() => setSearchQuery('')}
                   aria-label="Clear search"
                   style={{ color: 'var(--text-muted)' }}
-                  className="absolute top-1/2 right-2.5 -translate-y-1/2 hover:opacity-100"
+                  className="absolute top-1/2 right-2.5 -translate-y-1/2"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -779,15 +730,15 @@ export default function EntitlementsPage({
             <div className="flex items-center gap-2 sm:shrink-0">
               <SlidersHorizontal
                 style={{ color: 'var(--text-muted)' }}
-                className="h-3.5 w-3.5 shrink-0"
+                className="hidden h-3.5 w-3.5 shrink-0 sm:block"
               />
               <select
                 aria-label="Filter by myClinic plan"
                 value={tierFilter}
                 onChange={(e) => setTierFilter(e.target.value)}
-                className="console-input w-full rounded-lg px-2.5 py-1.5 font-mono text-xs sm:w-48"
+                className="console-input w-full rounded-lg px-2.5 py-2 font-mono text-xs sm:w-48"
               >
-                <option value="all">All myClinic Plans</option>
+                <option value="all">All Plans</option>
                 <option value="solo">Solo Plan (1 Doc)</option>
                 <option value="growth">Growth Plan (5 Docs)</option>
                 <option value="chain">Chain Plan (Unlimited)</option>
@@ -796,71 +747,68 @@ export default function EntitlementsPage({
           </div>
         </div>
 
-        {/* Zero-Clipping 5-Column Registry Table */}
+        {/* Empty / Loading / Data States */}
         {loading ? (
           <div
             style={{ color: 'var(--text-secondary)' }}
             className="flex items-center justify-center py-20 text-xs"
           >
-            <Loader2 className="mr-2 h-4 w-4 animate-spin text-emerald-400" />
-            Querying admin_license_view...
+            <Loader2
+              style={{ color: 'var(--cf-orange)' }}
+              className="mr-2 h-4 w-4 animate-spin"
+            />
+            Loading clinic subscriptions...
           </div>
         ) : records.length === 0 ? (
-          <div className="px-6 py-16 text-center">
-            <KeyRound
-              style={{ color: 'var(--accent-primary)' }}
-              className="mx-auto h-8 w-8 opacity-85"
-            />
-            <p
-              style={{ color: 'var(--text-primary)' }}
-              className="mt-3 text-sm font-semibold"
+          <div className="px-5 py-16 text-center">
+            <div
+              style={{
+                backgroundColor: 'var(--cf-orange-soft)',
+                border: '1px solid var(--cf-orange-border)',
+              }}
+              className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl"
             >
-              No clinic licenses issued yet
+              <Building2 style={{ color: 'var(--cf-orange)' }} className="h-6 w-6" />
+            </div>
+            <p className="mt-4 text-sm font-bold">
+              No clinics added to Central Auto-Sync yet
             </p>
             <p
               style={{ color: 'var(--text-muted)' }}
               className="mx-auto mt-1 max-w-md text-xs leading-relaxed"
             >
-              Issue your first 32-character license key to onboard a{' '}
-              <code className="font-mono">myClinic</code> deployment, or open the
-              5-step interactive guide to finish setting up RS256 signing.
+              Add your first clinic by <strong>Owner Email</strong>,{' '}
+              <strong>Clinic Website URL</strong>, or <strong>both</strong> — client{' '}
+              <code className="font-mono">myClinic</code> deployments will unlock
+              automatically without typing any license key.
             </p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
               <button
                 type="button"
                 onClick={() => setIssueOpen(true)}
-                className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold"
+                className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold"
               >
                 <Plus className="h-3.5 w-3.5" />
-                Issue First License
+                Add First Clinic
               </button>
               {onOpenGuide ? (
                 <button
                   type="button"
                   onClick={onOpenGuide}
-                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium"
+                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium"
                 >
-                  <BookOpen className="h-3.5 w-3.5 text-emerald-400" />
-                  Open Step-by-Step Guide
+                  <BookOpen
+                    style={{ color: 'var(--cf-orange)' }}
+                    className="h-3.5 w-3.5"
+                  />
+                  2-Side Quickstart Guide
                 </button>
               ) : null}
             </div>
           </div>
         ) : filteredRecords.length === 0 ? (
-          <div className="px-6 py-16 text-center">
-            <KeyRound
-              style={{ color: 'var(--text-muted)' }}
-              className="mx-auto h-8 w-8 opacity-60"
-            />
-            <p
-              style={{ color: 'var(--text-primary)' }}
-              className="mt-3 text-sm font-medium"
-            >
-              No matching license records
-            </p>
-            <p style={{ color: 'var(--text-muted)' }} className="mt-1 text-xs">
-              Adjust your search filters or issue a new cryptographic subscription key.
-            </p>
+          <div className="px-5 py-16 text-center">
+            <p className="text-sm font-semibold">No clinics match your filter</p>
             <button
               type="button"
               onClick={() => {
@@ -868,444 +816,400 @@ export default function EntitlementsPage({
                 setStatusFilter('all');
                 setTierFilter('all');
               }}
-              className="console-btn-secondary mt-4 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs"
+              className="console-btn-secondary mt-3 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs"
             >
-              Reset Filters
+              Clear filters
             </button>
           </div>
         ) : (
           <>
-            {/* Compact / Split-Pane Structured Security Rows (< 1280px — Zero Horizontal Clipping) */}
-            <div className="xl:hidden">
+            {/* Mobile & Tablet Card Stack (< 1024px — Zero Horizontal Scroll) */}
+            <div className="divide-y divide-[var(--border-subtle)] lg:hidden">
               {filteredRecords.map((row) => {
                 const standing = computeStanding(row);
                 const pill = buildStandingPillStyle(standing);
+                const identity = describeClinicIdentity(row);
                 const seatSpec =
                   MYCLINIC_TIER_ENTITLEMENTS[row.tier] ??
                   MYCLINIC_TIER_ENTITLEMENTS.standard;
                 const isToggling = Boolean(togglingIds[row.license_id]);
-                const isCopied = copiedKeyId === row.license_id;
 
                 return (
-                  <div
-                    key={row.license_id}
-                    style={{ borderBottom: '1px solid var(--border-subtle)' }}
-                    className="console-row-hover space-y-2.5 p-4 transition-colors"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span
-                          style={{
-                            backgroundColor: pill.bg,
-                            border: `1px solid ${pill.border}`,
-                            color: pill.text,
-                          }}
-                          className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold uppercase"
-                        >
-                          <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
-                          {standing.label}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => openInspector(row)}
-                          style={{ color: 'var(--text-primary)' }}
-                          className="truncate text-left text-xs font-semibold hover:underline"
-                        >
-                          {describeClinicIdentity(row).primary}
-                        </button>
-                        {row.allowed_origin && row.customer_email ? (
-                          <span
-                            style={{ color: 'var(--text-muted)' }}
-                            className="truncate font-mono text-[10.5px]"
-                          >
-                            {row.allowed_origin}
-                          </span>
-                        ) : null}
-                        <span
-                          style={{
-                            backgroundColor: 'var(--bg-elevated)',
-                            border: '1px solid var(--border-subtle)',
-                          }}
-                          className="rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase"
-                        >
-                          {seatSpec.plan}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => openInspector(row)}
-                          className="console-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px]"
-                        >
-                          <Cpu className="h-3 w-3 text-sky-400" />
-                          Inspect
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openDeploymentKit(row)}
-                          className="console-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px]"
-                        >
-                          <Container className="h-3 w-3" />
-                          Kit
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isToggling}
-                          onClick={() => handleToggleKillSwitch(row)}
-                          style={
-                            row.is_active
-                              ? {
-                                  backgroundColor: 'var(--danger-soft)',
-                                  border: '1px solid rgba(244, 63, 94, 0.32)',
-                                  color: 'var(--danger-text)',
-                                }
-                              : {
-                                  backgroundColor: 'var(--accent-soft)',
-                                  border: '1px solid var(--accent-border)',
-                                  color: 'var(--accent-primary)',
-                                }
-                          }
-                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-semibold transition hover:opacity-90 disabled:opacity-50"
-                        >
-                          <Power className="h-3 w-3" />
-                          {row.is_active ? 'Kill' : 'Enable'}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{ color: 'var(--text-secondary)' }}
-                      className="flex flex-wrap items-center gap-x-4 gap-y-1.5 font-mono text-[11px]"
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        <code
-                          style={{
-                            backgroundColor: 'var(--bg-well)',
-                            border: '1px solid var(--border-subtle)',
-                            color: 'var(--text-primary)',
-                          }}
-                          className="rounded px-1.5 py-0.5 text-[10.5px]"
-                          title={row.license_key}
-                        >
-                          {formatCompactKey(row.license_key)}
-                        </code>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleCopyLicenseKey(row.license_id, row.license_key)
-                          }
-                          title={`Copy ${row.license_key}`}
-                          className="console-btn-secondary inline-flex h-5 w-5 items-center justify-center rounded"
-                        >
-                          {isCopied ? (
-                            <Check className="h-3 w-3 text-emerald-400" />
-                          ) : (
-                            <Copy className="h-3 w-3" />
-                          )}
-                        </button>
-                      </span>
-
-                      <span className="tabular-nums">
-                        {row.registered_machines}/{row.max_machines} nodes
-                      </span>
-
-                      <span style={{ color: 'var(--text-muted)' }}>
-                        {seatSpec.doctors === null
-                          ? '∞ doc · ∞ br'
-                          : `${seatSpec.doctors} doc · ${seatSpec.frontdesk} desk`}
-                      </span>
-
-                      <span
-                        style={{
-                          color:
-                            standing.daysLeft !== null && standing.daysLeft <= 14
-                              ? 'var(--warn-text)'
-                              : 'var(--text-muted)',
-                        }}
-                        className="tabular-nums"
-                      >
-                        Exp {formatDisplayDate(row.expires_at)}
-                        {standing.daysLeft !== null
-                          ? standing.daysLeft < 0
-                            ? ` (${Math.abs(standing.daysLeft)}d overdue)`
-                            : ` (${standing.daysLeft}d)`
-                          : ''}
-                      </span>
-                    </div>
-
-                    {row.notes ? <RichNotesView notes={row.notes} compact /> : null}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Wide Desktop 5-Column Registry Table (>= 1280px) */}
-            <div className="hidden overflow-x-auto xl:block">
-            <table className="w-full border-collapse text-left text-xs">
-              <thead>
-                <tr
-                  style={{
-                    backgroundColor: 'var(--bg-well)',
-                    borderBottom: '1px solid var(--border-subtle)',
-                    color: 'var(--text-muted)',
-                  }}
-                  className="font-mono text-[10px] tracking-wider uppercase"
-                >
-                  <th className="px-4 py-2.5 font-semibold">Clinic (Email / URL)</th>
-                  <th className="px-3 py-2.5 font-semibold">Auto-Sync Match</th>
-                  <th className="px-3 py-2.5 font-semibold">Plan &amp; Seats</th>
-                  <th className="px-3 py-2.5 font-semibold">Locks &amp; Expiry</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">Controls</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRecords.map((row) => {
-                  const standing = computeStanding(row);
-                  const pill = buildStandingPillStyle(standing);
-                  const identity = describeClinicIdentity(row);
-                  const seatSpec =
-                    MYCLINIC_TIER_ENTITLEMENTS[row.tier] ??
-                    MYCLINIC_TIER_ENTITLEMENTS.standard;
-                  const isToggling = Boolean(togglingIds[row.license_id]);
-                  const isCopied = copiedKeyId === row.license_id;
-
-                  return (
-                    <tr
-                      key={row.license_id}
-                      style={{ borderBottom: '1px solid var(--border-subtle)' }}
-                      className="console-row-hover align-top transition-colors"
-                    >
-                      {/* Col 1: Clinic Identity (Email and/or URL) + Standing Pill */}
-                      <td className="min-w-[220px] px-4 py-3.5">
-                        <div className="flex flex-wrap items-center gap-2">
+                  <div key={row.license_id} className="space-y-3 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span
                             style={{
                               backgroundColor: pill.bg,
                               border: `1px solid ${pill.border}`,
                               color: pill.text,
                             }}
-                            className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold uppercase"
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase"
                           >
                             <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
-                            {standing.label}
+                            {standing.stateCode === 'KEY_KILLED'
+                              ? 'PAUSED'
+                              : standing.label}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => openInspector(row)}
-                            style={{ color: 'var(--text-primary)' }}
-                            className="truncate text-left font-medium hover:underline"
-                          >
-                            {identity.primary}
-                          </button>
-                        </div>
-                        {identity.secondary ? (
-                          <div
-                            style={{ color: 'var(--text-muted)' }}
-                            className="mt-1 flex items-center gap-1 font-mono text-[10.5px]"
-                          >
-                            <Globe className="h-3 w-3 shrink-0 text-emerald-400" />
-                            <span className="truncate">{identity.secondary}</span>
-                          </div>
-                        ) : null}
-                        {row.notes ? (
-                          <div className="max-w-md">
-                            <RichNotesView notes={row.notes} compact />
-                          </div>
-                        ) : null}
-                      </td>
 
-                      {/* Col 2: Auto-Sync Match Mode + Optional Legacy Key */}
-                      <td className="px-3 py-3.5 whitespace-nowrap">
-                        <span
-                          style={{
-                            backgroundColor: 'var(--bg-well)',
-                            border: '1px solid var(--border-subtle)',
-                            color: 'var(--text-primary)',
-                          }}
-                          className="inline-block rounded-md px-2 py-0.5 font-mono text-[10.5px] font-semibold"
-                        >
-                          {identity.modeLabel}
-                        </span>
-                        <div className="mt-1 flex items-center gap-1">
                           <span
-                            style={{ color: 'var(--text-muted)' }}
-                            className="font-mono text-[10px]"
-                            title={`Optional legacy key: ${row.license_key}`}
+                            style={{
+                              backgroundColor: 'var(--cf-orange-soft)',
+                              border: '1px solid var(--cf-orange-border)',
+                              color: 'var(--cf-orange)',
+                            }}
+                            className="rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase"
                           >
-                            {row.last_heartbeat
-                              ? `Synced ${formatDisplayDate(row.last_heartbeat)}`
-                              : 'Waiting first sync'}
+                            {seatSpec.plan}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleCopyLicenseKey(row.license_id, row.license_key)
-                            }
-                            title={`Copy optional legacy key (${row.license_key})`}
-                            className="console-btn-secondary inline-flex h-5 w-5 items-center justify-center rounded"
-                          >
-                            {isCopied ? (
-                              <Check className="h-2.5 w-2.5 text-emerald-400" />
-                            ) : (
-                              <Copy className="h-2.5 w-2.5" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
 
-                      {/* Col 3: Plan Badge & Seats */}
-                      <td className="px-3 py-3.5 whitespace-nowrap">
-                        <span
-                          style={{
-                            backgroundColor: 'var(--bg-elevated)',
-                            border: '1px solid var(--border-subtle)',
-                          }}
-                          className="inline-block rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase"
-                        >
-                          {seatSpec.plan}
-                        </span>
-                        <div
-                          style={{ color: 'var(--text-muted)' }}
-                          className="mt-1 font-mono text-[10px]"
-                        >
-                          {seatSpec.doctors === null
-                            ? '∞ doc · ∞ br'
-                            : `${seatSpec.doctors} doc · ${seatSpec.frontdesk} desk`}
+                          <span className="console-well rounded px-1.5 py-0.5 font-mono text-[10px]">
+                            {identity.modeLabel}
+                          </span>
                         </div>
-                      </td>
 
-                      {/* Col 4: Seat Locks + Term Expiry */}
-                      <td className="px-3 py-3.5 whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => openInspector(row)}
-                          className="group block text-left"
+                          className="mt-2 block max-w-full truncate text-left text-sm font-semibold hover:underline"
                         >
-                          <div className="flex items-center gap-2 font-mono text-[11px]">
-                            <span className="tabular-nums font-semibold">
-                              {row.registered_machines}/{row.max_machines} nodes
-                            </span>
-                            <div
-                              style={{ backgroundColor: 'var(--bg-well)' }}
-                              className="h-1.5 w-12 overflow-hidden rounded-full"
-                            >
-                              <div
-                                className={`h-full rounded-full ${
-                                  standing.usagePct >= 100
-                                    ? 'bg-amber-400'
-                                    : 'bg-emerald-400'
-                                }`}
-                                style={{
-                                  width: `${Math.min(100, standing.usagePct)}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <div
-                            style={{
-                              color:
-                                standing.daysLeft !== null && standing.daysLeft <= 14
-                                  ? 'var(--warn-text)'
-                                  : 'var(--text-muted)',
-                            }}
-                            className="mt-1 tabular-nums font-mono text-[10px]"
-                          >
-                            {formatDisplayDate(row.expires_at)}
-                            {standing.daysLeft !== null
-                              ? standing.daysLeft < 0
-                                ? ` · ${Math.abs(standing.daysLeft)}d overdue`
-                                : ` · ${standing.daysLeft}d`
-                              : ''}
-                          </div>
+                          {identity.primary}
                         </button>
-                      </td>
 
-                      {/* Col 5: Controls */}
-                      <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center justify-end gap-1">
+                        {identity.secondary ? (
+                          <div
+                            style={{ color: 'var(--text-muted)' }}
+                            className="mt-0.5 flex items-center gap-1 font-mono text-[11px]"
+                          >
+                            <Globe className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{identity.secondary}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{ color: 'var(--text-secondary)' }}
+                      className="grid grid-cols-2 gap-2 rounded-xl p-2.5 font-mono text-[11px] console-well"
+                    >
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }} className="block text-[9.5px] uppercase">
+                          Deployments
+                        </span>
+                        <span className="font-semibold">
+                          {row.registered_machines} / {row.max_machines} active
+                        </span>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }} className="block text-[9.5px] uppercase">
+                          Valid Until
+                        </span>
+                        <span
+                          style={{
+                            color:
+                              standing.daysLeft !== null && standing.daysLeft <= 14
+                                ? 'var(--warn-text)'
+                                : 'var(--text-primary)',
+                          }}
+                          className="font-semibold"
+                        >
+                          {formatDisplayDate(row.expires_at)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {row.notes ? <RichNotesView notes={row.notes} compact /> : null}
+
+                    <div className="grid grid-cols-2 gap-2 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => openInspector(row)}
+                        className="console-btn-secondary inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-medium"
+                      >
+                        <Cpu className="h-3.5 w-3.5" />
+                        Manage Clinic
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isToggling}
+                        onClick={() => handleToggleKillSwitch(row)}
+                        style={
+                          row.is_active
+                            ? {
+                                backgroundColor: 'var(--danger-soft)',
+                                border: '1px solid rgba(239, 68, 68, 0.35)',
+                                color: 'var(--danger-text)',
+                              }
+                            : {
+                                backgroundColor: 'var(--ok-soft)',
+                                border: '1px solid var(--ok-border)',
+                                color: 'var(--ok-text)',
+                              }
+                        }
+                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold disabled:opacity-50"
+                      >
+                        <Power className="h-3.5 w-3.5" />
+                        {row.is_active ? 'Pause Clinic' : 'Resume Clinic'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Cloudflare Zone Table (>= 1024px) */}
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="w-full border-collapse text-left text-xs">
+                <thead>
+                  <tr
+                    style={{
+                      backgroundColor: 'var(--bg-well)',
+                      borderBottom: '1px solid var(--border-subtle)',
+                      color: 'var(--text-muted)',
+                    }}
+                    className="font-mono text-[10px] tracking-wider uppercase"
+                  >
+                    <th className="px-4 py-3 font-semibold">Clinic (Email / Website URL)</th>
+                    <th className="px-3 py-3 font-semibold">Auto-Sync Routing</th>
+                    <th className="px-3 py-3 font-semibold">Plan &amp; Limits</th>
+                    <th className="px-3 py-3 font-semibold">Seats &amp; Term</th>
+                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRecords.map((row) => {
+                    const standing = computeStanding(row);
+                    const pill = buildStandingPillStyle(standing);
+                    const identity = describeClinicIdentity(row);
+                    const seatSpec =
+                      MYCLINIC_TIER_ENTITLEMENTS[row.tier] ??
+                      MYCLINIC_TIER_ENTITLEMENTS.standard;
+                    const isToggling = Boolean(togglingIds[row.license_id]);
+
+                    return (
+                      <tr
+                        key={row.license_id}
+                        style={{ borderBottom: '1px solid var(--border-subtle)' }}
+                        className="console-row-hover align-top transition-colors"
+                      >
+                        {/* Col 1 */}
+                        <td className="min-w-[230px] px-4 py-3.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              style={{
+                                backgroundColor: pill.bg,
+                                border: `1px solid ${pill.border}`,
+                                color: pill.text,
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase"
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
+                              {standing.stateCode === 'KEY_KILLED'
+                                ? 'PAUSED'
+                                : standing.label}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => openInspector(row)}
+                              className="truncate text-left font-semibold hover:underline"
+                            >
+                              {identity.primary}
+                            </button>
+                          </div>
+
+                          {identity.secondary ? (
+                            <div
+                              style={{ color: 'var(--text-muted)' }}
+                              className="mt-1 flex items-center gap-1 font-mono text-[11px]"
+                            >
+                              <Globe
+                                style={{ color: 'var(--cf-orange)' }}
+                                className="h-3 w-3 shrink-0"
+                              />
+                              <span className="truncate">{identity.secondary}</span>
+                            </div>
+                          ) : null}
+
+                          {row.notes ? (
+                            <div className="mt-1 max-w-md">
+                              <RichNotesView notes={row.notes} compact />
+                            </div>
+                          ) : null}
+                        </td>
+
+                        {/* Col 2 */}
+                        <td className="px-3 py-3.5 whitespace-nowrap">
+                          <span className="console-well inline-block rounded-md px-2 py-0.5 font-mono text-[10.5px] font-semibold">
+                            {identity.modeLabel}
+                          </span>
+                          <div
+                            style={{ color: 'var(--text-muted)' }}
+                            className="mt-1 font-mono text-[10px]"
+                          >
+                            {row.last_heartbeat
+                              ? `Synced ${formatDisplayDate(row.last_heartbeat)}`
+                              : 'Awaiting first sync'}
+                          </div>
+                        </td>
+
+                        {/* Col 3 */}
+                        <td className="px-3 py-3.5 whitespace-nowrap">
+                          <span
+                            style={{
+                              backgroundColor: 'var(--cf-orange-soft)',
+                              border: '1px solid var(--cf-orange-border)',
+                              color: 'var(--cf-orange)',
+                            }}
+                            className="inline-block rounded-md px-2 py-0.5 font-mono text-[10.5px] font-bold uppercase"
+                          >
+                            {seatSpec.plan}
+                          </span>
+                          <div
+                            style={{ color: 'var(--text-muted)' }}
+                            className="mt-1 font-mono text-[10px]"
+                          >
+                            {seatSpec.doctors === null
+                              ? 'Unlimited docs & branches'
+                              : `${seatSpec.doctors} doc · ${seatSpec.frontdesk} desk`}
+                          </div>
+                        </td>
+
+                        {/* Col 4 */}
+                        <td className="px-3 py-3.5 whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => openInspector(row)}
-                            title="Inspect nodes & extend term"
-                            className="console-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px]"
+                            className="block text-left"
                           >
-                            <Cpu className="h-3 w-3 text-sky-400" />
-                            Inspect
+                            <div className="flex items-center gap-2 font-mono text-[11px]">
+                              <span className="tabular-nums font-semibold">
+                                {row.registered_machines}/{row.max_machines} seats
+                              </span>
+                              <div
+                                style={{ backgroundColor: 'var(--bg-well)' }}
+                                className="h-1.5 w-12 overflow-hidden rounded-full"
+                              >
+                                <div
+                                  className={`h-full rounded-full ${
+                                    standing.usagePct >= 100
+                                      ? 'bg-amber-500'
+                                      : 'bg-emerald-500'
+                                  }`}
+                                  style={{
+                                    width: `${Math.min(100, standing.usagePct)}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <div
+                              style={{
+                                color:
+                                  standing.daysLeft !== null && standing.daysLeft <= 14
+                                    ? 'var(--warn-text)'
+                                    : 'var(--text-muted)',
+                              }}
+                              className="mt-1 tabular-nums font-mono text-[10.5px]"
+                            >
+                              {formatDisplayDate(row.expires_at)}
+                              {standing.daysLeft !== null
+                                ? standing.daysLeft < 0
+                                  ? ` · ${Math.abs(standing.daysLeft)}d overdue`
+                                  : ` · ${standing.daysLeft}d left`
+                                : ''}
+                            </div>
                           </button>
+                        </td>
 
-                          <button
-                            type="button"
-                            onClick={() => openDeploymentKit(row)}
-                            title="Open Docker / GitHub Pages deployment kit"
-                            className="console-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px]"
-                          >
-                            <Container className="h-3 w-3" />
-                            Kit
-                          </button>
+                        {/* Col 5 */}
+                        <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openInspector(row)}
+                              className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+                            >
+                              Manage
+                            </button>
 
-                          <button
-                            type="button"
-                            disabled={isToggling}
-                            onClick={() => handleToggleKillSwitch(row)}
-                            style={
-                              row.is_active
-                                ? {
-                                    backgroundColor: 'var(--danger-soft)',
-                                    border: '1px solid rgba(244, 63, 94, 0.32)',
-                                    color: 'var(--danger-text)',
-                                  }
-                                : {
-                                    backgroundColor: 'var(--accent-soft)',
-                                    border: '1px solid var(--accent-border)',
-                                    color: 'var(--accent-primary)',
-                                  }
-                            }
-                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-semibold transition hover:opacity-90 disabled:opacity-50"
-                          >
-                            <Power className="h-3 w-3" />
-                            {row.is_active ? 'Kill' : 'Enable'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            <button
+                              type="button"
+                              onClick={() => openClientSdk(row)}
+                              title="Open myClinic Client SDK"
+                              className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs"
+                            >
+                              <Blocks className="h-3.5 w-3.5" />
+                              SDK
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={isToggling}
+                              onClick={() => handleToggleKillSwitch(row)}
+                              style={
+                                row.is_active
+                                  ? {
+                                      backgroundColor: 'var(--danger-soft)',
+                                      border: '1px solid rgba(239, 68, 68, 0.32)',
+                                      color: 'var(--danger-text)',
+                                    }
+                                  : {
+                                      backgroundColor: 'var(--ok-soft)',
+                                      border: '1px solid var(--ok-border)',
+                                      color: 'var(--ok-text)',
+                                    }
+                              }
+                              className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50"
+                            >
+                              <Power className="h-3 w-3" />
+                              {row.is_active ? 'Pause' : 'Resume'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </section>
 
-      {/* Slide-Over Drawer 1: Provision New Clinic Subscription (Email, URL, or Both) */}
+      {/* Drawer 1: Add Clinic Subscription */}
       <SlideOverDrawer
         open={issueOpen}
         onClose={() => setIssueOpen(false)}
-        title="Add Clinic Subscription (Keyless Auto-Sync)"
-        subtitle="Match clinics automatically by Owner Email, Clinic Website URL, or BOTH — no license key required on the client."
+        title="Add Clinic Subscription"
+        subtitle="Keyless Central Auto-Sync — match by Clinic Owner Email, Website URL, or both."
       >
         <form id="provision-license-form" onSubmit={handleProvisionSubmit} className="space-y-5">
-          <div className="console-well space-y-3.5 rounded-xl p-3.5">
-            <p style={{ color: 'var(--text-muted)' }} className="text-[11px] leading-relaxed">
-              Fill <strong>Owner Email</strong>, <strong>Clinic URL</strong>, or <strong>both</strong> (filling both requires both to match — strongest protection).
+          <div className="console-well space-y-3.5 rounded-xl p-4">
+            <p style={{ color: 'var(--text-secondary)' }} className="text-xs leading-relaxed">
+              Enter <strong>Owner Email</strong>, <strong>Clinic URL</strong>, or{' '}
+              <strong>both</strong>. Providing both pins the subscription to that exact
+              owner and domain.
             </p>
 
             <div>
               <label
                 htmlFor="prov-customer-email"
                 style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
+                className="flex items-center gap-1.5 text-xs font-medium"
               >
-                1. Clinic Owner Email <span style={{ color: 'var(--text-muted)' }}>(optional if URL set)</span>
+                <Mail className="h-3.5 w-3.5" />
+                Clinic Owner Email{' '}
+                <span style={{ color: 'var(--text-muted)' }}>(optional if URL set)</span>
               </label>
               <input
                 id="prov-customer-email"
                 type="email"
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
-                placeholder="owner@cityclinic.in"
-                className="console-input mt-1 w-full rounded-lg px-3 py-2 text-xs"
+                placeholder="dr.sharma@sharmaclinic.in"
+                className="console-input mt-1.5 w-full rounded-lg px-3 py-2.5 text-xs"
               />
             </div>
 
@@ -1313,9 +1217,11 @@ export default function EntitlementsPage({
               <label
                 htmlFor="prov-allowed-origin"
                 style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
+                className="flex items-center gap-1.5 text-xs font-medium"
               >
-                2. Clinic Website URL <span style={{ color: 'var(--text-muted)' }}>(optional if Email set)</span>
+                <Globe className="h-3.5 w-3.5" />
+                Clinic Website URL{' '}
+                <span style={{ color: 'var(--text-muted)' }}>(optional if Email set)</span>
               </label>
               <input
                 id="prov-allowed-origin"
@@ -1323,12 +1229,12 @@ export default function EntitlementsPage({
                 value={allowedOrigin}
                 onChange={(e) => setAllowedOrigin(e.target.value)}
                 placeholder="https://sharmaclinic.github.io"
-                className="console-input mt-1 w-full rounded-lg px-3 py-2 font-mono text-xs"
+                className="console-input mt-1.5 w-full rounded-lg px-3 py-2.5 font-mono text-xs"
               />
             </div>
 
             {!allowedOrigin.trim() ? (
-              <label className="flex cursor-pointer items-start gap-2 pt-0.5 text-xs">
+              <label className="flex cursor-pointer items-start gap-2.5 pt-0.5 text-xs">
                 <input
                   type="checkbox"
                   checked={lockFirstOrigin}
@@ -1336,19 +1242,20 @@ export default function EntitlementsPage({
                   className="mt-0.5 rounded"
                 />
                 <span style={{ color: 'var(--text-secondary)' }} className="text-[11px] leading-relaxed">
-                  <strong>Auto-lock to first cloud URL</strong> — automatically pins the clinic&apos;s domain the first time they open <code className="font-mono">myClinic</code> online.
+                  <strong>Auto-lock first cloud URL</strong> — pins their domain
+                  automatically the first time they open <code className="font-mono">myClinic</code>.
                 </span>
               </label>
             ) : null}
           </div>
 
-          {/* Visual 3-Card Plan Picker */}
+          {/* 3-Card Plan Selector */}
           <div>
             <span
               style={{ color: 'var(--text-secondary)' }}
               className="block text-xs font-medium"
             >
-              myClinic Plan Tier &amp; Seat Entitlements
+              myClinic Plan Tier
             </span>
             <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-3">
               {TIER_CATALOG.filter((t) =>
@@ -1364,8 +1271,8 @@ export default function EntitlementsPage({
                     style={
                       selected
                         ? {
-                            backgroundColor: 'var(--accent-soft)',
-                            border: '1px solid var(--accent-border)',
+                            backgroundColor: 'var(--cf-orange-soft)',
+                            border: '1px solid var(--cf-orange-border)',
                           }
                         : {
                             backgroundColor: 'var(--bg-well)',
@@ -1375,20 +1282,23 @@ export default function EntitlementsPage({
                     className="rounded-xl p-3 text-left transition"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-semibold uppercase">
+                      <span className="font-mono text-xs font-bold uppercase">
                         {item.value}
                       </span>
                       {selected ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                        <Check
+                          style={{ color: 'var(--cf-orange)' }}
+                          className="h-3.5 w-3.5"
+                        />
                       ) : null}
                     </div>
                     <p
                       style={{ color: 'var(--text-muted)' }}
-                      className="mt-1.5 font-mono text-[10px] leading-relaxed"
+                      className="mt-1 font-mono text-[10px] leading-relaxed"
                     >
                       {seats.doctors === null
                         ? 'Unlimited doctors & branches'
-                        : `${seats.doctors} Doctor · ${seats.frontdesk} Desk · ${seats.branches} Branch`}
+                        : `${seats.doctors} Doc · ${seats.frontdesk} Desk`}
                     </p>
                   </button>
                 );
@@ -1396,20 +1306,20 @@ export default function EntitlementsPage({
             </div>
           </div>
 
-          {/* Max Hardware / Origin Nodes + Expiration */}
+          {/* Max Seats + Paid Term */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label
                 style={{ color: 'var(--text-secondary)' }}
                 className="block text-xs font-medium"
               >
-                Max Bound Nodes / Origins
+                Max Allowed Deployments
               </label>
               <div className="mt-1.5 flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => setMaxMachines((n) => Math.max(1, Number(n) - 1))}
-                  className="console-btn-secondary inline-flex h-8 w-8 items-center justify-center rounded-lg"
+                  className="console-btn-secondary inline-flex h-9 w-9 items-center justify-center rounded-lg"
                 >
                   <Minus className="h-3.5 w-3.5" />
                 </button>
@@ -1422,12 +1332,12 @@ export default function EntitlementsPage({
                   onChange={(e) =>
                     setMaxMachines(Math.max(1, Number(e.target.value) || 1))
                   }
-                  className="console-input w-full rounded-lg px-3 py-1.5 text-center font-mono text-xs"
+                  className="console-input h-9 w-full rounded-lg px-3 text-center font-mono text-xs"
                 />
                 <button
                   type="button"
                   onClick={() => setMaxMachines((n) => Math.min(500, Number(n) + 1))}
-                  className="console-btn-secondary inline-flex h-8 w-8 items-center justify-center rounded-lg"
+                  className="console-btn-secondary inline-flex h-9 w-9 items-center justify-center rounded-lg"
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
@@ -1440,7 +1350,7 @@ export default function EntitlementsPage({
                 style={{ color: 'var(--text-secondary)' }}
                 className="block text-xs font-medium"
               >
-                Paid Term End Date
+                Subscription End Date
               </label>
               <input
                 id="prov-expires-date"
@@ -1448,7 +1358,7 @@ export default function EntitlementsPage({
                 required
                 value={expiresDate}
                 onChange={(e) => setExpiresDate(e.target.value)}
-                className="console-input mt-1.5 w-full rounded-lg px-3 py-1.5 font-mono text-xs"
+                className="console-input mt-1.5 h-9 w-full rounded-lg px-3 font-mono text-xs"
               />
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {[
@@ -1461,7 +1371,7 @@ export default function EntitlementsPage({
                     key={preset.label}
                     type="button"
                     onClick={() => setExpiresDate(defaultExpirationDate(preset.days))}
-                    className="console-btn-secondary rounded px-1.5 py-0.5 font-mono text-[10px]"
+                    className="console-btn-secondary rounded px-2 py-0.5 font-mono text-[10px]"
                   >
                     {preset.label}
                   </button>
@@ -1476,55 +1386,60 @@ export default function EntitlementsPage({
             <button
               type="button"
               onClick={() => setIssueOpen(false)}
-              className="console-btn-secondary rounded-lg px-4 py-2 text-xs font-medium"
+              className="console-btn-secondary rounded-lg px-4 py-2.5 text-xs font-medium"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="console-btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs disabled:opacity-50"
+              className="console-btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold disabled:opacity-50"
             >
               {submitting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <KeyRound className="h-3.5 w-3.5" />
+                <Plus className="h-3.5 w-3.5 stroke-[2.4]" />
               )}
-              Provision License Key
+              Save Subscription
             </button>
           </div>
         </form>
       </SlideOverDrawer>
 
-      {/* Slide-Over Drawer 2: Subscription Dossier & Auto-Sync Routing Inspector */}
+      {/* Drawer 2: Clinic Dossier & Live Auto-Sync Controls */}
       <SlideOverDrawer
         open={Boolean(inspectedRow)}
         onClose={() => setInspectedLicenseId(null)}
-        title={inspectedRow ? describeClinicIdentity(inspectedRow).primary : 'Clinic Inspector'}
+        title={
+          inspectedRow ? describeClinicIdentity(inspectedRow).primary : 'Clinic Inspector'
+        }
         subtitle={
           inspectedRow
-            ? `Subscription ${String(inspectedRow.subscription_id).slice(0, 8)} · ${describeClinicIdentity(inspectedRow).modeLabel}`
+            ? `${describeClinicIdentity(inspectedRow).modeLabel} · Auto-updates myClinic`
             : ''
         }
         widthClass="max-w-2xl"
       >
         {inspectedRow ? (
-          <div className="space-y-6">
-            {/* Auto-Sync Identity Routing Card (Email + Clinic URL) */}
-            <div className="console-well space-y-3 rounded-xl p-4">
+          <div className="space-y-5">
+            {/* Live Routing & Tier Editor */}
+            <div className="console-well space-y-3.5 rounded-xl p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span
                   style={{ color: 'var(--text-muted)' }}
                   className="font-mono text-[10px] font-semibold tracking-wider uppercase"
                 >
-                  Keyless Auto-Sync Match Rules (Email &amp; Clinic URL)
+                  Auto-Sync Identity (Email &amp; Website URL)
                 </span>
-                <span
-                  style={{ color: 'var(--accent-primary)' }}
-                  className="font-mono text-[11px] font-semibold"
+                <button
+                  type="button"
+                  onClick={() => openClientSdk(inspectedRow)}
+                  style={{ color: 'var(--cf-orange)' }}
+                  className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold hover:underline"
                 >
-                  {describeClinicIdentity(inspectedRow).modeLabel}
-                </span>
+                  Open Client SDK
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </button>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1540,7 +1455,7 @@ export default function EntitlementsPage({
                     value={editEmailInput}
                     onChange={(e) => setEditEmailInput(e.target.value)}
                     placeholder="owner@cityclinic.in"
-                    className="console-input mt-1 w-full rounded-lg px-2.5 py-1.5 text-xs"
+                    className="console-input mt-1 w-full rounded-lg px-2.5 py-2 text-xs"
                   />
                 </div>
                 <div>
@@ -1548,19 +1463,19 @@ export default function EntitlementsPage({
                     style={{ color: 'var(--text-secondary)' }}
                     className="block text-[11px] font-medium"
                   >
-                    Clinic Website URL (Origin)
+                    Clinic Website URL
                   </label>
                   <input
                     type="url"
                     value={editOriginInput}
                     onChange={(e) => setEditOriginInput(e.target.value)}
                     placeholder="https://sharmaclinic.github.io"
-                    className="console-input mt-1 w-full rounded-lg px-2.5 py-1.5 font-mono text-xs"
+                    className="console-input mt-1 w-full rounded-lg px-2.5 py-2 font-mono text-xs"
                   />
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
                 <label className="flex cursor-pointer items-center gap-2 text-[11px]">
                   <input
                     type="checkbox"
@@ -1569,7 +1484,7 @@ export default function EntitlementsPage({
                     className="rounded"
                   />
                   <span style={{ color: 'var(--text-secondary)' }}>
-                    Auto-lock first cloud URL when URL is blank
+                    Auto-lock first cloud URL when URL blank
                   </span>
                 </label>
 
@@ -1578,7 +1493,7 @@ export default function EntitlementsPage({
                     <button
                       type="button"
                       onClick={() => setEditOriginInput('')}
-                      className="console-btn-secondary rounded-lg px-2.5 py-1 text-[11px]"
+                      className="console-btn-secondary rounded-lg px-2.5 py-1.5 text-xs"
                     >
                       Clear URL
                     </button>
@@ -1587,20 +1502,20 @@ export default function EntitlementsPage({
                     type="button"
                     disabled={savingRouting}
                     onClick={handleSaveRouting}
-                    className="console-btn-primary rounded-lg px-3 py-1.5 text-xs disabled:opacity-50"
+                    className="console-btn-primary rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                   >
-                    {savingRouting ? 'Saving...' : 'Save Match Rules'}
+                    {savingRouting ? 'Saving...' : 'Save Identity'}
                   </button>
                 </div>
               </div>
 
-              {/* Live Plan Tier Switcher */}
+              {/* Live Plan Switcher */}
               <div
                 style={{ borderTop: '1px solid var(--border-subtle)' }}
                 className="flex flex-wrap items-center justify-between gap-2 pt-3"
               >
-                <span style={{ color: 'var(--text-secondary)' }} className="text-[11px] font-medium">
-                  Plan Tier (auto-updates client):
+                <span style={{ color: 'var(--text-secondary)' }} className="text-xs font-medium">
+                  Active Plan Tier:
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {['solo', 'growth', 'chain'].map((planOpt) => {
@@ -1614,13 +1529,13 @@ export default function EntitlementsPage({
                         style={
                           active
                             ? {
-                                backgroundColor: 'var(--accent-soft)',
-                                border: '1px solid var(--accent-border)',
-                                color: 'var(--accent-primary)',
+                                backgroundColor: 'var(--cf-orange-soft)',
+                                border: '1px solid var(--cf-orange-border)',
+                                color: 'var(--cf-orange)',
                               }
                             : undefined
                         }
-                        className="console-btn-secondary rounded-lg px-2.5 py-1 font-mono text-[11px] font-semibold uppercase"
+                        className="console-btn-secondary rounded-lg px-3 py-1 font-mono text-[11px] font-bold uppercase"
                       >
                         {planOpt}
                       </button>
@@ -1628,22 +1543,16 @@ export default function EntitlementsPage({
                   })}
                 </div>
               </div>
-
-              {inspectedRow.notes ? (
-                <div className="pt-1">
-                  <RichNotesView notes={inspectedRow.notes} />
-                </div>
-              ) : null}
             </div>
 
-            {/* Remote Kill-Switch & Term Extension */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Pause Switch & Term Extension */}
+            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
               <div className="console-elevated rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold">Remote Kill-Switch</span>
+                  <span className="text-xs font-semibold">Subscription Access</span>
                   <Power
                     className={`h-4 w-4 ${
-                      inspectedRow.is_active ? 'text-emerald-400' : 'text-rose-400'
+                      inspectedRow.is_active ? 'text-emerald-500' : 'text-rose-500'
                     }`}
                   />
                 </div>
@@ -1652,37 +1561,40 @@ export default function EntitlementsPage({
                   className="mt-1 text-[11px] leading-relaxed"
                 >
                   {inspectedRow.is_active
-                    ? 'Key is active. Clinic nodes can refresh 7-day RS256 capability tokens.'
-                    : 'Kill-switch engaged. Edge validator returns HTTP 403 on renewal.'}
+                    ? 'Active. Client myClinic syncs full read/write capabilities.'
+                    : 'Paused. Client downgrades to read-only immediately on next sync.'}
                 </p>
                 <button
                   type="button"
                   onClick={() => handleToggleKillSwitch(inspectedRow)}
                   disabled={Boolean(togglingIds[inspectedRow.license_id])}
-                  className="console-btn-secondary mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-xs font-semibold"
+                  className="console-btn-secondary mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
                 >
                   <Power className="h-3.5 w-3.5" />
-                  {inspectedRow.is_active ? 'Engage Kill-Switch' : 'Restore License Key'}
+                  {inspectedRow.is_active ? 'Pause Subscription' : 'Resume Subscription'}
                 </button>
               </div>
 
               <div className="console-elevated rounded-xl p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold">Extend Paid Term</span>
-                  <Calendar className="h-4 w-4 text-sky-400" />
+                  <Calendar
+                    style={{ color: 'var(--cf-orange)' }}
+                    className="h-4 w-4"
+                  />
                 </div>
                 <div className="mt-2 flex items-center gap-1.5">
                   <input
                     type="date"
                     value={renewDateInput}
                     onChange={(e) => setRenewDateInput(e.target.value)}
-                    className="console-input w-full rounded-lg px-2.5 py-1 font-mono text-xs"
+                    className="console-input w-full rounded-lg px-2.5 py-1.5 font-mono text-xs"
                   />
                   <button
                     type="button"
                     disabled={savingTerm}
                     onClick={() => handleExtendTerm(renewDateInput)}
-                    className="console-btn-primary shrink-0 rounded-lg px-3 py-1.5 text-xs"
+                    className="console-btn-primary shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold"
                   >
                     Save
                   </button>
@@ -1692,7 +1604,7 @@ export default function EntitlementsPage({
                     type="button"
                     disabled={savingTerm}
                     onClick={() => handleExtendTerm(defaultExpirationDate(30))}
-                    className="console-btn-secondary rounded px-2 py-0.5 font-mono text-[10px]"
+                    className="console-btn-secondary rounded px-2.5 py-1 font-mono text-[10px]"
                   >
                     +30 Days
                   </button>
@@ -1700,7 +1612,7 @@ export default function EntitlementsPage({
                     type="button"
                     disabled={savingTerm}
                     onClick={() => handleExtendTerm(defaultExpirationDate(365))}
-                    className="console-btn-secondary rounded px-2 py-0.5 font-mono text-[10px]"
+                    className="console-btn-secondary rounded px-2.5 py-1 font-mono text-[10px]"
                   >
                     +1 Year
                   </button>
@@ -1708,24 +1620,41 @@ export default function EntitlementsPage({
               </div>
             </div>
 
-            {/* Bound Hardware & GitHub Pages Origin Seats */}
+            {/* Bound Deployment Seats */}
             <div>
-              <h3 className="text-xs font-semibold">
-                Bound Hardware &amp; Web Origin Locks ({boundMachines.length} /{' '}
-                {inspectedRow.max_machines})
-              </h3>
-              <p style={{ color: 'var(--text-muted)' }} className="text-[11px]">
-                Release a seat when a clinic migrates servers or changes its GitHub Pages domain.
-              </p>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold">
+                  Synced Clinic Deployments ({boundMachines.length} /{' '}
+                  {inspectedRow.max_machines})
+                </h3>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopyValue(
+                      inspectedRow.license_id,
+                      inspectedRow.license_key,
+                      'Copied legacy backup key',
+                    )
+                  }
+                  className="console-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[10px]"
+                >
+                  {copiedId === inspectedRow.license_id ? (
+                    <Check className="h-3 w-3 text-emerald-500" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                  Backup Key
+                </button>
+              </div>
 
-              <div className="mt-3 space-y-2">
+              <div className="mt-2.5 space-y-2">
                 {loadingMachines ? (
                   <div
                     style={{ color: 'var(--text-secondary)' }}
-                    className="flex items-center gap-2 py-6 text-xs"
+                    className="flex items-center gap-2 py-5 text-xs"
                   >
-                    <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-                    Loading bound fingerprints...
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading synced deployments...
                   </div>
                 ) : boundMachines.length === 0 ? (
                   <div className="console-well rounded-xl p-5 text-center">
@@ -1737,55 +1666,49 @@ export default function EntitlementsPage({
                       style={{ color: 'var(--text-secondary)' }}
                       className="mt-1.5 text-xs"
                     >
-                      No clinic containers or GitHub Pages origins have phoned home yet.
+                      No clinic browser or desktop deployment has auto-synced yet.
                     </p>
                   </div>
                 ) : (
-                  boundMachines.map((machine) => {
-                    const isWebOrigin = String(
-                      machine.machine_fingerprint ?? '',
-                    ).startsWith('web:');
-                    return (
-                      <div
-                        key={machine.id}
-                        className="console-well flex flex-wrap items-center justify-between gap-3 rounded-xl px-3.5 py-2.5"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            {isWebOrigin ? (
-                              <Globe className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                            ) : (
-                              <Cpu className="h-3.5 w-3.5 shrink-0 text-sky-400" />
-                            )}
-                            <code className="truncate font-mono text-xs font-medium">
-                              {machine.machine_fingerprint}
-                            </code>
-                          </div>
-                          <div
-                            style={{ color: 'var(--text-muted)' }}
-                            className="mt-1 font-mono text-[10px]"
-                          >
-                            Activated {formatDisplayDate(machine.activated_at)} · Last
-                            heartbeat {formatDisplayDate(machine.last_heartbeat)}
-                          </div>
+                  boundMachines.map((machine) => (
+                    <div
+                      key={machine.id}
+                      className="console-well flex flex-wrap items-center justify-between gap-2.5 rounded-xl px-3.5 py-2.5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <Globe
+                            style={{ color: 'var(--cf-orange)' }}
+                            className="h-3.5 w-3.5 shrink-0"
+                          />
+                          <code className="truncate font-mono text-xs font-medium">
+                            {machine.machine_fingerprint}
+                          </code>
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleReleaseNode(machine.id)}
-                          style={{
-                            backgroundColor: 'var(--danger-soft)',
-                            border: '1px solid rgba(244, 63, 94, 0.3)',
-                            color: 'var(--danger-text)',
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[11px] font-semibold hover:opacity-90"
+                        <div
+                          style={{ color: 'var(--text-muted)' }}
+                          className="mt-0.5 font-mono text-[10px]"
                         >
-                          <Trash2 className="h-3 w-3" />
-                          Release Seat
-                        </button>
+                          First seen {formatDisplayDate(machine.activated_at)} · Last
+                          sync {formatDisplayDate(machine.last_heartbeat)}
+                        </div>
                       </div>
-                    );
-                  })
+
+                      <button
+                        type="button"
+                        onClick={() => handleReleaseNode(machine.id)}
+                        style={{
+                          backgroundColor: 'var(--danger-soft)',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          color: 'var(--danger-text)',
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[11px] font-semibold"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Release
+                      </button>
+                    </div>
+                  ))
                 )}
               </div>
             </div>

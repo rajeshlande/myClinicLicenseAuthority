@@ -1,9 +1,9 @@
 {
   "name": "myclinic-license-authority",
   "private": true,
-  "version": "1.6.0",
+  "version": "2.0.0",
   "type": "module",
-  "description": "Central Asymmetric RS256 Subscription Management & Phone-Home Hardware Lock Authority for self-hosted myClinic deployments.",
+  "description": "Cloudflare-inspired Keyless Central Subscription Control Plane & Client Auto-Sync Server for myClinic deployments.",
   "engines": {
     "node": ">=22.22.0",
     "npm": ">=10.9.0"

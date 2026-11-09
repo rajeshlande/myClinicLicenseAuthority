@@ -10,8 +10,8 @@ import {
 import { explainError } from '../lib/errors.mjs';
 
 /**
- * Structured error banner showing what failed, a plain-English step-by-step fix,
- * optional Retry / Dismiss actions, and a collapsible technical detail block.
+ * Cloudflare-styled structured error banner showing what failed, a plain-English
+ * step-by-step fix, optional Retry / Dismiss actions, and a collapsible detail block.
  */
 export function ErrorAlert({
   error,
@@ -39,7 +39,7 @@ export function ErrorAlert({
       role="alert"
       style={{
         backgroundColor: 'var(--danger-soft)',
-        border: '1px solid rgba(244, 63, 94, 0.35)',
+        border: '1px solid rgba(239, 68, 68, 0.35)',
         color: 'var(--danger-text)',
       }}
       className={`rounded-xl p-3.5 text-xs ${className}`}
@@ -53,10 +53,11 @@ export function ErrorAlert({
               {explained.fixLabel ? (
                 <span
                   style={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.35)',
-                    border: '1px solid rgba(244, 63, 94, 0.3)',
+                    backgroundColor: 'var(--bg-surface)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: 'var(--danger-text)',
                   }}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium"
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold"
                 >
                   <Wrench className="h-2.5 w-2.5" />
                   {explained.fixLabel}
@@ -76,8 +77,9 @@ export function ErrorAlert({
                   type="button"
                   onClick={onRetry}
                   style={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-                    border: '1px solid rgba(244, 63, 94, 0.4)',
+                    backgroundColor: 'var(--bg-surface)',
+                    border: '1px solid rgba(239, 68, 68, 0.38)',
+                    color: 'var(--danger-text)',
                   }}
                   className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition hover:opacity-90"
                 >
@@ -106,13 +108,7 @@ export function ErrorAlert({
             </div>
 
             {showDetail && hasDistinctDetail ? (
-              <pre
-                style={{
-                  backgroundColor: 'rgba(2, 6, 23, 0.55)',
-                  border: '1px solid rgba(244, 63, 94, 0.25)',
-                }}
-                className="mt-2 max-h-32 overflow-auto rounded-lg p-2.5 font-mono text-[11px] whitespace-pre-wrap break-words"
-              >
+              <pre className="console-code mt-2 max-h-32 overflow-auto rounded-lg p-2.5 font-mono text-[11px] whitespace-pre-wrap break-words">
                 {explained.code ? `[${explained.code}] ` : ''}
                 {explained.detail}
               </pre>
@@ -125,9 +121,9 @@ export function ErrorAlert({
             type="button"
             onClick={onDismiss}
             aria-label="Dismiss error"
-            className="rounded-md p-1 opacity-75 transition hover:opacity-100"
+            className="rounded-lg p-1 opacity-75 transition hover:opacity-100"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-4 w-4" />
           </button>
         ) : null}
       </div>

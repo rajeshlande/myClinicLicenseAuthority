@@ -1,4 +1,4 @@
-const CACHE_NAME = 'myclinic-authority-shell-v5';
+const CACHE_NAME = 'myclinic-authority-shell-v6';
 const SHELL_ASSETS = ['./', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (event) => {

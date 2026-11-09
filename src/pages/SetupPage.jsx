@@ -19,8 +19,8 @@ import {
   isAuthorizedAdminUser,
   validatePasswordUpdate,
 } from '../lib/auth.mjs';
-import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import { probeCentralAutoSync } from '../lib/auto-sync-client.mjs';
+import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import {
   clearRecentErrors,
   diagnosticsText,
@@ -75,10 +75,10 @@ export function SetupPage({
         anonKey: anonKeyInput,
       });
       setAnonKeyInput('');
-      setConnStatus('Authority Supabase connection saved.');
+      setConnStatus('Central Supabase connection saved.');
       onBackendChanged?.();
     } catch (err) {
-      const explained = rememberError(err, 'Save Authority connection');
+      const explained = rememberError(err, 'Save Central connection');
       setConnError(explained);
       refreshErrorLog();
     }
@@ -102,22 +102,17 @@ export function SetupPage({
         throw new Error('Service connection is not configured.');
       }
 
-      // 1. Check operator admin role
       if (!isAuthorizedAdminUser(session?.user)) {
         const roleErr = new Error('Operator lacks app_metadata.role = "admin".');
         roleErr.code = '42501';
         throw roleErr;
       }
 
-      // 2. Check database view & RLS
       const { count, error } = await client
         .from('admin_license_view')
         .select('license_id', { count: 'exact', head: true });
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
-      // 3. Check Keyless Auto-Sync RPC (`sync_clinic_subscription` — Schema v2)
       let autoSyncStatus = 'ready (Schema v2)';
       try {
         await probeCentralAutoSync(
@@ -182,9 +177,7 @@ export function SetupPage({
       const { error } = await client.auth.updateUser({
         password: check.password,
       });
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
       setNewPassword('');
       setConfirmPassword('');
       setPwSuccess('Operator password updated.');
@@ -222,136 +215,25 @@ export function SetupPage({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* 1. Account */}
-        <section className="console-panel rounded-2xl p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <span
-                style={{
-                  backgroundColor: 'var(--accent-soft)',
-                  border: '1px solid var(--accent-border)',
-                }}
-                className="flex h-8 w-8 items-center justify-center rounded-lg"
-              >
-                <KeyRound
-                  style={{ color: 'var(--accent-primary)' }}
-                  className="h-4 w-4"
-                />
-              </span>
-              <div>
-                <h2 className="text-sm font-semibold">Operator Account</h2>
-                <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                  {operatorEmail || 'Signed in'} · v{APP_VERSION} (schema v{SCHEMA_VERSION})
-                </p>
-              </div>
-            </div>
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        {/* 1. Central Connection & 3-Point Health Check */}
+        <section className="console-panel relative overflow-hidden rounded-2xl p-5 sm:p-6">
+          <span className="cf-top-stripe absolute inset-x-0 top-0 h-[3px]" />
 
-            {onSignOut ? (
-              <button
-                type="button"
-                onClick={onSignOut}
-                className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                Sign out
-              </button>
-            ) : null}
-          </div>
-
-          <form onSubmit={handleChangePassword} className="mt-5 space-y-3.5">
-            {pwError ? (
-              <ErrorAlert
-                error={pwError}
-                context="Password update failed"
-                onDismiss={() => setPwError(null)}
-              />
-            ) : null}
-
-            {pwSuccess ? (
-              <div
-                role="status"
-                style={{
-                  backgroundColor: 'var(--accent-soft)',
-                  border: '1px solid var(--accent-border)',
-                  color: 'var(--accent-primary)',
-                }}
-                className="flex items-start gap-2 rounded-xl p-3 text-xs"
-              >
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{pwSuccess}</span>
-              </div>
-            ) : null}
-
-            <div>
-              <label
-                htmlFor="setup-new-pw"
-                style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
-              >
-                New password
-              </label>
-              <input
-                id="setup-new-pw"
-                type="password"
-                required
-                minLength={MIN_ADMIN_PASSWORD_LENGTH}
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder={`Minimum ${MIN_ADMIN_PASSWORD_LENGTH} characters`}
-                className="console-input mt-1.5 w-full rounded-lg px-3 py-2 text-xs"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="setup-confirm-pw"
-                style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
-              >
-                Confirm password
-              </label>
-              <input
-                id="setup-confirm-pw"
-                type="password"
-                required
-                minLength={MIN_ADMIN_PASSWORD_LENGTH}
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter password"
-                className="console-input mt-1.5 w-full rounded-lg px-3 py-2 text-xs"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={pwBusy}
-              className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold disabled:opacity-50"
-            >
-              <KeyRound className="h-3.5 w-3.5" />
-              {pwBusy ? 'Saving...' : 'Update password'}
-            </button>
-          </form>
-        </section>
-
-        {/* 2. Service Connection & 3-Point Health Check */}
-        <section className="console-panel rounded-2xl p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <span
                 style={{
-                  backgroundColor: 'var(--info-soft)',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  backgroundColor: 'var(--cf-orange-soft)',
+                  border: '1px solid var(--cf-orange-border)',
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-sky-400"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
               >
-                <Database className="h-4 w-4" />
+                <Database style={{ color: 'var(--cf-orange)' }} className="h-4 w-4" />
               </span>
               <div>
-                <h2 className="text-sm font-semibold">Authority Connection</h2>
+                <h2 className="text-sm font-bold">Central Supabase Endpoint</h2>
                 <p style={{ color: 'var(--text-muted)' }} className="text-xs">
                   {backend?.configured ? 'Connected to Cloud Supabase' : 'Not configured'}
                 </p>
@@ -364,8 +246,8 @@ export function SetupPage({
               onClick={handleRunSelfTest}
               className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
             >
-              <Activity className="h-3.5 w-3.5 text-emerald-400" />
-              {testing ? 'Checking...' : 'Run 3-point health check'}
+              <Activity className="h-3.5 w-3.5 text-emerald-500" />
+              {testing ? 'Checking...' : '3-Point Health Check'}
             </button>
           </div>
 
@@ -373,16 +255,16 @@ export function SetupPage({
             <div
               role="status"
               style={{
-                backgroundColor: 'var(--accent-soft)',
-                border: '1px solid var(--accent-border)',
-                color: 'var(--accent-primary)',
+                backgroundColor: 'var(--ok-soft)',
+                border: '1px solid var(--ok-border)',
+                color: 'var(--ok-text)',
               }}
               className="mt-4 flex items-start gap-2 rounded-xl p-3 text-xs"
             >
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                Admin auth + database healthy ({testResult.latencyMs} ms ·{' '}
-                {testResult.licenseCount} clinics) · Keyless Auto-Sync:{' '}
+                Admin auth + RLS view healthy ({testResult.latencyMs} ms ·{' '}
+                {testResult.licenseCount} clinics) · Auto-Sync RPC:{' '}
                 {testResult.autoSyncStatus}
               </span>
             </div>
@@ -413,9 +295,9 @@ export function SetupPage({
             <div
               role="status"
               style={{
-                backgroundColor: 'var(--accent-soft)',
-                border: '1px solid var(--accent-border)',
-                color: 'var(--accent-primary)',
+                backgroundColor: 'var(--ok-soft)',
+                border: '1px solid var(--ok-border)',
+                color: 'var(--ok-text)',
               }}
               className="mt-4 flex items-start gap-2 rounded-xl p-3 text-xs"
             >
@@ -431,7 +313,7 @@ export function SetupPage({
                 style={{ color: 'var(--text-secondary)' }}
                 className="block text-xs font-medium"
               >
-                Authority Supabase URL
+                Central Supabase URL
               </label>
               <input
                 id="setup-supabase-url"
@@ -440,7 +322,7 @@ export function SetupPage({
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
                 placeholder="https://your-project.supabase.co"
-                className="console-input mt-1.5 w-full rounded-lg px-3 py-2 text-xs"
+                className="console-input mt-1.5 w-full rounded-lg px-3 py-2.5 text-xs"
               />
             </div>
 
@@ -450,7 +332,7 @@ export function SetupPage({
                 style={{ color: 'var(--text-secondary)' }}
                 className="block text-xs font-medium"
               >
-                Public Client Key (anon / publishable)
+                Public Client Key (anon / sb_publishable_)
               </label>
               <input
                 id="setup-supabase-anon"
@@ -458,12 +340,12 @@ export function SetupPage({
                 required
                 value={anonKeyInput}
                 onChange={(e) => setAnonKeyInput(e.target.value)}
-                placeholder="Paste public publishable / anon key"
-                className="console-input mt-1.5 w-full rounded-lg px-3 py-2 text-xs"
+                placeholder="Paste publishable / anon key"
+                className="console-input mt-1.5 w-full rounded-lg px-3 py-2.5 text-xs"
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+            <div className="flex flex-wrap items-center gap-2 pt-1">
               <button
                 type="submit"
                 className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold"
@@ -485,30 +367,136 @@ export function SetupPage({
             </div>
           </form>
         </section>
+
+        {/* 2. Operator Account */}
+        <section className="console-panel rounded-2xl p-5 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span
+                style={{
+                  backgroundColor: 'var(--cf-orange-soft)',
+                  border: '1px solid var(--cf-orange-border)',
+                }}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+              >
+                <KeyRound style={{ color: 'var(--cf-orange)' }} className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="text-sm font-bold">Operator Account</h2>
+                <p style={{ color: 'var(--text-muted)' }} className="text-xs">
+                  {operatorEmail || 'Signed in'} · v{APP_VERSION} (Schema v{SCHEMA_VERSION})
+                </p>
+              </div>
+            </div>
+
+            {onSignOut ? (
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Sign out
+              </button>
+            ) : null}
+          </div>
+
+          <form onSubmit={handleChangePassword} className="mt-5 space-y-3.5">
+            {pwError ? (
+              <ErrorAlert
+                error={pwError}
+                context="Password update failed"
+                onDismiss={() => setPwError(null)}
+              />
+            ) : null}
+
+            {pwSuccess ? (
+              <div
+                role="status"
+                style={{
+                  backgroundColor: 'var(--ok-soft)',
+                  border: '1px solid var(--ok-border)',
+                  color: 'var(--ok-text)',
+                }}
+                className="flex items-start gap-2 rounded-xl p-3 text-xs"
+              >
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{pwSuccess}</span>
+              </div>
+            ) : null}
+
+            <div>
+              <label
+                htmlFor="setup-new-pw"
+                style={{ color: 'var(--text-secondary)' }}
+                className="block text-xs font-medium"
+              >
+                New password
+              </label>
+              <input
+                id="setup-new-pw"
+                type="password"
+                required
+                minLength={MIN_ADMIN_PASSWORD_LENGTH}
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder={`Minimum ${MIN_ADMIN_PASSWORD_LENGTH} characters`}
+                className="console-input mt-1.5 w-full rounded-lg px-3 py-2.5 text-xs"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="setup-confirm-pw"
+                style={{ color: 'var(--text-secondary)' }}
+                className="block text-xs font-medium"
+              >
+                Confirm password
+              </label>
+              <input
+                id="setup-confirm-pw"
+                type="password"
+                required
+                minLength={MIN_ADMIN_PASSWORD_LENGTH}
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter password"
+                className="console-input mt-1.5 w-full rounded-lg px-3 py-2.5 text-xs"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={pwBusy}
+              className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold disabled:opacity-50"
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+              {pwBusy ? 'Saving...' : 'Update password'}
+            </button>
+          </form>
+        </section>
       </div>
 
       {/* 3. Sanitized Diagnostics & Recent Error Log */}
-      <section className="console-panel rounded-2xl p-6">
+      <section className="console-panel rounded-2xl p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <span
               style={{
-                backgroundColor: 'var(--accent-soft)',
-                border: '1px solid var(--accent-border)',
+                backgroundColor: 'var(--cf-orange-soft)',
+                border: '1px solid var(--cf-orange-border)',
               }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
             >
-              <Bug
-                style={{ color: 'var(--accent-primary)' }}
-                className="h-4 w-4"
-              />
+              <Bug style={{ color: 'var(--cf-orange)' }} className="h-4 w-4" />
             </span>
             <div>
-              <h2 className="text-sm font-semibold">
-                Diagnostics &amp; Recent Errors
-              </h2>
+              <h2 className="text-sm font-bold">Diagnostics &amp; Recent Errors</h2>
               <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                Last {errorLog.length} error(s) in this session — JWTs, PEM keys, and license keys are automatically redacted.
+                Last {errorLog.length} error(s) in this session — JWTs and secrets are
+                redacted automatically.
               </p>
             </div>
           </div>
@@ -521,7 +509,7 @@ export function SetupPage({
             >
               {copiedDiag ? (
                 <>
-                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  <Check className="h-3.5 w-3.5 text-emerald-500" />
                   Copied diagnostics
                 </>
               ) : (
@@ -557,12 +545,8 @@ export function SetupPage({
 
         {errorLog.length === 0 ? (
           <p
-            style={{
-              backgroundColor: 'var(--bg-well)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-muted)',
-            }}
-            className="mt-4 rounded-xl px-4 py-3 font-mono text-xs"
+            style={{ color: 'var(--text-muted)' }}
+            className="console-well mt-4 rounded-xl px-4 py-3 font-mono text-xs"
           >
             No errors recorded in this session.
           </p>
@@ -571,14 +555,10 @@ export function SetupPage({
             {errorLog.map((entry, idx) => (
               <div
                 key={`${entry.at}-${idx}`}
-                style={{
-                  backgroundColor: 'var(--bg-well)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-                className="rounded-xl p-3.5 text-xs"
+                className="console-well rounded-xl p-3.5 text-xs"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold text-rose-400">
+                  <span style={{ color: 'var(--danger-text)' }} className="font-semibold">
                     {entry.message}
                   </span>
                   <span

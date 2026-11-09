@@ -2,6 +2,16 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [2.0.0] - 2026-11-06
+
+### Changed
+- **Cloudflare-Inspired Control Plane UI/UX Redesign (`src/index.css`, `src/components/AppShell.jsx`, `src/pages/*`):**
+  - Rebuilt the entire design system in Light (`#f6f7f9` / `#ffffff`) and Dark (`#0b0d10` / `#151921`) themes modeled after `cloudflare.com` and `dash.cloudflare.com`, featuring Cloudflare Orange (`#F6821F`), Cobalt Blue (`#0051C3` / `#58A6FF`), architectural hairline grid backgrounds, top orange status stripes, and crisp 1px card geometry.
+  - Redesigned navigation (`AppShell.jsx`) with a desktop Cloudflare Zone left rail (`Clinics & Plans`, `Quickstart Guide`, `Client SDK & Obfuscator`, `Sync & Security Lab`, `Settings & Health`), sticky breadcrumb header, mobile slide-over menu, and a fixed 5-tab Mobile Bottom Navigation Bar (`< 1024px`).
+  - Redesigned `LoginPage.jsx` with a responsive split architectural showcase + quick Central Supabase setup (`Copy schema.sql (v2)`).
+  - Redesigned `EntitlementsPage.jsx` (`#/dashboard`) around Keyless Email & URL Auto-Sync with 4 Cloudflare telemetry cards, scrollable mobile filter chips, zero-horizontal-scroll Mobile Clinic Cards (`< 1024px`), a high-density Desktop Zone Table (`>= 1024px`), and full-screen mobile / slide-over desktop Add Clinic & Live Inspector drawers.
+  - Redesigned `NodeAgentPage.jsx` (`#/node-agent`) into a 4-tab **myClinic Client SDK & Scoped Vite Obfuscator** workbench (`.env.production`, `central-subscription.mjs`, `vite.config.js`, and GitHub Pages CI) and `ValidatorLabPage.jsx` (`#/simulator`) into an interactive **Live Sync & Security Lab** for `sync_clinic_subscription` + Central firewall inspection.
+
 ## [1.6.0] - 2026-11-06
 
 ### Added
