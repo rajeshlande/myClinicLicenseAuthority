@@ -151,12 +151,15 @@ export class ErrorBoundary extends React.Component {
               onClick={() => this.handleCopyDiagnostics()}
               className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium"
             >
-              {copied ? (
-                <>
-                  <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  Copied diagnostics
-                </>
-              ) : (
+                {copied ? (
+                  <>
+                    <Check
+                      style={{ color: 'var(--ok-main)' }}
+                      className="h-3.5 w-3.5"
+                    />
+                    Copied diagnostics
+                  </>
+                ) : (
                 <>
                   <Copy className="h-3.5 w-3.5" />
                   Copy diagnostics

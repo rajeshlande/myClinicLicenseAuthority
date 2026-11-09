@@ -8,7 +8,7 @@ import {
   resolveInitialTheme,
 } from '../src/lib/theme.mjs';
 
-test('theme helpers default to dark security console and toggle cleanly', () => {
+test('theme helpers default to Vanilla Cream light editorial theme and toggle cleanly', () => {
   const map = new Map();
   const storage = {
     getItem: (k) => (map.has(k) ? map.get(k) : null),
@@ -23,13 +23,13 @@ test('theme helpers default to dark security console and toggle cleanly', () => 
     },
   };
 
-  assert.equal(resolveInitialTheme(storage), 'dark');
-  assert.equal(nextTheme('dark'), 'light');
-  assert.equal(nextTheme('light'), 'dark');
-  assert.equal(normalizeTheme('unexpected'), 'dark');
-
-  applyDocumentTheme('light', fakeDoc, storage);
-  assert.equal(attr, 'light');
-  assert.equal(map.get(THEME_STORAGE_KEY), 'light');
   assert.equal(resolveInitialTheme(storage), 'light');
+  assert.equal(nextTheme('light'), 'dark');
+  assert.equal(nextTheme('dark'), 'light');
+  assert.equal(normalizeTheme('unexpected'), 'light');
+
+  applyDocumentTheme('dark', fakeDoc, storage);
+  assert.equal(attr, 'dark');
+  assert.equal(map.get(THEME_STORAGE_KEY), 'dark');
+  assert.equal(resolveInitialTheme(storage), 'dark');
 });

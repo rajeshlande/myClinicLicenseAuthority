@@ -33,12 +33,7 @@ import {
 } from '../lib/supabase.js';
 import { APP_VERSION, SCHEMA_VERSION } from '../lib/version.js';
 
-export function SetupPage({
-  backend,
-  session,
-  onBackendChanged,
-  onSignOut,
-}) {
+export function SetupPage({ backend, session, onBackendChanged, onSignOut }) {
   const client = backend?.supabase ?? null;
   const operatorEmail = session?.user?.email ?? '';
 
@@ -223,19 +218,21 @@ export function SetupPage({
 
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <span
-                style={{
-                  backgroundColor: 'var(--cf-orange-soft)',
-                  border: '1px solid var(--cf-orange-border)',
-                }}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-              >
-                <Database style={{ color: 'var(--cf-orange)' }} className="h-4 w-4" />
+              <span className="badge-brand flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
+                <Database
+                  style={{ color: 'var(--brand-text)' }}
+                  className="h-4 w-4"
+                />
               </span>
               <div>
                 <h2 className="text-sm font-bold">Central Supabase Endpoint</h2>
-                <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                  {backend?.configured ? 'Connected to Cloud Supabase' : 'Not configured'}
+                <p
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="text-xs"
+                >
+                  {backend?.configured
+                    ? 'Connected to Cloud Supabase'
+                    : 'Not configured'}
                 </p>
               </div>
             </div>
@@ -244,9 +241,12 @@ export function SetupPage({
               type="button"
               disabled={testing}
               onClick={handleRunSelfTest}
-              className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+              className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
             >
-              <Activity className="h-3.5 w-3.5 text-emerald-500" />
+              <Activity
+                style={{ color: 'var(--ok-main)' }}
+                className="h-3.5 w-3.5"
+              />
               {testing ? 'Checking...' : '3-Point Health Check'}
             </button>
           </div>
@@ -254,14 +254,12 @@ export function SetupPage({
           {testResult ? (
             <div
               role="status"
-              style={{
-                backgroundColor: 'var(--ok-soft)',
-                border: '1px solid var(--ok-border)',
-                color: 'var(--ok-text)',
-              }}
-              className="mt-4 flex items-start gap-2 rounded-xl p-3 text-xs"
+              className="badge-success mt-4 flex items-start gap-2 rounded-xl p-3 text-xs font-medium"
             >
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <CheckCircle2
+                style={{ color: 'var(--ok-main)' }}
+                className="mt-0.5 h-4 w-4 shrink-0"
+              />
               <span>
                 Admin auth + RLS view healthy ({testResult.latencyMs} ms ·{' '}
                 {testResult.licenseCount} clinics) · Auto-Sync RPC:{' '}
@@ -294,14 +292,12 @@ export function SetupPage({
           {connStatus ? (
             <div
               role="status"
-              style={{
-                backgroundColor: 'var(--ok-soft)',
-                border: '1px solid var(--ok-border)',
-                color: 'var(--ok-text)',
-              }}
-              className="mt-4 flex items-start gap-2 rounded-xl p-3 text-xs"
+              className="badge-success mt-4 flex items-start gap-2 rounded-xl p-3 text-xs font-medium"
             >
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <CheckCircle2
+                style={{ color: 'var(--ok-main)' }}
+                className="mt-0.5 h-4 w-4 shrink-0"
+              />
               <span>{connStatus}</span>
             </div>
           ) : null}
@@ -310,8 +306,8 @@ export function SetupPage({
             <div>
               <label
                 htmlFor="setup-supabase-url"
-                style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
+                style={{ color: 'var(--text-primary)' }}
+                className="block text-xs font-semibold"
               >
                 Central Supabase URL
               </label>
@@ -329,8 +325,8 @@ export function SetupPage({
             <div>
               <label
                 htmlFor="setup-supabase-anon"
-                style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
+                style={{ color: 'var(--text-primary)' }}
+                className="block text-xs font-semibold"
               >
                 Public Client Key (anon / sb_publishable_)
               </label>
@@ -358,7 +354,7 @@ export function SetupPage({
                 <button
                   type="button"
                   onClick={handleResetToBuildEnv}
-                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs"
+                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Reset default
@@ -372,19 +368,20 @@ export function SetupPage({
         <section className="console-panel rounded-2xl p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <span
-                style={{
-                  backgroundColor: 'var(--cf-orange-soft)',
-                  border: '1px solid var(--cf-orange-border)',
-                }}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-              >
-                <KeyRound style={{ color: 'var(--cf-orange)' }} className="h-4 w-4" />
+              <span className="badge-brand flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
+                <KeyRound
+                  style={{ color: 'var(--brand-text)' }}
+                  className="h-4 w-4"
+                />
               </span>
               <div>
                 <h2 className="text-sm font-bold">Operator Account</h2>
-                <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                  {operatorEmail || 'Signed in'} · v{APP_VERSION} (Schema v{SCHEMA_VERSION})
+                <p
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="text-xs"
+                >
+                  {operatorEmail || 'Signed in'} · v{APP_VERSION} (Schema v
+                  {SCHEMA_VERSION})
                 </p>
               </div>
             </div>
@@ -393,7 +390,7 @@ export function SetupPage({
               <button
                 type="button"
                 onClick={onSignOut}
-                className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+                className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 Sign out
@@ -413,14 +410,12 @@ export function SetupPage({
             {pwSuccess ? (
               <div
                 role="status"
-                style={{
-                  backgroundColor: 'var(--ok-soft)',
-                  border: '1px solid var(--ok-border)',
-                  color: 'var(--ok-text)',
-                }}
-                className="flex items-start gap-2 rounded-xl p-3 text-xs"
+                className="badge-success flex items-start gap-2 rounded-xl p-3 text-xs font-medium"
               >
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <CheckCircle2
+                  style={{ color: 'var(--ok-main)' }}
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                />
                 <span>{pwSuccess}</span>
               </div>
             ) : null}
@@ -428,8 +423,8 @@ export function SetupPage({
             <div>
               <label
                 htmlFor="setup-new-pw"
-                style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
+                style={{ color: 'var(--text-primary)' }}
+                className="block text-xs font-semibold"
               >
                 New password
               </label>
@@ -449,8 +444,8 @@ export function SetupPage({
             <div>
               <label
                 htmlFor="setup-confirm-pw"
-                style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
+                style={{ color: 'var(--text-primary)' }}
+                className="block text-xs font-semibold"
               >
                 Confirm password
               </label>
@@ -483,20 +478,22 @@ export function SetupPage({
       <section className="console-panel rounded-2xl p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <span
-              style={{
-                backgroundColor: 'var(--cf-orange-soft)',
-                border: '1px solid var(--cf-orange-border)',
-              }}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-            >
-              <Bug style={{ color: 'var(--cf-orange)' }} className="h-4 w-4" />
+            <span className="badge-brand flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
+              <Bug
+                style={{ color: 'var(--brand-text)' }}
+                className="h-4 w-4"
+              />
             </span>
             <div>
-              <h2 className="text-sm font-bold">Diagnostics &amp; Recent Errors</h2>
-              <p style={{ color: 'var(--text-muted)' }} className="text-xs">
-                Last {errorLog.length} error(s) in this session — JWTs and secrets are
-                redacted automatically.
+              <h2 className="text-sm font-bold">
+                Diagnostics &amp; Recent Errors
+              </h2>
+              <p
+                style={{ color: 'var(--text-secondary)' }}
+                className="text-xs"
+              >
+                Last {errorLog.length} error(s) in this session — JWTs and
+                secrets are redacted automatically.
               </p>
             </div>
           </div>
@@ -505,11 +502,14 @@ export function SetupPage({
             <button
               type="button"
               onClick={handleCopyDiagnostics}
-              className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+              className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
             >
               {copiedDiag ? (
                 <>
-                  <Check className="h-3.5 w-3.5 text-emerald-500" />
+                  <Check
+                    style={{ color: 'var(--ok-main)' }}
+                    className="h-3.5 w-3.5"
+                  />
                   Copied diagnostics
                 </>
               ) : (
@@ -524,7 +524,7 @@ export function SetupPage({
               <button
                 type="button"
                 onClick={handleClearDiagnostics}
-                className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+                className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Clear
@@ -545,7 +545,7 @@ export function SetupPage({
 
         {errorLog.length === 0 ? (
           <p
-            style={{ color: 'var(--text-muted)' }}
+            style={{ color: 'var(--text-secondary)' }}
             className="console-well mt-4 rounded-xl px-4 py-3 font-mono text-xs"
           >
             No errors recorded in this session.
@@ -555,20 +555,15 @@ export function SetupPage({
             {errorLog.map((entry, idx) => (
               <div
                 key={`${entry.at}-${idx}`}
-                className="console-well rounded-xl p-3.5 text-xs"
+                className="badge-error rounded-xl p-3.5 text-xs"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span style={{ color: 'var(--danger-text)' }} className="font-semibold">
-                    {entry.message}
-                  </span>
-                  <span
-                    style={{ color: 'var(--text-muted)' }}
-                    className="font-mono text-[11px]"
-                  >
+                  <span className="font-bold">{entry.message}</span>
+                  <span className="font-mono text-[11px] opacity-85">
                     {entry.at}
                   </span>
                 </div>
-                <p style={{ color: 'var(--text-secondary)' }} className="mt-1">
+                <p className="mt-1">
                   <strong>Fix:</strong> {entry.hint}
                 </p>
               </div>

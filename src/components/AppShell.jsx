@@ -1,15 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Activity,
-  BookOpen,
   Blocks,
+  BookOpen,
   Building2,
   ChevronRight,
   Cloud,
   LogOut,
   Menu,
   Moon,
-  Plus,
   Settings,
   Sun,
   WifiOff,
@@ -22,262 +21,79 @@ const NAV_ITEMS = [
     id: 'dashboard',
     label: 'Clinics & Plans',
     shortLabel: 'Clinics',
-    section: 'Subscriptions',
     icon: Building2,
+    section: 'Subscriptions',
   },
   {
     id: 'guide',
     label: 'Quickstart Guide',
     shortLabel: 'Guide',
-    section: 'Onboarding',
     icon: BookOpen,
+    section: 'Onboarding',
   },
   {
     id: 'node-agent',
     label: 'Client SDK & Obfuscator',
     shortLabel: 'Client SDK',
-    section: 'Integration',
     icon: Blocks,
+    section: 'Client Sync',
   },
   {
     id: 'simulator',
     label: 'Sync & Security Lab',
     shortLabel: 'Sync Lab',
-    section: 'Diagnostics',
     icon: Activity,
+    section: 'Firewall & RPC',
   },
   {
     id: 'setup',
     label: 'Settings & Health',
     shortLabel: 'Settings',
-    section: 'System',
     icon: Settings,
+    section: 'Configuration',
   },
 ];
 
-const ROUTE_META = {
+const ROUTE_TITLES = {
   dashboard: {
-    title: 'Clinics & Subscriptions',
     crumb: 'Subscriptions / Fleet Registry',
+    title: 'Clinics & Subscriptions',
   },
   guide: {
-    title: '2-Side Quickstart Guide',
-    crumb: 'Onboarding / Central + Client Setup',
+    crumb: 'Onboarding / 2-Side Setup',
+    title: '2-Side Keyless Auto-Sync Guide',
   },
   'node-agent': {
+    crumb: 'Client Sync / Integration Kit',
     title: 'myClinic Client SDK & Obfuscator',
-    crumb: 'Integration / Client Build Kit',
   },
   simulator: {
-    title: 'Live Sync & Security Lab',
-    crumb: 'Diagnostics / RPC Firewall & Simulator',
+    crumb: 'Security / Live RPC & Firewall',
+    title: 'Live Auto-Sync & Security Lab',
   },
   setup: {
-    title: 'Settings & Connection Health',
-    crumb: 'System / Central Supabase',
+    crumb: 'Account / Endpoint & Diagnostics',
+    title: 'Settings & 3-Point Health',
   },
 };
 
 export function AppShell({
   activeRoute,
+  onNavigate,
+  operatorEmail = '',
   isOnline = true,
-  operatorEmail,
-  theme,
+  theme = 'light',
   onToggleTheme,
-  onQuickIssueLicense,
   onSignOut,
   children,
 }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const meta = ROUTE_META[activeRoute] ?? ROUTE_META.dashboard;
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const navigateTo = (id) => {
-    window.location.hash = `#/${id}`;
-    setMobileOpen(false);
-  };
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [activeRoute]);
 
-  const renderSidebarContent = (isMobile = false) => (
-    <div className="flex h-full flex-col justify-between">
-      <div>
-        {/* Brand Header */}
-        <div
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
-          className="flex h-14 items-center justify-between px-4"
-        >
-          <button
-            type="button"
-            onClick={() => navigateTo('dashboard')}
-            className="flex min-w-0 items-center gap-2.5 text-left"
-          >
-            <div
-              style={{
-                background: 'linear-gradient(135deg, #f6821f 0%, #fbad41 100%)',
-              }}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white shadow-xs"
-            >
-              <Cloud className="h-4 w-4 stroke-[2.4]" />
-            </div>
-            <div className="min-w-0">
-              <div
-                style={{ color: 'var(--text-primary)' }}
-                className="truncate text-xs font-bold tracking-tight"
-              >
-                myClinic Central
-              </div>
-              <div
-                style={{ color: 'var(--text-muted)' }}
-                className="truncate font-mono text-[10px]"
-              >
-                Auto-Sync · v{APP_VERSION}
-              </div>
-            </div>
-          </button>
-
-          {isMobile ? (
-            <button
-              type="button"
-              onClick={() => setMobileOpen(false)}
-              aria-label="Close navigation menu"
-              className="console-btn-secondary inline-flex h-8 w-8 items-center justify-center rounded-lg"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          ) : null}
-        </div>
-
-        {/* Primary Action */}
-        {onQuickIssueLicense ? (
-          <div className="px-3 pt-4 pb-2">
-            <button
-              type="button"
-              onClick={() => {
-                onQuickIssueLicense();
-                if (isMobile) setMobileOpen(false);
-              }}
-              className="console-btn-primary flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold"
-            >
-              <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
-              Add Clinic Subscription
-            </button>
-          </div>
-        ) : null}
-
-        {/* Cloudflare Zone Rail Navigation */}
-        <div className="mt-2 px-3">
-          <div
-            style={{ color: 'var(--text-muted)' }}
-            className="px-2 pb-1.5 font-mono text-[10px] font-semibold tracking-wider uppercase"
-          >
-            Control Plane
-          </div>
-          <nav className="space-y-0.5" aria-label="Primary Navigation">
-            {NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
-              const active = activeRoute === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => navigateTo(item.id)}
-                  style={
-                    active
-                      ? {
-                          backgroundColor: 'var(--cf-orange-soft)',
-                          color: 'var(--text-primary)',
-                          borderLeft: '3px solid var(--cf-orange)',
-                        }
-                      : {
-                          color: 'var(--text-secondary)',
-                          borderLeft: '3px solid transparent',
-                        }
-                  }
-                  className="console-row-hover flex w-full items-center gap-2.5 rounded-r-lg px-2.5 py-2 text-left text-xs font-medium transition-colors"
-                >
-                  <Icon
-                    style={{
-                      color: active ? 'var(--cf-orange)' : 'var(--text-muted)',
-                    }}
-                    className="h-4 w-4 shrink-0"
-                  />
-                  <span className="truncate">{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        {/* Security Status Card inside Rail */}
-        <div className="mx-3 mt-5 rounded-xl p-3 console-well">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-            <span className="font-mono text-[10.5px] font-semibold">
-              Zero-Key RPC · Schema v{SCHEMA_VERSION}
-            </span>
-          </div>
-          <p
-            style={{ color: 'var(--text-muted)' }}
-            className="mt-1 text-[11px] leading-relaxed"
-          >
-            FORCE RLS active. Clients sync by Email, URL, or Both with zero table
-            exposure.
-          </p>
-        </div>
-      </div>
-
-      {/* Operator Footer */}
-      <div
-        style={{ borderTop: '1px solid var(--border-subtle)' }}
-        className="space-y-2.5 p-3.5"
-      >
-        {operatorEmail ? (
-          <div className="min-w-0 px-1">
-            <div
-              style={{ color: 'var(--text-muted)' }}
-              className="font-mono text-[9.5px] tracking-wider uppercase"
-            >
-              Central Admin
-            </div>
-            <p
-              style={{ color: 'var(--text-primary)' }}
-              className="truncate text-xs font-medium"
-              title={operatorEmail}
-            >
-              {operatorEmail}
-            </p>
-          </div>
-        ) : null}
-
-        <div className="flex items-center gap-1.5">
-          {onToggleTheme ? (
-            <button
-              type="button"
-              onClick={onToggleTheme}
-              aria-label="Toggle color theme"
-              className="console-btn-secondary inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              {theme === 'dark' ? (
-                <Sun className="h-3.5 w-3.5 text-amber-400" />
-              ) : (
-                <Moon className="h-3.5 w-3.5" />
-              )}
-            </button>
-          ) : null}
-
-          {onSignOut ? (
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="console-btn-secondary inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-medium"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              Sign out
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
+  const routeInfo = ROUTE_TITLES[activeRoute] ?? ROUTE_TITLES.dashboard;
 
   return (
     <div
@@ -285,149 +101,370 @@ export function AppShell({
         backgroundColor: 'var(--bg-canvas)',
         color: 'var(--text-primary)',
       }}
-      className="flex min-h-screen w-full overflow-x-hidden"
+      className="relative flex min-h-screen flex-col"
     >
-      {/* Cloudflare Top Orange Signature Hairline */}
-      <div className="cf-top-stripe fixed inset-x-0 top-0 z-50 h-[2.5px]" />
+      {/* Top Hunter-Green -> Sage -> Yellow-Green Stripe */}
+      <div className="cf-top-stripe fixed inset-x-0 top-0 z-50 h-[3px]" />
 
-      {/* Desktop Fixed Left Sidebar */}
-      <aside
-        style={{
-          backgroundColor: 'var(--bg-sidebar)',
-          borderRight: '1px solid var(--border-subtle)',
-        }}
-        className="hidden w-60 shrink-0 pt-[2.5px] lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block"
-      >
-        {renderSidebarContent(false)}
-      </aside>
-
-      {/* Mobile Slide-Over Sidebar Drawer */}
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-50 flex lg:hidden">
-          <div
-            onClick={() => setMobileOpen(false)}
-            className="fixed inset-0 bg-black/60 backdrop-blur-[2px]"
-          />
-          <aside
-            style={{
-              backgroundColor: 'var(--bg-sidebar)',
-              borderRight: '1px solid var(--border-default)',
-            }}
-            className="relative z-10 w-72 max-w-[85vw] pt-[2.5px] shadow-2xl"
-          >
-            {renderSidebarContent(true)}
-          </aside>
-        </div>
-      ) : null}
-
-      {/* Main Content Area */}
-      <div className="flex min-w-0 flex-1 flex-col pt-[2.5px] pb-20 lg:pb-0 lg:pl-60">
-        {/* Sticky Cloudflare Top Utility Header */}
-        <header
+      <div className="flex flex-1 pt-[3px]">
+        {/* Desktop Left Rail */}
+        <aside
           style={{
-            backgroundColor: 'var(--bg-header)',
-            borderBottom: '1px solid var(--border-subtle)',
+            backgroundColor: 'var(--bg-sidebar)',
+            borderRight: '1px solid var(--border-subtle)',
           }}
-          className="sticky top-[2.5px] z-20 backdrop-blur-md"
+          className="hidden w-60 shrink-0 lg:fixed lg:inset-y-0 lg:top-[3px] lg:left-0 lg:z-30 lg:flex lg:flex-col"
         >
-          <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-2.5 px-3.5 sm:px-6 lg:px-8">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => setMobileOpen(true)}
-                aria-label="Open navigation menu"
-                className="console-btn-secondary inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg lg:hidden"
-              >
-                <Menu className="h-4 w-4" />
-              </button>
-
-              <div className="min-w-0">
-                <div
-                  style={{ color: 'var(--text-muted)' }}
-                  className="hidden items-center gap-1 font-mono text-[10.5px] sm:flex"
-                >
-                  <span>myClinic Central</span>
-                  <ChevronRight className="h-3 w-3" />
-                  <span className="truncate">{meta.crumb}</span>
-                </div>
-                <h1 className="truncate text-sm font-semibold tracking-tight sm:text-base">
-                  {meta.title}
-                </h1>
+          {/* Brand Header */}
+          <div
+            style={{ borderBottom: '1px solid var(--border-subtle)' }}
+            className="flex h-14 items-center justify-between px-4"
+          >
+            <button
+              type="button"
+              onClick={() => onNavigate('dashboard')}
+              className="flex items-center gap-2.5 text-left"
+            >
+              <div className="brand-mark-tile flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-xs">
+                <Cloud className="h-4 w-4 stroke-[2.3]" />
               </div>
+              <div className="min-w-0">
+                <div className="truncate text-[13px] font-bold tracking-tight">
+                  myClinic Central
+                </div>
+                <div
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="font-mono text-[10px]"
+                >
+                  Auto-Sync · v{APP_VERSION}
+                </div>
+              </div>
+            </button>
+          </div>
+
+          {/* Navigation Rail */}
+          <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+            <div>
+              <div
+                style={{ color: 'var(--text-secondary)' }}
+                className="px-2.5 pb-1.5 font-mono text-[10px] font-bold tracking-wider uppercase"
+              >
+                Control Plane
+              </div>
+              <ul className="space-y-1">
+                {NAV_ITEMS.map((item) => {
+                  const Icon = item.icon;
+                  const active = activeRoute === item.id;
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => onNavigate(item.id)}
+                        style={
+                          active
+                            ? {
+                                backgroundColor: 'var(--brand-soft)',
+                                color: 'var(--text-primary)',
+                                borderLeft: '3px solid var(--brand-primary)',
+                              }
+                            : {
+                                color: 'var(--text-secondary)',
+                                borderLeft: '3px solid transparent',
+                              }
+                        }
+                        className="flex w-full items-center gap-2.5 rounded-r-lg px-2.5 py-2 text-left text-[13px] font-semibold transition-colors hover:opacity-95"
+                      >
+                        <Icon
+                          style={{
+                            color: active
+                              ? 'var(--brand-text)'
+                              : 'var(--text-secondary)',
+                          }}
+                          className="h-4 w-4 shrink-0"
+                        />
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
 
-            <div className="flex shrink-0 items-center gap-2">
-              {!isOnline ? (
+            {/* Architecture Posture Badge */}
+            <div className="console-well rounded-xl p-3 text-[11px]">
+              <div className="flex items-center gap-2">
                 <span
-                  style={{
-                    backgroundColor: 'var(--warn-soft)',
-                    border: '1px solid rgba(245, 158, 11, 0.35)',
-                    color: 'var(--warn-text)',
-                  }}
-                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-mono text-[11px] font-medium"
-                >
-                  <WifiOff className="h-3 w-3" />
-                  <span className="hidden sm:inline">Offline</span>
+                  style={{ backgroundColor: 'var(--ok-main)' }}
+                  className="h-2 w-2 shrink-0 rounded-full"
+                />
+                <span className="font-mono font-semibold">
+                  Zero-Key RPC · Schema v{SCHEMA_VERSION}
                 </span>
-              ) : (
-                <span
-                  style={{
-                    backgroundColor: 'var(--ok-soft)',
-                    border: '1px solid var(--ok-border)',
-                    color: 'var(--ok-text)',
-                  }}
-                  className="hidden items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] font-medium md:inline-flex"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  Edge RPC Ready
-                </span>
-              )}
+              </div>
+              <p
+                style={{ color: 'var(--text-secondary)' }}
+                className="mt-1 leading-relaxed"
+              >
+                FORCE RLS active. Clients sync by Email, URL, or Both with zero
+                table exposure.
+              </p>
+            </div>
+          </nav>
 
-              {onToggleTheme ? (
+          {/* Operator Footer */}
+          <div
+            style={{ borderTop: '1px solid var(--border-subtle)' }}
+            className="space-y-2.5 p-3"
+          >
+            {operatorEmail ? (
+              <div className="px-1.5">
+                <div
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="font-mono text-[9.5px] font-semibold uppercase"
+                >
+                  Central Admin
+                </div>
+                <div className="truncate text-xs font-semibold">
+                  {operatorEmail}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={onToggleTheme}
+                title={
+                  theme === 'dark'
+                    ? 'Switch to Vanilla Cream Light Mode'
+                    : 'Switch to Hunter Forest Dark Mode'
+                }
+                aria-label="Toggle color theme"
+                className="console-btn-secondary inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+              >
+                {theme === 'dark' ? (
+                  <Sun
+                    style={{ color: 'var(--accent-energy)' }}
+                    className="h-3.5 w-3.5"
+                  />
+                ) : (
+                  <Moon
+                    style={{ color: 'var(--brand-primary)' }}
+                    className="h-3.5 w-3.5"
+                  />
+                )}
+              </button>
+
+              {onSignOut ? (
                 <button
                   type="button"
-                  onClick={onToggleTheme}
-                  aria-label="Switch theme"
-                  className="console-btn-secondary inline-flex h-9 w-9 items-center justify-center rounded-lg"
-                  title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                  onClick={onSignOut}
+                  className="console-btn-secondary inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold"
                 >
-                  {theme === 'dark' ? (
-                    <Sun className="h-4 w-4 text-amber-400" />
-                  ) : (
-                    <Moon className="h-4 w-4" />
-                  )}
-                </button>
-              ) : null}
-
-              {onQuickIssueLicense ? (
-                <button
-                  type="button"
-                  onClick={onQuickIssueLicense}
-                  className="console-btn-primary inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold"
-                >
-                  <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
-                  <span className="hidden sm:inline">Add Clinic</span>
-                  <span className="sm:hidden">Add</span>
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span>Sign out</span>
                 </button>
               ) : null}
             </div>
           </div>
-        </header>
+        </aside>
 
-        {/* Main Viewport */}
-        <main className="mx-auto w-full max-w-[1440px] flex-1 px-3.5 py-5 sm:px-6 sm:py-6 lg:px-8">
-          {children}
-        </main>
+        {/* Mobile Slide-Over Menu Drawer */}
+        {mobileMenuOpen ? (
+          <div className="fixed inset-0 z-50 flex lg:hidden" role="dialog" aria-modal="true">
+            <div
+              onClick={() => setMobileMenuOpen(false)}
+              className="fixed inset-0 bg-black/50 backdrop-blur-xs"
+            />
+            <div
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                borderRight: '1px solid var(--border-subtle)',
+              }}
+              className="relative z-10 flex w-72 max-w-[84vw] flex-col"
+            >
+              <div className="cf-top-stripe h-[3px] w-full shrink-0" />
+              <div
+                style={{ borderBottom: '1px solid var(--border-subtle)' }}
+                className="flex h-14 items-center justify-between px-4"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="brand-mark-tile flex h-8 w-8 items-center justify-center rounded-lg">
+                    <Cloud className="h-4 w-4 stroke-[2.3]" />
+                  </div>
+                  <span className="text-sm font-bold">myClinic Central</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(false)}
+                  aria-label="Close navigation menu"
+                  className="console-btn-secondary inline-flex h-8 w-8 items-center justify-center rounded-lg"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+                {NAV_ITEMS.map((item) => {
+                  const Icon = item.icon;
+                  const active = activeRoute === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => onNavigate(item.id)}
+                      style={
+                        active
+                          ? {
+                              backgroundColor: 'var(--brand-soft)',
+                              color: 'var(--text-primary)',
+                              border: '1px solid var(--brand-border)',
+                            }
+                          : {
+                              color: 'var(--text-secondary)',
+                              border: '1px solid transparent',
+                            }
+                      }
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold"
+                    >
+                      <Icon
+                        style={{
+                          color: active
+                            ? 'var(--brand-text)'
+                            : 'var(--text-secondary)',
+                        }}
+                        className="h-4 w-4 shrink-0"
+                      />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <div
+                style={{ borderTop: '1px solid var(--border-subtle)' }}
+                className="space-y-2.5 p-4"
+              >
+                {operatorEmail ? (
+                  <div
+                    style={{ color: 'var(--text-secondary)' }}
+                    className="truncate font-mono text-xs"
+                  >
+                    {operatorEmail}
+                  </div>
+                ) : null}
+                {onSignOut ? (
+                  <button
+                    type="button"
+                    onClick={onSignOut}
+                    className="console-btn-secondary inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    Sign out
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Main Content Column */}
+        <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
+          {/* Sticky Top Header */}
+          <header
+            style={{
+              backgroundColor: 'var(--bg-header)',
+              borderBottom: '1px solid var(--border-subtle)',
+            }}
+            className="sticky top-[3px] z-20 backdrop-blur-md"
+          >
+            <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(true)}
+                  aria-label="Open navigation menu"
+                  className="console-btn-secondary inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg lg:hidden"
+                >
+                  <Menu className="h-4 w-4" />
+                </button>
+
+                <div className="min-w-0">
+                  <div
+                    style={{ color: 'var(--text-secondary)' }}
+                    className="hidden items-center gap-1 font-mono text-[11px] sm:flex"
+                  >
+                    <span>myClinic Central</span>
+                    <ChevronRight className="h-3 w-3" />
+                    <span>{routeInfo.crumb}</span>
+                  </div>
+                  <h1 className="truncate text-sm font-bold tracking-tight sm:text-base">
+                    {routeInfo.title}
+                  </h1>
+                </div>
+              </div>
+
+              {/* Right Quick Status + Theme Switch */}
+              <div className="flex shrink-0 items-center gap-2">
+                {!isOnline ? (
+                  <span className="badge-warning inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold">
+                    <WifiOff className="h-3 w-3" />
+                    <span className="hidden sm:inline">Offline</span>
+                  </span>
+                ) : (
+                  <span className="badge-success hidden items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold md:inline-flex">
+                    <span
+                      style={{ backgroundColor: 'var(--ok-main)' }}
+                      className="h-1.5 w-1.5 rounded-full"
+                    />
+                    Edge RPC Ready
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={onToggleTheme}
+                  title={
+                    theme === 'dark'
+                      ? 'Switch to Vanilla Cream Light Mode'
+                      : 'Switch to Hunter Forest Dark Mode'
+                  }
+                  aria-label="Toggle color theme"
+                  className="console-btn-secondary inline-flex h-9 w-9 items-center justify-center rounded-lg"
+                >
+                  {theme === 'dark' ? (
+                    <Sun
+                      style={{ color: 'var(--accent-energy)' }}
+                      className="h-4 w-4"
+                    />
+                  ) : (
+                    <Moon
+                      style={{ color: 'var(--brand-primary)' }}
+                      className="h-4 w-4"
+                    />
+                  )}
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Main Workspace Canvas */}
+          <main className="cf-grid-bg flex-1 pb-24 lg:pb-10">
+            <div className="mx-auto max-w-7xl px-3.5 py-4 sm:px-6 sm:py-6 lg:px-8">
+              {children}
+            </div>
+          </main>
+        </div>
       </div>
 
-      {/* Mobile Bottom Quick-Tab Bar (< 1024px) for Effortless One-Handed Navigation */}
+      {/* Mobile Bottom Navigation Bar */}
       <nav
-        aria-label="Mobile Bottom Navigation"
+        aria-label="Mobile navigation"
         style={{
-          backgroundColor: 'var(--bg-header)',
+          backgroundColor: 'var(--bg-surface)',
           borderTop: '1px solid var(--border-subtle)',
         }}
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 backdrop-blur-md lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 lg:hidden"
       >
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
@@ -436,20 +473,20 @@ export function AppShell({
             <button
               key={item.id}
               type="button"
-              onClick={() => navigateTo(item.id)}
+              onClick={() => onNavigate(item.id)}
               style={{
-                color: active ? 'var(--cf-orange)' : 'var(--text-muted)',
+                color: active ? 'var(--brand-primary)' : 'var(--text-secondary)',
               }}
-              className="relative flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors"
+              className="relative flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold"
             >
               {active ? (
                 <span
-                  style={{ backgroundColor: 'var(--cf-orange)' }}
-                  className="absolute inset-x-3 top-0 h-[2px] rounded-b-full"
+                  style={{ backgroundColor: 'var(--brand-primary)' }}
+                  className="absolute inset-x-3 top-0 h-[2.5px] rounded-b-full"
                 />
               ) : null}
-              <Icon className="h-4 w-4 shrink-0" />
-              <span className="max-w-full truncate px-1">{item.shortLabel}</span>
+              <Icon className="h-4 w-4" />
+              <span className="truncate max-w-[64px]">{item.shortLabel}</span>
             </button>
           );
         })}

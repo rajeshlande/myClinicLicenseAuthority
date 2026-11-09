@@ -1,9 +1,9 @@
 {
   "name": "myclinic-license-authority",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
-  "description": "Cloudflare-inspired Keyless Central Subscription Control Plane & Client Auto-Sync Server for myClinic deployments.",
+  "description": "Hunter Green & Vanilla Cream Editorial Control Plane for Keyless myClinic Subscription Auto-Sync.",
   "engines": {
     "node": ">=22.22.0",
     "npm": ">=10.9.0"

@@ -10,8 +10,8 @@ import {
 import { explainError } from '../lib/errors.mjs';
 
 /**
- * Cloudflare-styled structured error banner showing what failed, a plain-English
- * step-by-step fix, optional Retry / Dismiss actions, and a collapsible detail block.
+ * Structured error banner mapped to the Blushed Brick palette:
+ * Bg: error.light (#f2dadb) | Text: error.dark (#73292b) | Accent: error (#bc4749).
  */
 export function ErrorAlert({
   error,
@@ -39,14 +39,17 @@ export function ErrorAlert({
       role="alert"
       style={{
         backgroundColor: 'var(--danger-soft)',
-        border: '1px solid rgba(239, 68, 68, 0.35)',
+        border: '1px solid var(--danger-border)',
         color: 'var(--danger-text)',
       }}
       className={`rounded-xl p-3.5 text-xs ${className}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2.5">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <AlertTriangle
+            style={{ color: 'var(--danger-main)' }}
+            className="mt-0.5 h-4 w-4 shrink-0"
+          />
           <div className="min-w-0 space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-semibold leading-snug">{explained.message}</p>
@@ -54,7 +57,7 @@ export function ErrorAlert({
                 <span
                   style={{
                     backgroundColor: 'var(--bg-surface)',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    border: '1px solid var(--danger-border)',
                     color: 'var(--danger-text)',
                   }}
                   className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold"
@@ -66,7 +69,7 @@ export function ErrorAlert({
             </div>
 
             {explained.hint ? (
-              <p style={{ opacity: 0.92 }} className="leading-relaxed">
+              <p className="leading-relaxed">
                 <strong>How to fix:</strong> {explained.hint}
               </p>
             ) : null}
@@ -78,7 +81,7 @@ export function ErrorAlert({
                   onClick={onRetry}
                   style={{
                     backgroundColor: 'var(--bg-surface)',
-                    border: '1px solid rgba(239, 68, 68, 0.38)',
+                    border: '1px solid var(--danger-border)',
                     color: 'var(--danger-text)',
                   }}
                   className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition hover:opacity-90"
@@ -92,7 +95,7 @@ export function ErrorAlert({
                 <button
                   type="button"
                   onClick={() => setShowDetail((prev) => !prev)}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium underline underline-offset-2 opacity-85 hover:opacity-100"
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold underline underline-offset-2 opacity-90 hover:opacity-100"
                 >
                   {showDetail ? (
                     <>

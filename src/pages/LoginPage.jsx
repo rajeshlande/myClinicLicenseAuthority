@@ -279,7 +279,7 @@ export function LoginPage({
     >
       <div className="cf-top-stripe fixed inset-x-0 top-0 z-50 h-[3px]" />
 
-      {/* Top Navigation Strip */}
+      {/* Top Brand Header */}
       <header
         style={{
           backgroundColor: 'var(--bg-header)',
@@ -294,20 +294,15 @@ export function LoginPage({
             rel="noreferrer"
             className="flex items-center gap-2.5"
           >
-            <div
-              style={{
-                background: 'linear-gradient(135deg, #f6821f 0%, #fbad41 100%)',
-              }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-white shadow-xs"
-            >
-              <Cloud className="h-4 w-4 stroke-[2.4]" />
+            <div className="brand-mark-tile flex h-8 w-8 items-center justify-center rounded-lg shadow-xs">
+              <Cloud className="h-4 w-4 stroke-[2.3]" />
             </div>
             <div>
               <span className="text-sm font-bold tracking-tight">
                 myClinic Central
               </span>
               <span
-                style={{ color: 'var(--text-muted)' }}
+                style={{ color: 'var(--text-secondary)' }}
                 className="ml-2 hidden font-mono text-[11px] sm:inline"
               >
                 Subscription Control Plane
@@ -317,19 +312,17 @@ export function LoginPage({
 
           <div className="flex items-center gap-2">
             <span
-              style={{
-                backgroundColor: configured ? 'var(--ok-soft)' : 'var(--warn-soft)',
-                border: configured
-                  ? '1px solid var(--ok-border)'
-                  : '1px solid rgba(245, 158, 11, 0.35)',
-                color: configured ? 'var(--ok-text)' : 'var(--warn-text)',
-              }}
-              className="hidden items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] font-medium sm:inline-flex"
+              className={`${
+                configured ? 'badge-success' : 'badge-warning'
+              } hidden items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold sm:inline-flex`}
             >
               <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  configured ? 'bg-emerald-500' : 'bg-amber-500'
-                }`}
+                style={{
+                  backgroundColor: configured
+                    ? 'var(--ok-main)'
+                    : 'var(--warn-main)',
+                }}
+                className="h-1.5 w-1.5 rounded-full"
               />
               {configured ? 'Supabase Connected' : 'Setup Needed'}
             </span>
@@ -337,14 +330,24 @@ export function LoginPage({
             <button
               type="button"
               onClick={onToggleTheme}
-              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              title={
+                theme === 'dark'
+                  ? 'Switch to Vanilla Cream Light Mode'
+                  : 'Switch to Hunter Forest Dark Mode'
+              }
               aria-label="Toggle color theme"
               className="console-btn-secondary inline-flex h-9 w-9 items-center justify-center rounded-lg"
             >
               {theme === 'dark' ? (
-                <Sun className="h-4 w-4 text-amber-400" />
+                <Sun
+                  style={{ color: 'var(--accent-energy)' }}
+                  className="h-4 w-4"
+                />
               ) : (
-                <Moon className="h-4 w-4" />
+                <Moon
+                  style={{ color: 'var(--brand-primary)' }}
+                  className="h-4 w-4"
+                />
               )}
             </button>
           </div>
@@ -353,21 +356,16 @@ export function LoginPage({
 
       {/* Main Split Content */}
       <main className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-12 lg:gap-12 lg:py-12">
-        {/* Left Architectural Showcase (Desktop) */}
+        {/* Left Editorial Showcase */}
         <div className="order-2 space-y-6 lg:order-1 lg:col-span-7">
-          <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 font-mono text-[11px] font-semibold"
-            style={{
-              backgroundColor: 'var(--cf-orange-soft)',
-              border: '1px solid var(--cf-orange-border)',
-              color: 'var(--cf-orange)',
-            }}
-          >
+          <div className="badge-accent inline-flex items-center gap-2 rounded-full px-3 py-1 font-mono text-[11px] font-semibold">
             <Zap className="h-3.5 w-3.5" />
             Keyless Auto-Sync · Schema v{SCHEMA_VERSION}
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl lg:text-4xl">
-            Manage every <span style={{ color: 'var(--cf-orange)' }}>myClinic</span>{' '}
+            Manage every{' '}
+            <span style={{ color: 'var(--brand-text)' }}>myClinic</span>{' '}
             subscription from one Zero-Trust control plane.
           </h1>
 
@@ -375,20 +373,21 @@ export function LoginPage({
             style={{ color: 'var(--text-secondary)' }}
             className="max-w-xl text-sm leading-relaxed sm:text-base"
           >
-            Add clinics by <strong>Owner Email</strong>, <strong>Website URL</strong>,
-            or <strong>both</strong>. Client apps auto-sync plan tiers, seats, and
-            expirations with zero license keys and zero Edge Functions.
+            Add clinics by <strong>Owner Email</strong>,{' '}
+            <strong>Website URL</strong>, or <strong>both</strong>. Client apps
+            auto-sync plan tiers, seats, and expirations with zero license keys
+            and zero Edge Functions.
           </p>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="console-panel rounded-xl p-4">
               <Globe
-                style={{ color: 'var(--cf-orange)' }}
+                style={{ color: 'var(--brand-text)' }}
                 className="h-4 w-4"
               />
-              <h2 className="mt-2.5 text-xs font-semibold">Email &amp; URL Routing</h2>
+              <h2 className="mt-2.5 text-xs font-bold">Email &amp; URL Routing</h2>
               <p
-                style={{ color: 'var(--text-muted)' }}
+                style={{ color: 'var(--text-secondary)' }}
                 className="mt-1 text-[11px] leading-relaxed"
               >
                 Pin by owner email, domain origin, or dual-factor both.
@@ -397,26 +396,27 @@ export function LoginPage({
 
             <div className="console-panel rounded-xl p-4">
               <Lock
-                style={{ color: 'var(--cf-orange)' }}
+                style={{ color: 'var(--brand-text)' }}
                 className="h-4 w-4"
               />
-              <h2 className="mt-2.5 text-xs font-semibold">FORCE RLS Isolation</h2>
+              <h2 className="mt-2.5 text-xs font-bold">FORCE RLS Isolation</h2>
               <p
-                style={{ color: 'var(--text-muted)' }}
+                style={{ color: 'var(--text-secondary)' }}
                 className="mt-1 text-[11px] leading-relaxed"
               >
-                Zero client table access, browser Origin check &amp; SHA-256 rate limiting.
+                Zero client table access, browser Origin check &amp; SHA-256 rate
+                limiting.
               </p>
             </div>
 
             <div className="console-panel rounded-xl p-4">
               <ShieldCheck
-                style={{ color: 'var(--cf-orange)' }}
+                style={{ color: 'var(--brand-text)' }}
                 className="h-4 w-4"
               />
-              <h2 className="mt-2.5 text-xs font-semibold">7-Day Offline Seal</h2>
+              <h2 className="mt-2.5 text-xs font-bold">7-Day Offline Seal</h2>
               <p
-                style={{ color: 'var(--text-muted)' }}
+                style={{ color: 'var(--text-secondary)' }}
                 className="mt-1 text-[11px] leading-relaxed"
               >
                 Clinics keep running offline; instant lock when paused centrally.
@@ -425,7 +425,7 @@ export function LoginPage({
           </div>
         </div>
 
-        {/* Right Sign-In / Setup Card */}
+        {/* Right Sign-In / Setup Card (neutral.white #fcfaf5) */}
         <div className="order-1 w-full lg:order-2 lg:col-span-5">
           <div className="console-panel overflow-hidden rounded-2xl">
             <div className="cf-top-stripe h-1 w-full" />
@@ -442,7 +442,7 @@ export function LoginPage({
                           : 'Sign in to Control Plane'}
                   </h2>
                   <p
-                    style={{ color: 'var(--text-muted)' }}
+                    style={{ color: 'var(--text-secondary)' }}
                     className="mt-1 text-xs leading-relaxed"
                   >
                     {recoveryMode
@@ -468,14 +468,7 @@ export function LoginPage({
               </div>
 
               {!isOnline ? (
-                <div
-                  style={{
-                    backgroundColor: 'var(--warn-soft)',
-                    border: '1px solid rgba(245, 158, 11, 0.35)',
-                    color: 'var(--warn-text)',
-                  }}
-                  className="flex items-center gap-2 rounded-xl p-3 text-xs"
-                >
+                <div className="badge-warning flex items-center gap-2 rounded-xl p-3 text-xs">
                   <WifiOff className="h-4 w-4 shrink-0" />
                   <span>Offline — reconnect to authenticate.</span>
                 </div>
@@ -492,14 +485,12 @@ export function LoginPage({
               {statusMsg ? (
                 <div
                   role="status"
-                  style={{
-                    backgroundColor: 'var(--ok-soft)',
-                    border: '1px solid var(--ok-border)',
-                    color: 'var(--ok-text)',
-                  }}
-                  className="flex items-start gap-2 rounded-xl p-3 text-xs"
+                  className="badge-success flex items-start gap-2 rounded-xl p-3 text-xs font-medium"
                 >
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <CheckCircle2
+                    style={{ color: 'var(--ok-main)' }}
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                  />
                   <span>{statusMsg}</span>
                 </div>
               ) : null}
@@ -508,17 +499,18 @@ export function LoginPage({
               {(!configured || showEndpointForm) && !recoveryMode ? (
                 <div className="console-well space-y-3 rounded-xl p-4 text-xs">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-semibold">
-                      Connect Central Supabase
-                    </span>
+                    <span className="font-bold">Connect Central Supabase</span>
                     <button
                       type="button"
                       onClick={() => handleCopyText('schema', schemaSqlRaw)}
-                      className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[11px]"
+                      className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[11px] font-semibold"
                     >
                       {copiedId === 'schema' ? (
                         <>
-                          <Check className="h-3 w-3 text-emerald-500" />
+                          <Check
+                            style={{ color: 'var(--ok-main)' }}
+                            className="h-3 w-3"
+                          />
                           Copied schema.sql
                         </>
                       ) : (
@@ -530,14 +522,18 @@ export function LoginPage({
                     </button>
                   </div>
 
-                  {backend?.health?.reason && backend.health.status === 'invalid' ? (
+                  {backend?.health?.reason &&
+                  backend.health.status === 'invalid' ? (
                     <ErrorAlert
                       error={backend.health.reason}
                       context="Invalid Supabase configuration"
                     />
                   ) : null}
 
-                  <form onSubmit={handleSaveEndpointOverride} className="space-y-2.5">
+                  <form
+                    onSubmit={handleSaveEndpointOverride}
+                    className="space-y-2.5"
+                  >
                     <input
                       type="url"
                       required
@@ -574,7 +570,7 @@ export function LoginPage({
                     <label
                       htmlFor="recovery-new-password"
                       style={{ color: 'var(--text-secondary)' }}
-                      className="block text-xs font-medium"
+                      className="block text-xs font-semibold"
                     >
                       New password
                     </label>
@@ -595,7 +591,7 @@ export function LoginPage({
                     <label
                       htmlFor="recovery-confirm-password"
                       style={{ color: 'var(--text-secondary)' }}
-                      className="block text-xs font-medium"
+                      className="block text-xs font-semibold"
                     >
                       Confirm password
                     </label>
@@ -629,22 +625,29 @@ export function LoginPage({
                       <strong style={{ color: 'var(--text-primary)' }}>
                         {session.user.email}
                       </strong>
-                      . Paste this into Central Supabase <strong>SQL Editor</strong>,
-                      click <strong>Run</strong>, then click <strong>Check again</strong>:
+                      . Paste this into Central Supabase{' '}
+                      <strong>SQL Editor</strong>, click <strong>Run</strong>,
+                      then click <strong>Check again</strong>:
                     </p>
                     <div className="console-code overflow-hidden rounded-lg">
                       <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
-                        <span className="font-mono text-[10px] text-gray-400">
+                        <span className="font-mono text-[10px] opacity-80">
                           SQL Editor
                         </span>
                         <button
                           type="button"
-                          onClick={() => handleCopyText('admin-sql', nonAdminSql)}
-                          className="inline-flex items-center gap-1 rounded bg-white/10 px-2 py-0.5 font-mono text-[10px] text-gray-100 hover:bg-white/15"
+                          onClick={() =>
+                            handleCopyText('admin-sql', nonAdminSql)
+                          }
+                          className="inline-flex items-center gap-1 rounded bg-white/10 px-2 py-0.5 font-mono text-[10px] hover:bg-white/15"
                         >
                           {copiedId === 'admin-sql' ? (
                             <>
-                              <Check className="h-2.5 w-2.5 text-emerald-400" /> Copied
+                              <Check
+                                style={{ color: 'var(--accent-energy)' }}
+                                className="h-2.5 w-2.5"
+                              />{' '}
+                              Copied
                             </>
                           ) : (
                             <>
@@ -653,7 +656,10 @@ export function LoginPage({
                           )}
                         </button>
                       </div>
-                      <pre className="overflow-x-auto p-3 font-mono text-[10.5px] text-amber-200">
+                      <pre
+                        style={{ color: 'var(--accent-energy)' }}
+                        className="overflow-x-auto p-3 font-mono text-[10.5px]"
+                      >
                         {nonAdminSql}
                       </pre>
                     </div>
@@ -672,7 +678,7 @@ export function LoginPage({
                     <button
                       type="button"
                       onClick={handleSignOut}
-                      className="console-btn-secondary inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-xs"
+                      className="console-btn-secondary inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-semibold"
                     >
                       <LogOut className="h-3.5 w-3.5" />
                       Sign out
@@ -685,13 +691,13 @@ export function LoginPage({
                     <label
                       htmlFor="reset-email"
                       style={{ color: 'var(--text-secondary)' }}
-                      className="block text-xs font-medium"
+                      className="block text-xs font-semibold"
                     >
                       Operator Email
                     </label>
                     <div className="relative mt-1.5">
                       <Mail
-                        style={{ color: 'var(--text-muted)' }}
+                        style={{ color: 'var(--text-secondary)' }}
                         className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
                       />
                       <input
@@ -722,7 +728,7 @@ export function LoginPage({
                       setErrorState(null);
                       setStatusMsg('');
                     }}
-                    className="console-btn-secondary inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs"
+                    className="console-btn-secondary inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
                   >
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Back to sign in
@@ -734,13 +740,13 @@ export function LoginPage({
                     <label
                       htmlFor="login-email"
                       style={{ color: 'var(--text-secondary)' }}
-                      className="block text-xs font-medium"
+                      className="block text-xs font-semibold"
                     >
                       Operator Email
                     </label>
                     <div className="relative mt-1.5">
                       <Mail
-                        style={{ color: 'var(--text-muted)' }}
+                        style={{ color: 'var(--text-secondary)' }}
                         className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
                       />
                       <input
@@ -761,7 +767,7 @@ export function LoginPage({
                       <label
                         htmlFor="login-password"
                         style={{ color: 'var(--text-secondary)' }}
-                        className="block text-xs font-medium"
+                        className="block text-xs font-semibold"
                       >
                         Password
                       </label>
@@ -772,8 +778,8 @@ export function LoginPage({
                           setErrorState(null);
                           setStatusMsg('');
                         }}
-                        style={{ color: 'var(--cf-orange)' }}
-                        className="text-[11px] font-medium hover:underline"
+                        style={{ color: 'var(--brand-text)' }}
+                        className="text-[11px] font-semibold hover:underline"
                       >
                         Forgot password?
                       </button>
@@ -792,8 +798,10 @@ export function LoginPage({
                       <button
                         type="button"
                         onClick={() => setShowPassword((s) => !s)}
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                        style={{ color: 'var(--text-muted)' }}
+                        aria-label={
+                          showPassword ? 'Hide password' : 'Show password'
+                        }
+                        style={{ color: 'var(--text-secondary)' }}
                         className="absolute top-1/2 right-2.5 -translate-y-1/2 p-1"
                       >
                         {showPassword ? (
@@ -822,11 +830,12 @@ export function LoginPage({
       <footer
         style={{
           borderTop: '1px solid var(--border-subtle)',
-          color: 'var(--text-muted)',
+          color: 'var(--text-secondary)',
         }}
         className="py-4 text-center font-mono text-[11px]"
       >
-        myClinic Central Subscription Control Plane · v{APP_VERSION} · Schema v{SCHEMA_VERSION}
+        myClinic Central Subscription Control Plane · v{APP_VERSION} · Schema v
+        {SCHEMA_VERSION}
       </footer>
     </div>
   );

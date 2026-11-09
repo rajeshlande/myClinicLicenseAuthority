@@ -1,165 +1,269 @@
 @import "tailwindcss";
 
-/* =============================================================================
-   Cloudflare-Inspired Design System (`cloudflare.com` & `dash.cloudflare.com`)
-   High-contrast architectural surfaces, #F6821F Cloudflare Orange brand energy,
-   #0051C3 / #3B82F6 interactive cobalt focus, hairline blueprint borders.
-   ============================================================================= */
+@theme {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
+  /* Brand Primary: Hunter Green */
+  --color-brand: #386641;
+  --color-brand-50: #d2e6d6;
+  --color-brand-100: #a4cdac;
+  --color-brand-200: #77b483;
+  --color-brand-300: #51935e;
+  --color-brand-400: #386641;
+  --color-brand-500: #2d5234;
+  --color-brand-600: #223d27;
+  --color-brand-700: #16291a;
+  --color-brand-800: #0b140d;
+
+  /* Brand Secondary / Accents: Yellow-Green & Sage Green */
+  --color-accent: #a7c957;
+  --color-accent-light: #6a994e;
+
+  /* Neutrals & Surfaces: Warm Editorial Vanilla Cream */
+  --color-neutral-900: #463813;
+  --color-neutral-800: #8d7027;
+  --color-neutral-700: #cba442;
+  --color-neutral-600: #dfc688;
+  --color-neutral-300: #f2e8cf;
+  --color-neutral-200: #f4edd9;
+  --color-neutral-100: #f7f1e2;
+  --color-neutral-50: #faf6ec;
+  --color-neutral-white: #fcfaf5;
+
+  /* System State Palettes */
+  --color-error: #bc4749;
+  --color-error-light: #f2dadb;
+  --color-error-dark: #73292b;
+
+  --color-success: #6a994e;
+  --color-success-light: #e1ecda;
+  --color-success-dark: #2a3d1f;
+
+  --color-warning: #d97706;
+  --color-warning-light: #fef3c7;
+  --color-warning-dark: #78350f;
+
+  --color-info: #2563eb;
+  --color-info-light: #dbeafe;
+  --color-info-dark: #1e3a8a;
+}
+
+/* ==========================================================================
+   Vanilla Cream Editorial Light Theme (Default — UI Component Mapping Guide)
+   ========================================================================== */
 :root,
 [data-theme="light"] {
   color-scheme: light;
-  --bg-canvas: #f6f7f9;
-  --bg-rail: #ffffff;
-  --bg-sidebar: #ffffff;
-  --bg-header: rgba(255, 255, 255, 0.92);
-  --bg-surface: #ffffff;
-  --bg-elevated: #f9fafb;
-  --bg-well: #f2f4f7;
-  --bg-hover: #eef1f5;
-  --bg-code: #111318;
 
-  --border-subtle: #e5e7eb;
-  --border-default: #d1d5db;
-  --border-strong: #9ca3af;
+  /* Raw Palette Reference */
+  --brand-50: #d2e6d6;
+  --brand-100: #a4cdac;
+  --brand-200: #77b483;
+  --brand-300: #51935e;
+  --brand-400: #386641;
+  --brand-500: #2d5234;
+  --brand-600: #223d27;
+  --brand-700: #16291a;
+  --brand-800: #0b140d;
 
-  --text-primary: #111827;
-  --text-secondary: #4b5563;
-  --text-muted: #6b7280;
+  --accent-energy: #a7c957;
+  --accent-sage: #6a994e;
 
-  /* Cloudflare Brand Orange + Cobalt */
-  --cf-orange: #f6821f;
-  --cf-orange-hover: #e06d0b;
-  --cf-orange-deep: #c85a00;
-  --cf-orange-soft: rgba(246, 130, 31, 0.11);
-  --cf-orange-border: rgba(246, 130, 31, 0.34);
+  /* Mapped Surfaces (App Background = neutral.100, Cards = neutral.white) */
+  --bg-canvas: #f7f1e2;           /* neutral.100 — Clean off-white canvas */
+  --bg-secondary: #faf6ec;        /* neutral.50  — Secondary background */
+  --bg-sidebar: #faf6ec;          /* neutral.50  — Left rail */
+  --bg-header: rgba(250, 246, 236, 0.9);
+  --bg-surface: #fcfaf5;          /* neutral.white — Cards & Panels */
+  --bg-elevated: #f4edd9;         /* neutral.200 — Hover states */
+  --bg-well: #f2e8cf;             /* neutral.300 — Component backgrounds (Tabs, Wells) */
+  --bg-code: #16291a;             /* brand.700   — Rich hunter-forest code blocks */
 
-  --cf-blue: #0051c3;
-  --cf-blue-soft: rgba(0, 81, 195, 0.09);
-  --cf-blue-border: rgba(0, 81, 195, 0.26);
+  /* Mapped Borders & Dividers */
+  --border-subtle: #dfc688;       /* neutral.600 — Muted borders / Dividers */
+  --border-strong: #cba442;       /* neutral.700 — Stronger borders / Placeholders */
 
-  --accent-primary: #e06d0b;
-  --accent-primary-hover: #c85a00;
-  --accent-soft: rgba(246, 130, 31, 0.11);
-  --accent-border: rgba(246, 130, 31, 0.34);
+  /* Mapped Typography (Headings = neutral.900, Body = neutral.800) */
+  --text-primary: #463813;        /* neutral.900 — Deepest high-contrast text */
+  --text-secondary: #8d7027;      /* neutral.800 — Readable warm body text */
+  --text-muted: #7d6322;          /* Accessible warm muted caption text */
+  --text-placeholder: #a48535;
 
-  --ok-text: #047857;
-  --ok-soft: rgba(16, 185, 129, 0.12);
-  --ok-border: rgba(16, 185, 129, 0.32);
+  /* Mapped Brand Interactive Tokens */
+  --brand-primary: #386641;       /* brand.400 — Main Primary Buttons & Headers */
+  --brand-primary-hover: #2d5234; /* brand.500 */
+  --brand-primary-active: #223d27;/* brand.600 */
+  --brand-soft: #d2e6d6;          /* brand.50 */
+  --brand-border: #77b483;        /* brand.200 */
+  --brand-text: #223d27;          /* brand.600 */
 
-  --info-soft: rgba(0, 81, 195, 0.09);
-  --info-text: #0051c3;
-  --warn-soft: rgba(245, 158, 11, 0.13);
-  --warning-soft: rgba(245, 158, 11, 0.13);
-  --warn-text: #b45309;
-  --warning-text: #b45309;
-  --danger-soft: rgba(239, 68, 68, 0.1);
-  --danger-text: #b91c1c;
+  /* High-Energy Accent (Yellow-Green & Sage) */
+  --accent-badge-bg: rgba(167, 201, 87, 0.24);
+  --accent-badge-border: rgba(106, 153, 78, 0.45);
+  --accent-badge-text: #2a3d1f;
 
-  --grid-line: rgba(17, 24, 39, 0.045);
-  --shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.03);
-  --shadow-float: 0 12px 32px rgba(16, 24, 40, 0.12);
+  /* Compatibility aliases */
+  --accent-primary: var(--brand-primary);
+  --accent-soft: var(--brand-soft);
+  --accent-border: var(--brand-border);
+
+  /* System State Palettes (Exact User Spec) */
+  /* Success (Sage Green) */
+  --ok-main: #6a994e;
+  --ok-soft: #e1ecda;
+  --ok-text: #2a3d1f;
+  --ok-border: rgba(106, 153, 78, 0.42);
+
+  /* Error / Destructive (Blushed Brick) */
+  --danger-main: #bc4749;
+  --danger-soft: #f2dadb;
+  --danger-text: #73292b;
+  --danger-border: rgba(188, 71, 73, 0.38);
+
+  /* Warning (Warm Amber/Ochre) */
+  --warn-main: #d97706;
+  --warn-soft: #fef3c7;
+  --warn-text: #78350f;
+  --warn-border: rgba(217, 119, 6, 0.36);
+
+  /* Info (Muted Slate-Blue) */
+  --info-main: #2563eb;
+  --info-soft: #dbeafe;
+  --info-text: #1e3a8a;
+  --info-border: rgba(37, 99, 235, 0.3);
+
+  --shadow-card: 0 1px 3px rgba(70, 56, 19, 0.06), 0 1px 2px rgba(70, 56, 19, 0.04);
+  --shadow-float: 0 20px 44px -12px rgba(70, 56, 19, 0.18);
+  --grid-line: rgba(203, 164, 66, 0.065);
 }
 
+/* ==========================================================================
+   Deep Hunter Forest Dark Theme (brand.800 -> brand.600 + Vanilla Cream Text)
+   ========================================================================== */
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg-canvas: #0b0d10;
-  --bg-rail: #101318;
-  --bg-sidebar: #101318;
-  --bg-header: rgba(16, 19, 24, 0.9);
-  --bg-surface: #151921;
-  --bg-elevated: #1b202b;
-  --bg-well: #0e1116;
-  --bg-hover: #212734;
-  --bg-code: #080a0d;
 
-  --border-subtle: rgba(255, 255, 255, 0.09);
-  --border-default: rgba(255, 255, 255, 0.14);
-  --border-strong: rgba(255, 255, 255, 0.24);
+  --brand-50: #d2e6d6;
+  --brand-100: #a4cdac;
+  --brand-200: #77b483;
+  --brand-300: #51935e;
+  --brand-400: #386641;
+  --brand-500: #2d5234;
+  --brand-600: #223d27;
+  --brand-700: #16291a;
+  --brand-800: #0b140d;
 
-  --text-primary: #f9fafb;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
+  --accent-energy: #a7c957;
+  --accent-sage: #6a994e;
 
-  --cf-orange: #f6821f;
-  --cf-orange-hover: #ff9538;
-  --cf-orange-deep: #fbad41;
-  --cf-orange-soft: rgba(246, 130, 31, 0.15);
-  --cf-orange-border: rgba(246, 130, 31, 0.38);
+  --bg-canvas: #0b140d;           /* brand.800 */
+  --bg-secondary: #101d13;
+  --bg-sidebar: #0f1b12;
+  --bg-header: rgba(11, 20, 13, 0.88);
+  --bg-surface: #16291a;          /* brand.700 */
+  --bg-elevated: #223d27;         /* brand.600 */
+  --bg-well: #112015;
+  --bg-code: #080f0a;
 
-  --cf-blue: #58a6ff;
-  --cf-blue-soft: rgba(59, 130, 246, 0.14);
-  --cf-blue-border: rgba(59, 130, 246, 0.34);
+  --border-subtle: #223d27;       /* brand.600 */
+  --border-strong: #386641;       /* brand.400 */
 
-  --accent-primary: #f6821f;
-  --accent-primary-hover: #ff9538;
-  --accent-soft: rgba(246, 130, 31, 0.15);
-  --accent-border: rgba(246, 130, 31, 0.38);
+  --text-primary: #fcfaf5;        /* neutral.white */
+  --text-secondary: #f2e8cf;      /* neutral.300 */
+  --text-muted: #a4cdac;          /* brand.100 */
+  --text-placeholder: #77b483;
 
-  --ok-text: #34d399;
-  --ok-soft: rgba(16, 185, 129, 0.14);
-  --ok-border: rgba(16, 185, 129, 0.34);
+  --brand-primary: #386641;       /* brand.400 */
+  --brand-primary-hover: #51935e; /* brand.300 */
+  --brand-primary-active: #2d5234;/* brand.500 */
+  --brand-soft: rgba(167, 201, 87, 0.14);
+  --brand-border: rgba(167, 201, 87, 0.38);
+  --brand-text: #a7c957;          /* accent.DEFAULT */
 
-  --info-soft: rgba(59, 130, 246, 0.14);
-  --info-text: #60a5fa;
-  --warn-soft: rgba(245, 158, 11, 0.15);
-  --warning-soft: rgba(245, 158, 11, 0.15);
-  --warn-text: #fbbf24;
-  --warning-text: #fbbf24;
-  --danger-soft: rgba(239, 68, 68, 0.15);
-  --danger-text: #f87171;
+  --accent-badge-bg: rgba(167, 201, 87, 0.16);
+  --accent-badge-border: rgba(167, 201, 87, 0.42);
+  --accent-badge-text: #a7c957;
 
-  --grid-line: rgba(255, 255, 255, 0.035);
-  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 6px 20px rgba(0, 0, 0, 0.28);
-  --shadow-float: 0 18px 42px rgba(0, 0, 0, 0.55);
+  --accent-primary: #a7c957;
+  --accent-soft: var(--brand-soft);
+  --accent-border: var(--brand-border);
+
+  /* System States in Forest Night */
+  --ok-main: #a7c957;
+  --ok-soft: rgba(106, 153, 78, 0.22);
+  --ok-text: #d2e6d6;
+  --ok-border: rgba(167, 201, 87, 0.4);
+
+  --danger-main: #bc4749;
+  --danger-soft: rgba(188, 71, 73, 0.22);
+  --danger-text: #f2dadb;
+  --danger-border: rgba(188, 71, 73, 0.48);
+
+  --warn-main: #d97706;
+  --warn-soft: rgba(217, 119, 6, 0.2);
+  --warn-text: #fef3c7;
+  --warn-border: rgba(217, 119, 6, 0.42);
+
+  --info-main: #60a5fa;
+  --info-soft: rgba(37, 99, 235, 0.2);
+  --info-text: #dbeafe;
+  --info-border: rgba(96, 165, 250, 0.38);
+
+  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.34);
+  --shadow-float: 0 24px 52px -12px rgba(0, 0, 0, 0.72);
+  --grid-line: rgba(164, 205, 172, 0.06);
 }
 
 @layer base {
-  html,
+  html {
+    font-family: var(--font-sans);
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
     background-color: var(--bg-canvas);
     color: var(--text-primary);
-    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    min-height: 100vh;
     overflow-x: hidden;
   }
-
-  code,
-  pre,
-  .font-mono {
-    font-family: "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
-    font-variant-numeric: tabular-nums;
-  }
 }
 
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
-
-/* Cloudflare architectural blueprint grid & hero glow */
+/* Warm Editorial Grid & Botanical Hero Glow */
 .cf-grid-bg {
   background-image:
     linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
     linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background-size: 40px 40px;
 }
 
 .cf-hero-glow {
-  background:
-    radial-gradient(640px circle at 92% -10%, rgba(246, 130, 31, 0.14), transparent 60%),
-    radial-gradient(520px circle at 8% 110%, rgba(0, 81, 195, 0.08), transparent 60%);
+  background-image:
+    radial-gradient(65% 55% at 82% 8%, rgba(167, 201, 87, 0.16), transparent 70%),
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 100% 100%, 40px 40px, 40px 40px;
+  background-repeat: no-repeat, repeat, repeat;
 }
 
+/* Brand Top Accent Stripe (Hunter Green -> Sage -> Yellow-Green) */
 .cf-top-stripe {
-  background: linear-gradient(90deg, #f6821f 0%, #fbad41 50%, #f6821f 100%);
+  background: linear-gradient(90deg, #386641 0%, #6a994e 55%, #a7c957 100%);
 }
 
+/* Brand Icon Tile */
+.brand-mark-tile {
+  background: linear-gradient(135deg, #386641 0%, #2d5234 70%, #6a994e 100%);
+  color: #fcfaf5;
+}
+
+/* Cards & Panels (neutral.white #fcfaf5 on neutral.100 #f7f1e2) */
 .console-panel {
   background-color: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-panel);
+  box-shadow: var(--shadow-card);
 }
 
 .console-elevated {
@@ -172,88 +276,120 @@
   border: 1px solid var(--border-subtle);
 }
 
-.console-code {
-  background-color: var(--bg-code);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #f3f4f6;
-}
-
 .console-input {
-  background-color: var(--bg-well);
-  border: 1px solid var(--border-default);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-strong);
   color: var(--text-primary);
-  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .console-input::placeholder {
-  color: var(--text-muted);
+  color: var(--text-placeholder);
 }
 
 .console-input:focus {
   outline: none;
-  border-color: var(--cf-orange);
-  box-shadow: 0 0 0 3px var(--cf-orange-soft);
-  background-color: var(--bg-surface);
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px rgba(56, 102, 65, 0.2);
 }
 
+/* Primary Buttons: brand.400 (#386641) with crisp neutral.white (#fcfaf5) text */
 .console-btn-primary {
-  background: linear-gradient(180deg, #f78c2c 0%, #f6821f 100%);
-  border: 1px solid #d96b0c;
-  color: #ffffff;
-  font-weight: 600;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.14);
-  transition: filter 140ms ease, transform 100ms ease, box-shadow 140ms ease;
-  box-shadow: 0 1px 2px rgba(246, 130, 31, 0.25);
+  background: linear-gradient(180deg, #3f7249 0%, #386641 100%);
+  border: 1px solid #2d5234;
+  color: #fcfaf5;
+  text-shadow: 0 1px 1px rgba(11, 20, 13, 0.22);
+  box-shadow: 0 1px 2px rgba(45, 82, 52, 0.22);
+  transition: background 140ms ease, transform 80ms ease, box-shadow 140ms ease;
 }
 
 .console-btn-primary:hover:not(:disabled) {
-  filter: brightness(1.06);
-  box-shadow: 0 3px 10px rgba(246, 130, 31, 0.32);
+  background: linear-gradient(180deg, #386641 0%, #2d5234 100%);
+  border-color: #223d27;
 }
 
 .console-btn-primary:active:not(:disabled) {
   transform: translateY(0.5px);
 }
 
+/* Secondary Buttons */
 .console-btn-secondary {
   background-color: var(--bg-surface);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
   color: var(--text-primary);
   transition: background-color 140ms ease, border-color 140ms ease;
 }
 
 .console-btn-secondary:hover:not(:disabled) {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-elevated);
   border-color: var(--border-strong);
 }
 
-.console-divider {
-  border-color: var(--border-subtle);
+/* Destructive / Blushed Brick Button */
+.console-btn-danger {
+  background-color: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+  transition: opacity 140ms ease, border-color 140ms ease;
+}
+
+.console-btn-danger:hover:not(:disabled) {
+  border-color: var(--danger-main);
+  opacity: 0.94;
 }
 
 .console-row-hover:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-elevated);
 }
 
+.console-code {
+  background-color: var(--bg-code);
+  border: 1px solid #223d27;
+  color: #f7f1e2;
+}
+
+/* Semantic Badges */
+.badge-brand {
+  background-color: var(--brand-soft);
+  border: 1px solid var(--brand-border);
+  color: var(--brand-text);
+}
+
+.badge-accent {
+  background-color: var(--accent-badge-bg);
+  border: 1px solid var(--accent-badge-border);
+  color: var(--accent-badge-text);
+}
+
+.badge-success {
+  background-color: var(--ok-soft);
+  border: 1px solid var(--ok-border);
+  color: var(--ok-text);
+}
+
+.badge-warning {
+  background-color: var(--warn-soft);
+  border: 1px solid var(--warn-border);
+  color: var(--warn-text);
+}
+
+.badge-error {
+  background-color: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+}
+
+.badge-info {
+  background-color: var(--info-soft);
+  border: 1px solid var(--info-border);
+  color: var(--info-text);
+}
+
+/* Hide scrollbars on horizontal mobile chip bars while keeping touch scroll */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
-}
-
-@keyframes drawerSlideIn {
-  from {
-    transform: translateX(100%);
-    opacity: 0.65;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-.animate-drawer-in {
-  animation: drawerSlideIn 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

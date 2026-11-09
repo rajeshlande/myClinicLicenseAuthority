@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
   <defs>
-    <linearGradient id="cfGrad" x1="10" y1="10" x2="54" y2="54" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F6821F"/>
-      <stop offset="1" stop-color="#FBAD41"/>
+    <linearGradient id="hunterGrad" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#386641"/>
+      <stop offset="1" stop-color="#223D27"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="16" fill="#0B0D10"/>
-  <rect x="1" y="1" width="62" height="62" rx="15" stroke="#2D3545" stroke-width="1.5"/>
-  <path d="M44.5 39H21.5a8.5 8.5 0 0 1-1.2-16.9A12 12 0 0 1 43.4 20a9.5 9.5 0 0 1 1.1 19z" fill="url(#cfGrad)"/>
-  <path d="M29 31.5l3 3 6.5-6.5" stroke="#0B0D10" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect width="64" height="64" rx="16" fill="url(#hunterGrad)"/>
+  <rect x="1.25" y="1.25" width="61.5" height="61.5" rx="14.75" stroke="#A7C957" stroke-opacity="0.55" stroke-width="1.5"/>
+  <path d="M44.5 39H21.5a8.5 8.5 0 0 1-1.2-16.9A12 12 0 0 1 43.4 20a9.5 9.5 0 0 1 1.1 19z" fill="#FCFAF5"/>
+  <path d="M28.5 31.5l3 3 6.5-6.5" stroke="#386641" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

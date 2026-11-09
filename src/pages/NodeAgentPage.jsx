@@ -15,13 +15,14 @@ import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import { describeClinicIdentity } from '../lib/entitlements.mjs';
 
 export function NodeAgentPage({ backend, selectedLicense = null }) {
-  const [activeTab, setActiveTab] = useState('env'); // 'env' | 'module' | 'vite' | 'workflow'
+  const [activeTab, setActiveTab] = useState('env');
   const [copiedId, setCopiedId] = useState(null);
   const [copyWarning, setCopyWarning] = useState('');
 
   const centralUrl =
-    String(backend?.health?.url ?? '').trim().replace(/\/+$/, '') ||
-    'https://YOUR_CENTRAL_PROJECT_REF.supabase.co';
+    String(backend?.health?.url ?? '')
+      .trim()
+      .replace(/\/+$/, '') || 'https://YOUR_CENTRAL_PROJECT_REF.supabase.co';
   const centralAnonKey =
     String(backend?.health?.anonKey ?? '').trim() ||
     'sb_publishable_YOUR_CENTRAL_ANON_KEY';
@@ -112,14 +113,7 @@ export function NodeAgentPage({ backend, selectedLicense = null }) {
         <span className="cf-top-stripe absolute inset-x-0 top-0 h-[3px]" />
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-3xl">
-            <div
-              style={{
-                backgroundColor: 'var(--cf-orange-soft)',
-                border: '1px solid var(--cf-orange-border)',
-                color: 'var(--cf-orange)',
-              }}
-              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-[11px] font-semibold"
-            >
+            <div className="badge-accent inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-[11px] font-semibold">
               <Blocks className="h-3.5 w-3.5" />
               Universal Client Build · Ship 1 Build to Every Clinic
             </div>
@@ -130,25 +124,26 @@ export function NodeAgentPage({ backend, selectedLicense = null }) {
               style={{ color: 'var(--text-secondary)' }}
               className="mt-1 text-xs leading-relaxed sm:text-sm"
             >
-              Configure <code className="font-mono">myClinic</code> once using the 4
-              snippets below. Every clinic deployment automatically syncs its plan,
-              seats, and expiration by <strong>Owner Email</strong> and{' '}
-              <strong>Website URL</strong> — zero per-clinic secrets or Edge Functions.
+              Configure <code className="font-mono">myClinic</code> once using
+              the 4 snippets below. Every clinic deployment automatically syncs
+              its plan, seats, and expiration by <strong>Owner Email</strong>{' '}
+              and <strong>Website URL</strong> — zero per-clinic secrets or Edge
+              Functions.
             </p>
           </div>
 
           {selectedIdentity ? (
             <div className="console-well rounded-xl px-3.5 py-2.5 text-xs">
               <div
-                style={{ color: 'var(--text-muted)' }}
-                className="font-mono text-[10px] uppercase"
+                style={{ color: 'var(--text-secondary)' }}
+                className="font-mono text-[10px] font-bold uppercase"
               >
                 Selected Clinic
               </div>
-              <div className="mt-0.5 font-semibold">{selectedIdentity.primary}</div>
+              <div className="mt-0.5 font-bold">{selectedIdentity.primary}</div>
               <div
-                style={{ color: 'var(--cf-orange)' }}
-                className="font-mono text-[10.5px]"
+                style={{ color: 'var(--brand-text)' }}
+                className="font-mono text-[10.5px] font-semibold"
               >
                 {selectedIdentity.modeLabel}
               </div>
@@ -157,11 +152,13 @@ export function NodeAgentPage({ backend, selectedLicense = null }) {
         </div>
 
         {copyWarning ? (
-          <p className="mt-3 text-xs text-amber-500">{copyWarning}</p>
+          <p style={{ color: 'var(--warn-text)' }} className="mt-3 text-xs font-medium">
+            {copyWarning}
+          </p>
         ) : null}
       </section>
 
-      {/* 4-Step Tabbed Cloudflare Code Workbench */}
+      {/* 4-Step Tabbed Code Workbench */}
       <section className="console-panel overflow-hidden rounded-2xl">
         <div
           style={{ borderBottom: '1px solid var(--border-subtle)' }}
@@ -178,19 +175,19 @@ export function NodeAgentPage({ backend, selectedLicense = null }) {
                 style={
                   active
                     ? {
-                        borderBottom: '2.5px solid var(--cf-orange)',
+                        borderBottom: '2.5px solid var(--brand-primary)',
                         color: 'var(--text-primary)',
                       }
                     : {
                         borderBottom: '2.5px solid transparent',
-                        color: 'var(--text-muted)',
+                        color: 'var(--text-secondary)',
                       }
                 }
-                className="inline-flex shrink-0 items-center gap-2 px-3.5 py-2.5 text-xs font-semibold transition-colors"
+                className="inline-flex shrink-0 items-center gap-2 px-3.5 py-2.5 text-xs font-bold transition-colors"
               >
                 <Icon
                   style={{
-                    color: active ? 'var(--cf-orange)' : 'var(--text-muted)',
+                    color: active ? 'var(--brand-text)' : 'var(--text-secondary)',
                   }}
                   className="h-3.5 w-3.5"
                 />
@@ -203,9 +200,9 @@ export function NodeAgentPage({ backend, selectedLicense = null }) {
         <div className="space-y-4 p-4 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="max-w-2xl">
-              <div className="flex items-center gap-2 font-mono text-xs font-semibold">
+              <div className="flex items-center gap-2 font-mono text-xs font-bold">
                 <Code2
-                  style={{ color: 'var(--cf-orange)' }}
+                  style={{ color: 'var(--brand-text)' }}
                   className="h-4 w-4 shrink-0"
                 />
                 <span className="break-all">{current.filename}</span>
@@ -248,45 +245,51 @@ export function NodeAgentPage({ backend, selectedLicense = null }) {
       {/* Architecture Assurance Strip */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="console-panel rounded-xl p-4">
-          <div className="flex items-center gap-2 text-xs font-semibold">
-            <ShieldCheck className="h-4 w-4 text-emerald-500" />
+          <div className="flex items-center gap-2 text-xs font-bold">
+            <ShieldCheck
+              style={{ color: 'var(--ok-main)' }}
+              className="h-4 w-4"
+            />
             Cross-Supabase Isolation
           </div>
           <p
-            style={{ color: 'var(--text-muted)' }}
+            style={{ color: 'var(--text-secondary)' }}
             className="mt-1 text-xs leading-relaxed"
           >
-            Uses raw <code className="font-mono">fetch</code> with only Central&apos;s
-            publishable key — never leaks clinic user JWTs or creates duplicate
-            GoTrue clients.
+            Uses raw <code className="font-mono">fetch</code> with only
+            Central&apos;s publishable key — never leaks clinic user JWTs or
+            creates duplicate GoTrue clients.
           </p>
         </div>
 
         <div className="console-panel rounded-xl p-4">
-          <div className="flex items-center gap-2 text-xs font-semibold">
-            <Lock style={{ color: 'var(--cf-orange)' }} className="h-4 w-4" />
+          <div className="flex items-center gap-2 text-xs font-bold">
+            <Lock style={{ color: 'var(--brand-text)' }} className="h-4 w-4" />
             Scoped Obfuscation Only
           </div>
           <p
-            style={{ color: 'var(--text-muted)' }}
+            style={{ color: 'var(--text-secondary)' }}
             className="mt-1 text-xs leading-relaxed"
           >
-            Obfuscates only subscription guard files so mobile PWA startup and Indian
-            drug search stay instantaneous.
+            Obfuscates only subscription guard files so mobile PWA startup and
+            Indian drug search stay instantaneous.
           </p>
         </div>
 
         <div className="console-panel rounded-xl p-4">
-          <div className="flex items-center gap-2 text-xs font-semibold">
-            <Sparkles className="h-4 w-4 text-sky-500" />
+          <div className="flex items-center gap-2 text-xs font-bold">
+            <Sparkles
+              style={{ color: 'var(--info-main)' }}
+              className="h-4 w-4"
+            />
             Patient Data Never Held Hostage
           </div>
           <p
-            style={{ color: 'var(--text-muted)' }}
+            style={{ color: 'var(--text-secondary)' }}
             className="mt-1 text-xs leading-relaxed"
           >
-            When paused or expired, <code className="font-mono">myClinic</code> blocks
-            writes while keeping patient charts readable and exportable.
+            When paused or expired, <code className="font-mono">myClinic</code>{' '}
+            blocks writes while keeping patient charts readable and exportable.
           </p>
         </div>
       </div>

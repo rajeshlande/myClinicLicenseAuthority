@@ -2,6 +2,17 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [2.1.0] - 2026-11-06
+
+### Changed
+- **Hunter Green + Vanilla Cream Editorial Design System (`src/index.css`, `src/lib/theme.mjs`, `src/components/*`, `src/pages/*`):**
+  - Implemented the bespoke brand palette & UI Component Mapping Guide:
+    - **App Background:** `neutral.100` (`#f7f1e2` Vanilla Cream canvas to reduce eye strain) as default light theme, paired with a harmonious **Hunter Forest Dark Mode** (`brand.800` `#0b140d` / `brand.700` `#16291a`).
+    - **Cards & Panels:** `neutral.white` (`#fcfaf5`) with `neutral.300` (`#f2e8cf`) wells/tabs, `neutral.200` (`#f4edd9`) hover states, and `neutral.600`/`700` (`#dfc688` / `#cba442`) dividers & borders.
+    - **Primary Buttons & Brand Headers:** `brand.400` (`#386641` Hunter Green) with `#fcfaf5` text and `accent` (`#a7c957` Yellow-Green / `#6a994e` Sage Green) secondary badges, charts, and indicators.
+    - **Typography:** `neutral.900` (`#463813`) high-contrast headings and `neutral.800` (`#8d7027`) warm editorial body copy.
+    - **System State Palettes:** `success` (`#e1ecda` bg / `#2a3d1f` text / `#6a994e` icon), `error` Blushed Brick (`#f2dadb` bg / `#73292b` text / `#bc4749` destructive accent), `warning` (`#fef3c7` / `#78350f` / `#d97706`), and `info` (`#dbeafe` / `#1e3a8a` / `#2563eb`).
+
 ## [2.0.0] - 2026-11-06
 
 ### Changed

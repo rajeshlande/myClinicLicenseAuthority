@@ -46,7 +46,9 @@ const SECURITY_LAYERS = [
 ];
 
 export function ValidatorLabPage({ backend }) {
-  const centralUrl = String(backend?.health?.url ?? '').trim().replace(/\/+$/, '');
+  const centralUrl = String(backend?.health?.url ?? '')
+    .trim()
+    .replace(/\/+$/, '');
   const centralAnonKey = String(backend?.health?.anonKey ?? '').trim();
 
   const [probeBusy, setProbeBusy] = useState(false);
@@ -112,7 +114,6 @@ export function ValidatorLabPage({ backend }) {
 
   return (
     <div className="space-y-5">
-      {/* Grid: Left Interactive Sync Simulator, Right Central Firewall Inspection */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         {/* Left Column: Live Auto-Sync Tester */}
         <section className="console-panel relative overflow-hidden rounded-2xl p-5 sm:p-6 lg:col-span-7">
@@ -120,23 +121,20 @@ export function ValidatorLabPage({ backend }) {
 
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div
-                style={{
-                  backgroundColor: 'var(--cf-orange-soft)',
-                  border: '1px solid var(--cf-orange-border)',
-                  color: 'var(--cf-orange)',
-                }}
-                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[10.5px] font-semibold"
-              >
+              <div className="badge-accent inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[10.5px] font-bold">
                 <Zap className="h-3 w-3" />
                 Zero-Seat Admin Preview
               </div>
               <h2 className="mt-2.5 text-base font-bold sm:text-lg">
                 Test Clinic Auto-Sync Verdict
               </h2>
-              <p style={{ color: 'var(--text-muted)' }} className="mt-0.5 text-xs">
-                Simulate what <code className="font-mono">myClinic</code> receives for
-                any Clinic Owner Email and/or Website URL without consuming a seat.
+              <p
+                style={{ color: 'var(--text-secondary)' }}
+                className="mt-0.5 text-xs"
+              >
+                Simulate what <code className="font-mono">myClinic</code>{' '}
+                receives for any Clinic Owner Email and/or Website URL without
+                consuming a seat.
               </p>
             </div>
 
@@ -144,13 +142,13 @@ export function ValidatorLabPage({ backend }) {
               type="button"
               disabled={probeBusy}
               onClick={handleRunHealthProbe}
-              className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-xs font-medium"
+              className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-xs font-semibold"
             >
               {probeBusy ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <Activity
-                  style={{ color: 'var(--cf-orange)' }}
+                  style={{ color: 'var(--brand-text)' }}
                   className="h-3.5 w-3.5"
                 />
               )}
@@ -161,17 +159,16 @@ export function ValidatorLabPage({ backend }) {
           {probeResult ? (
             <div
               role="status"
-              style={{
-                backgroundColor: 'var(--ok-soft)',
-                border: '1px solid var(--ok-border)',
-                color: 'var(--ok-text)',
-              }}
-              className="mt-4 flex items-center gap-2 rounded-xl p-3 text-xs"
+              className="badge-success mt-4 flex items-center gap-2 rounded-xl p-3 text-xs font-medium"
             >
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <CheckCircle2
+                style={{ color: 'var(--ok-main)' }}
+                className="h-4 w-4 shrink-0"
+              />
               <span>
-                <code className="font-mono">sync_clinic_subscription</code> online ·
-                Schema v{probeResult.schemaVersion} · {probeResult.latencyMs} ms
+                <code className="font-mono">sync_clinic_subscription</code>{' '}
+                online · Schema v{probeResult.schemaVersion} ·{' '}
+                {probeResult.latencyMs} ms
               </span>
             </div>
           ) : null}
@@ -192,8 +189,8 @@ export function ValidatorLabPage({ backend }) {
               <div>
                 <label
                   htmlFor="sim-clinic-email"
-                  style={{ color: 'var(--text-secondary)' }}
-                  className="flex items-center gap-1.5 text-xs font-medium"
+                  style={{ color: 'var(--text-primary)' }}
+                  className="flex items-center gap-1.5 text-xs font-semibold"
                 >
                   <Mail className="h-3.5 w-3.5" />
                   Clinic Owner Email
@@ -211,8 +208,8 @@ export function ValidatorLabPage({ backend }) {
               <div>
                 <label
                   htmlFor="sim-clinic-origin"
-                  style={{ color: 'var(--text-secondary)' }}
-                  className="flex items-center gap-1.5 text-xs font-medium"
+                  style={{ color: 'var(--text-primary)' }}
+                  className="flex items-center gap-1.5 text-xs font-semibold"
                 >
                   <Globe className="h-3.5 w-3.5" />
                   Clinic Website URL
@@ -255,26 +252,21 @@ export function ValidatorLabPage({ backend }) {
           {simResult ? (
             <div className="mt-5 space-y-3">
               <div
-                style={
-                  simResult.allowed
-                    ? {
-                        backgroundColor: 'var(--ok-soft)',
-                        border: '1px solid var(--ok-border)',
-                        color: 'var(--ok-text)',
-                      }
-                    : {
-                        backgroundColor: 'var(--danger-soft)',
-                        border: '1px solid rgba(239, 68, 68, 0.35)',
-                        color: 'var(--danger-text)',
-                      }
-                }
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl px-3.5 py-2.5 text-xs font-semibold"
+                className={`${
+                  simResult.allowed ? 'badge-success' : 'badge-error'
+                } flex flex-wrap items-center justify-between gap-2 rounded-xl px-3.5 py-2.5 text-xs font-bold`}
               >
                 <span className="inline-flex items-center gap-2">
                   {simResult.allowed ? (
-                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    <CheckCircle2
+                      style={{ color: 'var(--ok-main)' }}
+                      className="h-4 w-4 shrink-0"
+                    />
                   ) : (
-                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    <ShieldAlert
+                      style={{ color: 'var(--danger-main)' }}
+                      className="h-4 w-4 shrink-0"
+                    />
                   )}
                   {simResult.allowed
                     ? `UNLOCKED · Plan ${(simResult.plan || simResult.tier || '').toUpperCase()} (${simResult.match_mode || 'matched'})`
@@ -294,21 +286,20 @@ export function ValidatorLabPage({ backend }) {
           ) : null}
         </section>
 
-        {/* Right Column: Cloudflare-Style Central DB Firewall Posture */}
+        {/* Right Column: Central DB Firewall Posture */}
         <section className="console-panel space-y-4 rounded-2xl p-5 sm:p-6 lg:col-span-5">
           <div className="flex items-center gap-2.5">
-            <div
-              style={{
-                backgroundColor: 'var(--cf-orange-soft)',
-                border: '1px solid var(--cf-orange-border)',
-              }}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-            >
-              <Lock style={{ color: 'var(--cf-orange)' }} className="h-4 w-4" />
+            <div className="badge-brand flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
+              <Lock style={{ color: 'var(--brand-text)' }} className="h-4 w-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold">Central Supabase Firewall Posture</h2>
-              <p style={{ color: 'var(--text-muted)' }} className="text-xs">
+              <h2 className="text-sm font-bold">
+                Central Supabase Firewall Posture
+              </h2>
+              <p
+                style={{ color: 'var(--text-secondary)' }}
+                className="text-xs"
+              >
                 Active database protections on direct client connections
               </p>
             </div>
@@ -318,11 +309,14 @@ export function ValidatorLabPage({ backend }) {
             {SECURITY_LAYERS.map((layer) => (
               <div key={layer.id} className="console-well rounded-xl p-3.5">
                 <div className="flex items-start gap-2">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                  <ShieldCheck
+                    style={{ color: 'var(--ok-main)' }}
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                  />
                   <div>
-                    <div className="text-xs font-semibold">{layer.title}</div>
+                    <div className="text-xs font-bold">{layer.title}</div>
                     <p
-                      style={{ color: 'var(--text-muted)' }}
+                      style={{ color: 'var(--text-secondary)' }}
                       className="mt-0.5 text-[11px] leading-relaxed"
                     >
                       {layer.detail}

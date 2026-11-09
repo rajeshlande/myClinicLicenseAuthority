@@ -51,22 +51,22 @@ function buildStandingPillStyle(standing) {
       bg: 'var(--ok-soft)',
       border: 'var(--ok-border)',
       text: 'var(--ok-text)',
-      dot: 'bg-emerald-500',
+      dotColor: 'var(--ok-main)',
     };
   }
   if (standing.stateCode === 'KEY_KILLED') {
     return {
       bg: 'var(--danger-soft)',
-      border: 'rgba(239, 68, 68, 0.35)',
+      border: 'var(--danger-border)',
       text: 'var(--danger-text)',
-      dot: 'bg-rose-500',
+      dotColor: 'var(--danger-main)',
     };
   }
   return {
     bg: 'var(--warn-soft)',
-    border: 'rgba(245, 158, 11, 0.35)',
+    border: 'var(--warn-border)',
     text: 'var(--warn-text)',
-    dot: 'bg-amber-500',
+    dotColor: 'var(--warn-main)',
   };
 }
 
@@ -91,7 +91,6 @@ export default function EntitlementsPage({
   const [copiedId, setCopiedId] = useState(null);
   const [togglingIds, setTogglingIds] = useState({});
 
-  // Slide-over drawers
   const [issueOpen, setIssueOpen] = useState(false);
   const [inspectedLicenseId, setInspectedLicenseId] = useState(null);
   const [boundMachines, setBoundMachines] = useState([]);
@@ -104,13 +103,14 @@ export default function EntitlementsPage({
   const [savingRouting, setSavingRouting] = useState(false);
   const [savingTier, setSavingTier] = useState(false);
 
-  // Provision form state (Email, Clinic URL, or BOTH)
   const [customerEmail, setCustomerEmail] = useState('');
   const [allowedOrigin, setAllowedOrigin] = useState('');
   const [lockFirstOrigin, setLockFirstOrigin] = useState(true);
   const [tier, setTier] = useState('growth');
   const [maxMachines, setMaxMachines] = useState(2);
-  const [expiresDate, setExpiresDate] = useState(() => defaultExpirationDate(365));
+  const [expiresDate, setExpiresDate] = useState(() =>
+    defaultExpirationDate(365),
+  );
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -165,7 +165,9 @@ export default function EntitlementsPage({
   const openInspector = async (row) => {
     setInspectedLicenseId(row.license_id);
     setRenewDateInput(
-      row.expires_at ? String(row.expires_at).slice(0, 10) : defaultExpirationDate(365),
+      row.expires_at
+        ? String(row.expires_at).slice(0, 10)
+        : defaultExpirationDate(365),
     );
     setEditEmailInput(row.customer_email ?? '');
     setEditOriginInput(row.allowed_origin ?? '');
@@ -242,7 +244,9 @@ export default function EntitlementsPage({
         .eq('id', inspectedRow.subscription_id);
       if (error) throw error;
       await fetchEntitlements({ silent: true });
-      showToast(`Updated plan to ${nextTier.toUpperCase()} — auto-syncs on client.`);
+      showToast(
+        `Updated plan to ${nextTier.toUpperCase()} — auto-syncs on client.`,
+      );
     } catch (err) {
       rememberError(err, 'Change subscription tier');
       showToast(errorLine(err, { context: 'Could not change tier' }), 'error');
@@ -421,9 +425,10 @@ export default function EntitlementsPage({
       }
 
       if (tierFilter !== 'all') {
-        const mappedPlan =
-          (MYCLINIC_TIER_ENTITLEMENTS[row.tier] ?? MYCLINIC_TIER_ENTITLEMENTS.standard)
-            .plan;
+        const mappedPlan = (
+          MYCLINIC_TIER_ENTITLEMENTS[row.tier] ??
+          MYCLINIC_TIER_ENTITLEMENTS.standard
+        ).plan;
         if (mappedPlan !== tierFilter) return false;
       }
 
@@ -478,24 +483,36 @@ export default function EntitlementsPage({
 
   return (
     <div className="space-y-5">
-      {/* Toast Notification */}
+      {/* Toast Notification (Mapped to Success / Warning / Error Palettes) */}
       {toast ? (
         <div
           role="status"
           style={{
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-strong)',
-            color: 'var(--text-primary)',
             boxShadow: 'var(--shadow-float)',
           }}
-          className="fixed right-4 bottom-20 z-50 flex max-w-[92vw] items-center gap-2.5 rounded-xl px-4 py-3 text-xs font-medium lg:right-6 lg:bottom-6"
+          className={`${
+            toast.tone === 'error'
+              ? 'badge-error'
+              : toast.tone === 'warn'
+                ? 'badge-warning'
+                : 'badge-success'
+          } fixed right-4 bottom-20 z-50 flex max-w-[92vw] items-center gap-2.5 rounded-xl px-4 py-3 text-xs font-semibold lg:right-6 lg:bottom-6`}
         >
           {toast.tone === 'error' ? (
-            <AlertCircle className="h-4 w-4 shrink-0 text-rose-500" />
+            <AlertCircle
+              style={{ color: 'var(--danger-main)' }}
+              className="h-4 w-4 shrink-0"
+            />
           ) : toast.tone === 'warn' ? (
-            <ShieldAlert className="h-4 w-4 shrink-0 text-amber-500" />
+            <ShieldAlert
+              style={{ color: 'var(--warn-main)' }}
+              className="h-4 w-4 shrink-0"
+            />
           ) : (
-            <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-500" />
+            <ShieldCheck
+              style={{ color: 'var(--ok-main)' }}
+              className="h-4 w-4 shrink-0"
+            />
           )}
           <span className="truncate">{toast.message}</span>
         </div>
@@ -510,29 +527,35 @@ export default function EntitlementsPage({
         />
       ) : null}
 
-      {/* 1. Cloudflare 4-Metric Zone Overview Strip */}
+      {/* 1. 4-Metric Zone Overview Strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <button
           type="button"
           onClick={() => setStatusFilter('active')}
           className="console-panel relative overflow-hidden rounded-xl p-4 text-left transition hover:opacity-95"
         >
-          <span className="absolute inset-x-0 top-0 h-[2.5px] bg-emerald-500" />
+          <span
+            style={{ backgroundColor: 'var(--brand-primary)' }}
+            className="absolute inset-x-0 top-0 h-[3px]"
+          />
           <div className="flex items-center justify-between gap-2">
             <span
-              style={{ color: 'var(--text-muted)' }}
-              className="font-mono text-[10px] font-semibold tracking-wider uppercase"
+              style={{ color: 'var(--text-secondary)' }}
+              className="font-mono text-[10px] font-bold tracking-wider uppercase"
             >
               Active Clinics
             </span>
-            <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-500" />
+            <ShieldCheck
+              style={{ color: 'var(--ok-main)' }}
+              className="h-4 w-4 shrink-0"
+            />
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
             <span className="tabular-nums text-2xl font-bold tracking-tight">
               {metrics.activeCount}
             </span>
             <span
-              style={{ color: 'var(--text-muted)' }}
+              style={{ color: 'var(--text-secondary)' }}
               className="tabular-nums font-mono text-xs"
             >
               / {metrics.total}
@@ -542,24 +565,27 @@ export default function EntitlementsPage({
 
         <div className="console-panel relative overflow-hidden rounded-xl p-4 text-left">
           <span
-            style={{ backgroundColor: 'var(--cf-orange)' }}
-            className="absolute inset-x-0 top-0 h-[2.5px]"
+            style={{ backgroundColor: 'var(--accent-energy)' }}
+            className="absolute inset-x-0 top-0 h-[3px]"
           />
           <div className="flex items-center justify-between gap-2">
             <span
-              style={{ color: 'var(--text-muted)' }}
-              className="font-mono text-[10px] font-semibold tracking-wider uppercase"
+              style={{ color: 'var(--text-secondary)' }}
+              className="font-mono text-[10px] font-bold tracking-wider uppercase"
             >
               Synced Deployments
             </span>
-            <Globe style={{ color: 'var(--cf-orange)' }} className="h-4 w-4 shrink-0" />
+            <Globe
+              style={{ color: 'var(--brand-text)' }}
+              className="h-4 w-4 shrink-0"
+            />
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
             <span className="tabular-nums text-2xl font-bold tracking-tight">
               {metrics.totalRegisteredNodes}
             </span>
             <span
-              style={{ color: 'var(--text-muted)' }}
+              style={{ color: 'var(--text-secondary)' }}
               className="tabular-nums font-mono text-xs"
             >
               / {metrics.totalCapacityNodes}
@@ -572,22 +598,28 @@ export default function EntitlementsPage({
           onClick={() => setStatusFilter('expiring')}
           className="console-panel relative overflow-hidden rounded-xl p-4 text-left transition hover:opacity-95"
         >
-          <span className="absolute inset-x-0 top-0 h-[2.5px] bg-amber-500" />
+          <span
+            style={{ backgroundColor: 'var(--warn-main)' }}
+            className="absolute inset-x-0 top-0 h-[3px]"
+          />
           <div className="flex items-center justify-between gap-2">
             <span
-              style={{ color: 'var(--text-muted)' }}
-              className="font-mono text-[10px] font-semibold tracking-wider uppercase"
+              style={{ color: 'var(--text-secondary)' }}
+              className="font-mono text-[10px] font-bold tracking-wider uppercase"
             >
               Expiring &le; 14d
             </span>
-            <Clock className="h-4 w-4 shrink-0 text-amber-500" />
+            <Clock
+              style={{ color: 'var(--warn-main)' }}
+              className="h-4 w-4 shrink-0"
+            />
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
             <span className="tabular-nums text-2xl font-bold tracking-tight">
               {metrics.expiringSoonCount}
             </span>
             <span
-              style={{ color: 'var(--text-muted)' }}
+              style={{ color: 'var(--text-secondary)' }}
               className="font-mono text-xs"
             >
               renew soon
@@ -600,22 +632,28 @@ export default function EntitlementsPage({
           onClick={() => setStatusFilter('revoked')}
           className="console-panel relative overflow-hidden rounded-xl p-4 text-left transition hover:opacity-95"
         >
-          <span className="absolute inset-x-0 top-0 h-[2.5px] bg-rose-500" />
+          <span
+            style={{ backgroundColor: 'var(--danger-main)' }}
+            className="absolute inset-x-0 top-0 h-[3px]"
+          />
           <div className="flex items-center justify-between gap-2">
             <span
-              style={{ color: 'var(--text-muted)' }}
-              className="font-mono text-[10px] font-semibold tracking-wider uppercase"
+              style={{ color: 'var(--text-secondary)' }}
+              className="font-mono text-[10px] font-bold tracking-wider uppercase"
             >
               Paused / Lapsed
             </span>
-            <ShieldAlert className="h-4 w-4 shrink-0 text-rose-500" />
+            <ShieldAlert
+              style={{ color: 'var(--danger-main)' }}
+              className="h-4 w-4 shrink-0"
+            />
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
             <span className="tabular-nums text-2xl font-bold tracking-tight">
               {metrics.revokedOrExpiredCount}
             </span>
             <span
-              style={{ color: 'var(--text-muted)' }}
+              style={{ color: 'var(--text-secondary)' }}
               className="font-mono text-xs"
             >
               read-only
@@ -624,7 +662,7 @@ export default function EntitlementsPage({
         </button>
       </div>
 
-      {/* 2. Cloudflare Registry Card (Toolbar + Responsive List/Table) */}
+      {/* 2. Subscriptions Registry Card (neutral.white #fcfaf5) */}
       <section className="console-panel overflow-hidden rounded-2xl">
         {/* Toolbar */}
         <div
@@ -632,13 +670,28 @@ export default function EntitlementsPage({
           className="space-y-3 p-3.5 sm:p-4"
         >
           <div className="flex flex-wrap items-center justify-between gap-2.5">
-            {/* Scrollable Filter Chips on Mobile */}
-            <div className="no-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg p-1 console-well">
+            <div className="console-well grid w-full grid-cols-4 gap-1 rounded-lg p-1 sm:flex sm:w-auto sm:items-center">
               {[
-                { id: 'all', label: `All (${metrics.total})` },
-                { id: 'active', label: `Active (${metrics.activeCount})` },
-                { id: 'expiring', label: `Expiring (${metrics.expiringSoonCount})` },
-                { id: 'revoked', label: `Paused (${metrics.revokedOrExpiredCount})` },
+                {
+                  id: 'all',
+                  label: `All (${metrics.total})`,
+                  mobileLabel: `All ${metrics.total}`,
+                },
+                {
+                  id: 'active',
+                  label: `Active (${metrics.activeCount})`,
+                  mobileLabel: `Active ${metrics.activeCount}`,
+                },
+                {
+                  id: 'expiring',
+                  label: `Expiring (${metrics.expiringSoonCount})`,
+                  mobileLabel: `Soon ${metrics.expiringSoonCount}`,
+                },
+                {
+                  id: 'revoked',
+                  label: `Paused (${metrics.revokedOrExpiredCount})`,
+                  mobileLabel: `Paused ${metrics.revokedOrExpiredCount}`,
+                },
               ].map((tab) => {
                 const active = statusFilter === tab.id;
                 return (
@@ -650,17 +703,18 @@ export default function EntitlementsPage({
                       active
                         ? {
                             backgroundColor: 'var(--bg-surface)',
-                            border: '1px solid var(--cf-orange-border)',
+                            border: '1px solid var(--brand-border)',
                             color: 'var(--text-primary)',
                           }
                         : {
                             border: '1px solid transparent',
-                            color: 'var(--text-muted)',
+                            color: 'var(--text-secondary)',
                           }
                     }
-                    className="shrink-0 rounded-md px-2 py-1 font-mono text-[10.5px] font-semibold transition-all sm:px-2.5 sm:text-[11px]"
+                    className="truncate rounded-md px-1.5 py-1 text-center font-mono text-[10px] font-semibold transition-all sm:px-2.5 sm:text-[11px]"
                   >
-                    {tab.label}
+                    <span className="sm:hidden">{tab.mobileLabel}</span>
+                    <span className="hidden sm:inline">{tab.label}</span>
                   </button>
                 );
               })}
@@ -671,7 +725,7 @@ export default function EntitlementsPage({
                 type="button"
                 disabled={filteredRecords.length === 0}
                 onClick={handleExportCsv}
-                className="console-btn-secondary inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium disabled:opacity-40"
+                className="console-btn-secondary inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold disabled:opacity-40"
               >
                 <Download className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Export CSV</span>
@@ -681,7 +735,7 @@ export default function EntitlementsPage({
                 type="button"
                 disabled={refreshing}
                 onClick={() => fetchEntitlements()}
-                className="console-btn-secondary inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium"
+                className="console-btn-secondary inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold"
               >
                 <RefreshCw
                   className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`}
@@ -704,7 +758,7 @@ export default function EntitlementsPage({
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="relative min-w-0 flex-1">
               <Search
-                style={{ color: 'var(--text-muted)' }}
+                style={{ color: 'var(--text-secondary)' }}
                 className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2"
               />
               <input
@@ -719,7 +773,7 @@ export default function EntitlementsPage({
                   type="button"
                   onClick={() => setSearchQuery('')}
                   aria-label="Clear search"
-                  style={{ color: 'var(--text-muted)' }}
+                  style={{ color: 'var(--text-secondary)' }}
                   className="absolute top-1/2 right-2.5 -translate-y-1/2"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -729,7 +783,7 @@ export default function EntitlementsPage({
 
             <div className="flex items-center gap-2 sm:shrink-0">
               <SlidersHorizontal
-                style={{ color: 'var(--text-muted)' }}
+                style={{ color: 'var(--text-secondary)' }}
                 className="hidden h-3.5 w-3.5 shrink-0 sm:block"
               />
               <select
@@ -751,36 +805,33 @@ export default function EntitlementsPage({
         {loading ? (
           <div
             style={{ color: 'var(--text-secondary)' }}
-            className="flex items-center justify-center py-20 text-xs"
+            className="flex items-center justify-center py-20 text-xs font-medium"
           >
             <Loader2
-              style={{ color: 'var(--cf-orange)' }}
+              style={{ color: 'var(--brand-primary)' }}
               className="mr-2 h-4 w-4 animate-spin"
             />
             Loading clinic subscriptions...
           </div>
         ) : records.length === 0 ? (
           <div className="px-5 py-16 text-center">
-            <div
-              style={{
-                backgroundColor: 'var(--cf-orange-soft)',
-                border: '1px solid var(--cf-orange-border)',
-              }}
-              className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl"
-            >
-              <Building2 style={{ color: 'var(--cf-orange)' }} className="h-6 w-6" />
+            <div className="badge-brand mx-auto flex h-12 w-12 items-center justify-center rounded-2xl">
+              <Building2
+                style={{ color: 'var(--brand-text)' }}
+                className="h-6 w-6"
+              />
             </div>
             <p className="mt-4 text-sm font-bold">
               No clinics added to Central Auto-Sync yet
             </p>
             <p
-              style={{ color: 'var(--text-muted)' }}
+              style={{ color: 'var(--text-secondary)' }}
               className="mx-auto mt-1 max-w-md text-xs leading-relaxed"
             >
               Add your first clinic by <strong>Owner Email</strong>,{' '}
-              <strong>Clinic Website URL</strong>, or <strong>both</strong> — client{' '}
-              <code className="font-mono">myClinic</code> deployments will unlock
-              automatically without typing any license key.
+              <strong>Clinic Website URL</strong>, or <strong>both</strong> —
+              client <code className="font-mono">myClinic</code> deployments
+              will unlock automatically without typing any license key.
             </p>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
               <button
@@ -795,10 +846,10 @@ export default function EntitlementsPage({
                 <button
                   type="button"
                   onClick={onOpenGuide}
-                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium"
+                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold"
                 >
                   <BookOpen
-                    style={{ color: 'var(--cf-orange)' }}
+                    style={{ color: 'var(--brand-text)' }}
                     className="h-3.5 w-3.5"
                   />
                   2-Side Quickstart Guide
@@ -808,7 +859,7 @@ export default function EntitlementsPage({
           </div>
         ) : filteredRecords.length === 0 ? (
           <div className="px-5 py-16 text-center">
-            <p className="text-sm font-semibold">No clinics match your filter</p>
+            <p className="text-sm font-bold">No clinics match your filter</p>
             <button
               type="button"
               onClick={() => {
@@ -816,14 +867,14 @@ export default function EntitlementsPage({
                 setStatusFilter('all');
                 setTierFilter('all');
               }}
-              className="console-btn-secondary mt-3 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs"
+              className="console-btn-secondary mt-3 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold"
             >
               Clear filters
             </button>
           </div>
         ) : (
           <>
-            {/* Mobile & Tablet Card Stack (< 1024px — Zero Horizontal Scroll) */}
+            {/* Mobile & Tablet Card Stack (< 1024px) */}
             <div className="divide-y divide-[var(--border-subtle)] lg:hidden">
               {filteredRecords.map((row) => {
                 const standing = computeStanding(row);
@@ -845,26 +896,22 @@ export default function EntitlementsPage({
                               border: `1px solid ${pill.border}`,
                               color: pill.text,
                             }}
-                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase"
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold uppercase"
                           >
-                            <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
+                            <span
+                              style={{ backgroundColor: pill.dotColor }}
+                              className="h-1.5 w-1.5 rounded-full"
+                            />
                             {standing.stateCode === 'KEY_KILLED'
                               ? 'PAUSED'
                               : standing.label}
                           </span>
 
-                          <span
-                            style={{
-                              backgroundColor: 'var(--cf-orange-soft)',
-                              border: '1px solid var(--cf-orange-border)',
-                              color: 'var(--cf-orange)',
-                            }}
-                            className="rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase"
-                          >
+                          <span className="badge-accent rounded-full px-2 py-0.5 font-mono text-[10px] font-bold uppercase">
                             {seatSpec.plan}
                           </span>
 
-                          <span className="console-well rounded px-1.5 py-0.5 font-mono text-[10px]">
+                          <span className="console-well rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold">
                             {identity.modeLabel}
                           </span>
                         </div>
@@ -872,47 +919,53 @@ export default function EntitlementsPage({
                         <button
                           type="button"
                           onClick={() => openInspector(row)}
-                          className="mt-2 block max-w-full truncate text-left text-sm font-semibold hover:underline"
+                          className="mt-2 block max-w-full truncate text-left text-sm font-bold hover:underline"
                         >
                           {identity.primary}
                         </button>
 
                         {identity.secondary ? (
                           <div
-                            style={{ color: 'var(--text-muted)' }}
+                            style={{ color: 'var(--text-secondary)' }}
                             className="mt-0.5 flex items-center gap-1 font-mono text-[11px]"
                           >
                             <Globe className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{identity.secondary}</span>
+                            <span className="truncate">
+                              {identity.secondary}
+                            </span>
                           </div>
                         ) : null}
                       </div>
                     </div>
 
-                    <div
-                      style={{ color: 'var(--text-secondary)' }}
-                      className="grid grid-cols-2 gap-2 rounded-xl p-2.5 font-mono text-[11px] console-well"
-                    >
+                    <div className="console-well grid grid-cols-2 gap-2 rounded-xl p-2.5 font-mono text-[11px]">
                       <div>
-                        <span style={{ color: 'var(--text-muted)' }} className="block text-[9.5px] uppercase">
+                        <span
+                          style={{ color: 'var(--text-secondary)' }}
+                          className="block text-[9.5px] font-semibold uppercase"
+                        >
                           Deployments
                         </span>
-                        <span className="font-semibold">
+                        <span className="font-bold">
                           {row.registered_machines} / {row.max_machines} active
                         </span>
                       </div>
                       <div>
-                        <span style={{ color: 'var(--text-muted)' }} className="block text-[9.5px] uppercase">
+                        <span
+                          style={{ color: 'var(--text-secondary)' }}
+                          className="block text-[9.5px] font-semibold uppercase"
+                        >
                           Valid Until
                         </span>
                         <span
                           style={{
                             color:
-                              standing.daysLeft !== null && standing.daysLeft <= 14
+                              standing.daysLeft !== null &&
+                              standing.daysLeft <= 14
                                 ? 'var(--warn-text)'
                                 : 'var(--text-primary)',
                           }}
-                          className="font-semibold"
+                          className="font-bold"
                         >
                           {formatDisplayDate(row.expires_at)}
                         </span>
@@ -925,7 +978,7 @@ export default function EntitlementsPage({
                       <button
                         type="button"
                         onClick={() => openInspector(row)}
-                        className="console-btn-secondary inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-medium"
+                        className="console-btn-secondary inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold"
                       >
                         <Cpu className="h-3.5 w-3.5" />
                         Manage Clinic
@@ -935,20 +988,9 @@ export default function EntitlementsPage({
                         type="button"
                         disabled={isToggling}
                         onClick={() => handleToggleKillSwitch(row)}
-                        style={
-                          row.is_active
-                            ? {
-                                backgroundColor: 'var(--danger-soft)',
-                                border: '1px solid rgba(239, 68, 68, 0.35)',
-                                color: 'var(--danger-text)',
-                              }
-                            : {
-                                backgroundColor: 'var(--ok-soft)',
-                                border: '1px solid var(--ok-border)',
-                                color: 'var(--ok-text)',
-                              }
-                        }
-                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold disabled:opacity-50"
+                        className={`${
+                          row.is_active ? 'console-btn-danger' : 'badge-success'
+                        } inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold disabled:opacity-50`}
                       >
                         <Power className="h-3.5 w-3.5" />
                         {row.is_active ? 'Pause Clinic' : 'Resume Clinic'}
@@ -959,7 +1001,7 @@ export default function EntitlementsPage({
               })}
             </div>
 
-            {/* Desktop Cloudflare Zone Table (>= 1024px) */}
+            {/* Desktop Table (>= 1024px) */}
             <div className="hidden overflow-x-auto lg:block">
               <table className="w-full border-collapse text-left text-xs">
                 <thead>
@@ -967,15 +1009,17 @@ export default function EntitlementsPage({
                     style={{
                       backgroundColor: 'var(--bg-well)',
                       borderBottom: '1px solid var(--border-subtle)',
-                      color: 'var(--text-muted)',
+                      color: 'var(--text-secondary)',
                     }}
                     className="font-mono text-[10px] tracking-wider uppercase"
                   >
-                    <th className="px-4 py-3 font-semibold">Clinic (Email / Website URL)</th>
-                    <th className="px-3 py-3 font-semibold">Auto-Sync Routing</th>
-                    <th className="px-3 py-3 font-semibold">Plan &amp; Limits</th>
-                    <th className="px-3 py-3 font-semibold">Seats &amp; Term</th>
-                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                    <th className="px-4 py-3 font-bold">
+                      Clinic (Email / Website URL)
+                    </th>
+                    <th className="px-3 py-3 font-bold">Auto-Sync Routing</th>
+                    <th className="px-3 py-3 font-bold">Plan &amp; Limits</th>
+                    <th className="px-3 py-3 font-bold">Seats &amp; Term</th>
+                    <th className="px-4 py-3 text-right font-bold">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1003,9 +1047,12 @@ export default function EntitlementsPage({
                                 border: `1px solid ${pill.border}`,
                                 color: pill.text,
                               }}
-                              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase"
+                              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold uppercase"
                             >
-                              <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
+                              <span
+                                style={{ backgroundColor: pill.dotColor }}
+                                className="h-1.5 w-1.5 rounded-full"
+                              />
                               {standing.stateCode === 'KEY_KILLED'
                                 ? 'PAUSED'
                                 : standing.label}
@@ -1014,7 +1061,7 @@ export default function EntitlementsPage({
                             <button
                               type="button"
                               onClick={() => openInspector(row)}
-                              className="truncate text-left font-semibold hover:underline"
+                              className="truncate text-left font-bold hover:underline"
                             >
                               {identity.primary}
                             </button>
@@ -1022,14 +1069,16 @@ export default function EntitlementsPage({
 
                           {identity.secondary ? (
                             <div
-                              style={{ color: 'var(--text-muted)' }}
+                              style={{ color: 'var(--text-secondary)' }}
                               className="mt-1 flex items-center gap-1 font-mono text-[11px]"
                             >
                               <Globe
-                                style={{ color: 'var(--cf-orange)' }}
+                                style={{ color: 'var(--brand-text)' }}
                                 className="h-3 w-3 shrink-0"
                               />
-                              <span className="truncate">{identity.secondary}</span>
+                              <span className="truncate">
+                                {identity.secondary}
+                              </span>
                             </div>
                           ) : null}
 
@@ -1042,11 +1091,11 @@ export default function EntitlementsPage({
 
                         {/* Col 2 */}
                         <td className="px-3 py-3.5 whitespace-nowrap">
-                          <span className="console-well inline-block rounded-md px-2 py-0.5 font-mono text-[10.5px] font-semibold">
+                          <span className="console-well inline-block rounded-md px-2 py-0.5 font-mono text-[10.5px] font-bold">
                             {identity.modeLabel}
                           </span>
                           <div
-                            style={{ color: 'var(--text-muted)' }}
+                            style={{ color: 'var(--text-secondary)' }}
                             className="mt-1 font-mono text-[10px]"
                           >
                             {row.last_heartbeat
@@ -1057,18 +1106,11 @@ export default function EntitlementsPage({
 
                         {/* Col 3 */}
                         <td className="px-3 py-3.5 whitespace-nowrap">
-                          <span
-                            style={{
-                              backgroundColor: 'var(--cf-orange-soft)',
-                              border: '1px solid var(--cf-orange-border)',
-                              color: 'var(--cf-orange)',
-                            }}
-                            className="inline-block rounded-md px-2 py-0.5 font-mono text-[10.5px] font-bold uppercase"
-                          >
+                          <span className="badge-accent inline-block rounded-md px-2 py-0.5 font-mono text-[10.5px] font-bold uppercase">
                             {seatSpec.plan}
                           </span>
                           <div
-                            style={{ color: 'var(--text-muted)' }}
+                            style={{ color: 'var(--text-secondary)' }}
                             className="mt-1 font-mono text-[10px]"
                           >
                             {seatSpec.doctors === null
@@ -1085,33 +1127,35 @@ export default function EntitlementsPage({
                             className="block text-left"
                           >
                             <div className="flex items-center gap-2 font-mono text-[11px]">
-                              <span className="tabular-nums font-semibold">
-                                {row.registered_machines}/{row.max_machines} seats
+                              <span className="tabular-nums font-bold">
+                                {row.registered_machines}/{row.max_machines}{' '}
+                                seats
                               </span>
                               <div
                                 style={{ backgroundColor: 'var(--bg-well)' }}
                                 className="h-1.5 w-12 overflow-hidden rounded-full"
                               >
                                 <div
-                                  className={`h-full rounded-full ${
-                                    standing.usagePct >= 100
-                                      ? 'bg-amber-500'
-                                      : 'bg-emerald-500'
-                                  }`}
                                   style={{
                                     width: `${Math.min(100, standing.usagePct)}%`,
+                                    backgroundColor:
+                                      standing.usagePct >= 100
+                                        ? 'var(--warn-main)'
+                                        : 'var(--ok-main)',
                                   }}
+                                  className="h-full rounded-full"
                                 />
                               </div>
                             </div>
                             <div
                               style={{
                                 color:
-                                  standing.daysLeft !== null && standing.daysLeft <= 14
+                                  standing.daysLeft !== null &&
+                                  standing.daysLeft <= 14
                                     ? 'var(--warn-text)'
-                                    : 'var(--text-muted)',
+                                    : 'var(--text-secondary)',
                               }}
-                              className="mt-1 tabular-nums font-mono text-[10.5px]"
+                              className="mt-1 tabular-nums font-mono text-[10.5px] font-medium"
                             >
                               {formatDisplayDate(row.expires_at)}
                               {standing.daysLeft !== null
@@ -1129,7 +1173,7 @@ export default function EntitlementsPage({
                             <button
                               type="button"
                               onClick={() => openInspector(row)}
-                              className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+                              className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
                             >
                               Manage
                             </button>
@@ -1138,7 +1182,7 @@ export default function EntitlementsPage({
                               type="button"
                               onClick={() => openClientSdk(row)}
                               title="Open myClinic Client SDK"
-                              className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs"
+                              className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold"
                             >
                               <Blocks className="h-3.5 w-3.5" />
                               SDK
@@ -1148,20 +1192,11 @@ export default function EntitlementsPage({
                               type="button"
                               disabled={isToggling}
                               onClick={() => handleToggleKillSwitch(row)}
-                              style={
+                              className={`${
                                 row.is_active
-                                  ? {
-                                      backgroundColor: 'var(--danger-soft)',
-                                      border: '1px solid rgba(239, 68, 68, 0.32)',
-                                      color: 'var(--danger-text)',
-                                    }
-                                  : {
-                                      backgroundColor: 'var(--ok-soft)',
-                                      border: '1px solid var(--ok-border)',
-                                      color: 'var(--ok-text)',
-                                    }
-                              }
-                              className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50"
+                                  ? 'console-btn-danger'
+                                  : 'badge-success'
+                              } inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50`}
                             >
                               <Power className="h-3 w-3" />
                               {row.is_active ? 'Pause' : 'Resume'}
@@ -1185,23 +1220,35 @@ export default function EntitlementsPage({
         title="Add Clinic Subscription"
         subtitle="Keyless Central Auto-Sync — match by Clinic Owner Email, Website URL, or both."
       >
-        <form id="provision-license-form" onSubmit={handleProvisionSubmit} className="space-y-5">
+        <form
+          id="provision-license-form"
+          onSubmit={handleProvisionSubmit}
+          className="space-y-5"
+        >
           <div className="console-well space-y-3.5 rounded-xl p-4">
-            <p style={{ color: 'var(--text-secondary)' }} className="text-xs leading-relaxed">
-              Enter <strong>Owner Email</strong>, <strong>Clinic URL</strong>, or{' '}
-              <strong>both</strong>. Providing both pins the subscription to that exact
-              owner and domain.
+            <p
+              style={{ color: 'var(--text-secondary)' }}
+              className="text-xs leading-relaxed"
+            >
+              Enter <strong>Owner Email</strong>, <strong>Clinic URL</strong>,
+              or <strong>both</strong>. Providing both pins the subscription to
+              that exact owner and domain.
             </p>
 
             <div>
               <label
                 htmlFor="prov-customer-email"
-                style={{ color: 'var(--text-secondary)' }}
-                className="flex items-center gap-1.5 text-xs font-medium"
+                style={{ color: 'var(--text-primary)' }}
+                className="flex items-center gap-1.5 text-xs font-semibold"
               >
                 <Mail className="h-3.5 w-3.5" />
                 Clinic Owner Email{' '}
-                <span style={{ color: 'var(--text-muted)' }}>(optional if URL set)</span>
+                <span
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="font-normal"
+                >
+                  (optional if URL set)
+                </span>
               </label>
               <input
                 id="prov-customer-email"
@@ -1216,12 +1263,17 @@ export default function EntitlementsPage({
             <div>
               <label
                 htmlFor="prov-allowed-origin"
-                style={{ color: 'var(--text-secondary)' }}
-                className="flex items-center gap-1.5 text-xs font-medium"
+                style={{ color: 'var(--text-primary)' }}
+                className="flex items-center gap-1.5 text-xs font-semibold"
               >
                 <Globe className="h-3.5 w-3.5" />
                 Clinic Website URL{' '}
-                <span style={{ color: 'var(--text-muted)' }}>(optional if Email set)</span>
+                <span
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="font-normal"
+                >
+                  (optional if Email set)
+                </span>
               </label>
               <input
                 id="prov-allowed-origin"
@@ -1241,9 +1293,15 @@ export default function EntitlementsPage({
                   onChange={(e) => setLockFirstOrigin(e.target.checked)}
                   className="mt-0.5 rounded"
                 />
-                <span style={{ color: 'var(--text-secondary)' }} className="text-[11px] leading-relaxed">
-                  <strong>Auto-lock first cloud URL</strong> — pins their domain
-                  automatically the first time they open <code className="font-mono">myClinic</code>.
+                <span
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="text-[11px] leading-relaxed"
+                >
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    Auto-lock first cloud URL
+                  </strong>{' '}
+                  — pins their domain automatically the first time they open{' '}
+                  <code className="font-mono">myClinic</code>.
                 </span>
               </label>
             ) : null}
@@ -1252,8 +1310,8 @@ export default function EntitlementsPage({
           {/* 3-Card Plan Selector */}
           <div>
             <span
-              style={{ color: 'var(--text-secondary)' }}
-              className="block text-xs font-medium"
+              style={{ color: 'var(--text-primary)' }}
+              className="block text-xs font-semibold"
             >
               myClinic Plan Tier
             </span>
@@ -1271,8 +1329,8 @@ export default function EntitlementsPage({
                     style={
                       selected
                         ? {
-                            backgroundColor: 'var(--cf-orange-soft)',
-                            border: '1px solid var(--cf-orange-border)',
+                            backgroundColor: 'var(--brand-soft)',
+                            border: '1px solid var(--brand-border)',
                           }
                         : {
                             backgroundColor: 'var(--bg-well)',
@@ -1287,13 +1345,13 @@ export default function EntitlementsPage({
                       </span>
                       {selected ? (
                         <Check
-                          style={{ color: 'var(--cf-orange)' }}
+                          style={{ color: 'var(--brand-text)' }}
                           className="h-3.5 w-3.5"
                         />
                       ) : null}
                     </div>
                     <p
-                      style={{ color: 'var(--text-muted)' }}
+                      style={{ color: 'var(--text-secondary)' }}
                       className="mt-1 font-mono text-[10px] leading-relaxed"
                     >
                       {seats.doctors === null
@@ -1310,15 +1368,17 @@ export default function EntitlementsPage({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label
-                style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
+                style={{ color: 'var(--text-primary)' }}
+                className="block text-xs font-semibold"
               >
                 Max Allowed Deployments
               </label>
               <div className="mt-1.5 flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setMaxMachines((n) => Math.max(1, Number(n) - 1))}
+                  onClick={() =>
+                    setMaxMachines((n) => Math.max(1, Number(n) - 1))
+                  }
                   className="console-btn-secondary inline-flex h-9 w-9 items-center justify-center rounded-lg"
                 >
                   <Minus className="h-3.5 w-3.5" />
@@ -1332,11 +1392,13 @@ export default function EntitlementsPage({
                   onChange={(e) =>
                     setMaxMachines(Math.max(1, Number(e.target.value) || 1))
                   }
-                  className="console-input h-9 w-full rounded-lg px-3 text-center font-mono text-xs"
+                  className="console-input h-9 w-full rounded-lg px-3 text-center font-mono text-xs font-semibold"
                 />
                 <button
                   type="button"
-                  onClick={() => setMaxMachines((n) => Math.min(500, Number(n) + 1))}
+                  onClick={() =>
+                    setMaxMachines((n) => Math.min(500, Number(n) + 1))
+                  }
                   className="console-btn-secondary inline-flex h-9 w-9 items-center justify-center rounded-lg"
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -1347,8 +1409,8 @@ export default function EntitlementsPage({
             <div>
               <label
                 htmlFor="prov-expires-date"
-                style={{ color: 'var(--text-secondary)' }}
-                className="block text-xs font-medium"
+                style={{ color: 'var(--text-primary)' }}
+                className="block text-xs font-semibold"
               >
                 Subscription End Date
               </label>
@@ -1370,8 +1432,10 @@ export default function EntitlementsPage({
                   <button
                     key={preset.label}
                     type="button"
-                    onClick={() => setExpiresDate(defaultExpirationDate(preset.days))}
-                    className="console-btn-secondary rounded px-2 py-0.5 font-mono text-[10px]"
+                    onClick={() =>
+                      setExpiresDate(defaultExpirationDate(preset.days))
+                    }
+                    className="console-btn-secondary rounded px-2 py-0.5 font-mono text-[10px] font-semibold"
                   >
                     {preset.label}
                   </button>
@@ -1386,7 +1450,7 @@ export default function EntitlementsPage({
             <button
               type="button"
               onClick={() => setIssueOpen(false)}
-              className="console-btn-secondary rounded-lg px-4 py-2.5 text-xs font-medium"
+              className="console-btn-secondary rounded-lg px-4 py-2.5 text-xs font-semibold"
             >
               Cancel
             </button>
@@ -1411,7 +1475,9 @@ export default function EntitlementsPage({
         open={Boolean(inspectedRow)}
         onClose={() => setInspectedLicenseId(null)}
         title={
-          inspectedRow ? describeClinicIdentity(inspectedRow).primary : 'Clinic Inspector'
+          inspectedRow
+            ? describeClinicIdentity(inspectedRow).primary
+            : 'Clinic Inspector'
         }
         subtitle={
           inspectedRow
@@ -1426,16 +1492,16 @@ export default function EntitlementsPage({
             <div className="console-well space-y-3.5 rounded-xl p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span
-                  style={{ color: 'var(--text-muted)' }}
-                  className="font-mono text-[10px] font-semibold tracking-wider uppercase"
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="font-mono text-[10px] font-bold tracking-wider uppercase"
                 >
                   Auto-Sync Identity (Email &amp; Website URL)
                 </span>
                 <button
                   type="button"
                   onClick={() => openClientSdk(inspectedRow)}
-                  style={{ color: 'var(--cf-orange)' }}
-                  className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold hover:underline"
+                  style={{ color: 'var(--brand-text)' }}
+                  className="inline-flex items-center gap-1 font-mono text-[11px] font-bold hover:underline"
                 >
                   Open Client SDK
                   <ArrowUpRight className="h-3.5 w-3.5" />
@@ -1445,8 +1511,8 @@ export default function EntitlementsPage({
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label
-                    style={{ color: 'var(--text-secondary)' }}
-                    className="block text-[11px] font-medium"
+                    style={{ color: 'var(--text-primary)' }}
+                    className="block text-[11px] font-semibold"
                   >
                     Clinic Owner Email
                   </label>
@@ -1460,8 +1526,8 @@ export default function EntitlementsPage({
                 </div>
                 <div>
                   <label
-                    style={{ color: 'var(--text-secondary)' }}
-                    className="block text-[11px] font-medium"
+                    style={{ color: 'var(--text-primary)' }}
+                    className="block text-[11px] font-semibold"
                   >
                     Clinic Website URL
                   </label>
@@ -1493,7 +1559,7 @@ export default function EntitlementsPage({
                     <button
                       type="button"
                       onClick={() => setEditOriginInput('')}
-                      className="console-btn-secondary rounded-lg px-2.5 py-1.5 text-xs"
+                      className="console-btn-secondary rounded-lg px-2.5 py-1.5 text-xs font-semibold"
                     >
                       Clear URL
                     </button>
@@ -1514,7 +1580,10 @@ export default function EntitlementsPage({
                 style={{ borderTop: '1px solid var(--border-subtle)' }}
                 className="flex flex-wrap items-center justify-between gap-2 pt-3"
               >
-                <span style={{ color: 'var(--text-secondary)' }} className="text-xs font-medium">
+                <span
+                  style={{ color: 'var(--text-primary)' }}
+                  className="text-xs font-semibold"
+                >
                   Active Plan Tier:
                 </span>
                 <div className="flex flex-wrap gap-1.5">
@@ -1526,16 +1595,9 @@ export default function EntitlementsPage({
                         type="button"
                         disabled={savingTier}
                         onClick={() => handleUpdateTier(planOpt)}
-                        style={
-                          active
-                            ? {
-                                backgroundColor: 'var(--cf-orange-soft)',
-                                border: '1px solid var(--cf-orange-border)',
-                                color: 'var(--cf-orange)',
-                              }
-                            : undefined
-                        }
-                        className="console-btn-secondary rounded-lg px-3 py-1 font-mono text-[11px] font-bold uppercase"
+                        className={`${
+                          active ? 'badge-brand' : 'console-btn-secondary'
+                        } rounded-lg px-3 py-1 font-mono text-[11px] font-bold uppercase`}
                       >
                         {planOpt}
                       </button>
@@ -1549,11 +1611,14 @@ export default function EntitlementsPage({
             <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
               <div className="console-elevated rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold">Subscription Access</span>
+                  <span className="text-xs font-bold">Subscription Access</span>
                   <Power
-                    className={`h-4 w-4 ${
-                      inspectedRow.is_active ? 'text-emerald-500' : 'text-rose-500'
-                    }`}
+                    style={{
+                      color: inspectedRow.is_active
+                        ? 'var(--ok-main)'
+                        : 'var(--danger-main)',
+                    }}
+                    className="h-4 w-4"
                   />
                 </div>
                 <p
@@ -1568,18 +1633,24 @@ export default function EntitlementsPage({
                   type="button"
                   onClick={() => handleToggleKillSwitch(inspectedRow)}
                   disabled={Boolean(togglingIds[inspectedRow.license_id])}
-                  className="console-btn-secondary mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
+                  className={`${
+                    inspectedRow.is_active
+                      ? 'console-btn-danger'
+                      : 'badge-success'
+                  } mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold`}
                 >
                   <Power className="h-3.5 w-3.5" />
-                  {inspectedRow.is_active ? 'Pause Subscription' : 'Resume Subscription'}
+                  {inspectedRow.is_active
+                    ? 'Pause Subscription'
+                    : 'Resume Subscription'}
                 </button>
               </div>
 
               <div className="console-elevated rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold">Extend Paid Term</span>
+                  <span className="text-xs font-bold">Extend Paid Term</span>
                   <Calendar
-                    style={{ color: 'var(--cf-orange)' }}
+                    style={{ color: 'var(--brand-text)' }}
                     className="h-4 w-4"
                   />
                 </div>
@@ -1604,7 +1675,7 @@ export default function EntitlementsPage({
                     type="button"
                     disabled={savingTerm}
                     onClick={() => handleExtendTerm(defaultExpirationDate(30))}
-                    className="console-btn-secondary rounded px-2.5 py-1 font-mono text-[10px]"
+                    className="console-btn-secondary rounded px-2.5 py-1 font-mono text-[10px] font-semibold"
                   >
                     +30 Days
                   </button>
@@ -1612,7 +1683,7 @@ export default function EntitlementsPage({
                     type="button"
                     disabled={savingTerm}
                     onClick={() => handleExtendTerm(defaultExpirationDate(365))}
-                    className="console-btn-secondary rounded px-2.5 py-1 font-mono text-[10px]"
+                    className="console-btn-secondary rounded px-2.5 py-1 font-mono text-[10px] font-semibold"
                   >
                     +1 Year
                   </button>
@@ -1623,7 +1694,7 @@ export default function EntitlementsPage({
             {/* Bound Deployment Seats */}
             <div>
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold">
+                <h3 className="text-xs font-bold">
                   Synced Clinic Deployments ({boundMachines.length} /{' '}
                   {inspectedRow.max_machines})
                 </h3>
@@ -1636,10 +1707,13 @@ export default function EntitlementsPage({
                       'Copied legacy backup key',
                     )
                   }
-                  className="console-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[10px]"
+                  className="console-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[10px] font-semibold"
                 >
                   {copiedId === inspectedRow.license_id ? (
-                    <Check className="h-3 w-3 text-emerald-500" />
+                    <Check
+                      style={{ color: 'var(--ok-main)' }}
+                      className="h-3 w-3"
+                    />
                   ) : (
                     <Copy className="h-3 w-3" />
                   )}
@@ -1659,14 +1733,15 @@ export default function EntitlementsPage({
                 ) : boundMachines.length === 0 ? (
                   <div className="console-well rounded-xl p-5 text-center">
                     <Server
-                      style={{ color: 'var(--text-muted)' }}
-                      className="mx-auto h-5 w-5 opacity-60"
+                      style={{ color: 'var(--text-secondary)' }}
+                      className="mx-auto h-5 w-5 opacity-70"
                     />
                     <p
                       style={{ color: 'var(--text-secondary)' }}
                       className="mt-1.5 text-xs"
                     >
-                      No clinic browser or desktop deployment has auto-synced yet.
+                      No clinic browser or desktop deployment has auto-synced
+                      yet.
                     </p>
                   </div>
                 ) : (
@@ -1678,31 +1753,26 @@ export default function EntitlementsPage({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <Globe
-                            style={{ color: 'var(--cf-orange)' }}
+                            style={{ color: 'var(--brand-text)' }}
                             className="h-3.5 w-3.5 shrink-0"
                           />
-                          <code className="truncate font-mono text-xs font-medium">
+                          <code className="truncate font-mono text-xs font-bold">
                             {machine.machine_fingerprint}
                           </code>
                         </div>
                         <div
-                          style={{ color: 'var(--text-muted)' }}
+                          style={{ color: 'var(--text-secondary)' }}
                           className="mt-0.5 font-mono text-[10px]"
                         >
-                          First seen {formatDisplayDate(machine.activated_at)} · Last
-                          sync {formatDisplayDate(machine.last_heartbeat)}
+                          First seen {formatDisplayDate(machine.activated_at)} ·
+                          Last sync {formatDisplayDate(machine.last_heartbeat)}
                         </div>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => handleReleaseNode(machine.id)}
-                        style={{
-                          backgroundColor: 'var(--danger-soft)',
-                          border: '1px solid rgba(239, 68, 68, 0.3)',
-                          color: 'var(--danger-text)',
-                        }}
-                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[11px] font-semibold"
+                        className="console-btn-danger inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[11px] font-semibold"
                       >
                         <Trash2 className="h-3 w-3" />
                         Release

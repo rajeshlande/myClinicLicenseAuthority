@@ -72,7 +72,7 @@ function PageFallback() {
       <div
         style={{
           borderColor: 'var(--border-strong)',
-          borderTopColor: 'var(--cf-orange)',
+          borderTopColor: 'var(--brand-primary)',
         }}
         className="h-4 w-4 animate-spin rounded-full border-2"
       />
@@ -246,7 +246,7 @@ export default function App() {
         <div
           style={{
             borderColor: 'var(--border-strong)',
-            borderTopColor: 'var(--cf-orange)',
+            borderTopColor: 'var(--brand-primary)',
           }}
           className="h-4 w-4 animate-spin rounded-full border-2"
         />

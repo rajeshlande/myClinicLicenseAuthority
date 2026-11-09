@@ -1,7 +1,7 @@
 export const THEME_STORAGE_KEY = 'myclinic.authority.theme';
 
 export function normalizeTheme(value) {
-  return value === 'light' ? 'light' : 'dark';
+  return value === 'dark' ? 'dark' : 'light';
 }
 
 export function resolveInitialTheme(storage = globalThis.localStorage) {
@@ -13,14 +13,18 @@ export function resolveInitialTheme(storage = globalThis.localStorage) {
   } catch {
     // Ignore storage access errors in strict sandboxes
   }
-  return 'dark';
+  return 'light';
 }
 
 export function nextTheme(current) {
-  return normalizeTheme(current) === 'dark' ? 'light' : 'dark';
+  return normalizeTheme(current) === 'light' ? 'dark' : 'light';
 }
 
-export function applyDocumentTheme(theme, doc = globalThis.document, storage = globalThis.localStorage) {
+export function applyDocumentTheme(
+  theme,
+  doc = globalThis.document,
+  storage = globalThis.localStorage,
+) {
   const clean = normalizeTheme(theme);
   if (doc?.documentElement) {
     doc.documentElement.setAttribute('data-theme', clean);
