@@ -2,6 +2,15 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [2.2.0] - 2026-11-06
+
+### Added
+- **Real-Time Client Connection & Plan Delivery Telemetry (`supabase/schema.sql`, `src/lib/entitlements.mjs`, `src/pages/EntitlementsPage.jsx`, `src/lib/auto-sync-client.mjs`):**
+  - Added additive client sync receipt columns (`last_synced_tier`, `last_synced_status`, `last_synced_expires_at`) on `public.activated_machines` and exposed them on `public.admin_license_view`, plus `trg_licenses_touch_subscription` so Pause/Resume toggles touch `subscriptions.updated_at`.
+  - Updated `public.sync_clinic_subscription()` to bypass the 5-minute steady-state heartbeat throttle whenever Central's `tier`, `status`, `expires_at`, or `updated_at` changed since the client's last sync — recording instant delivery receipts for plan upgrades and pause/expiry locks.
+  - Added `describeClientSyncState()` and `formatSyncTimestamp()` displaying live badges (`● Plan Synced`, `◐ Update Pending`, `◐ Pause Pending`, `● Pause Synced`, `○ Awaiting Connect`) across Desktop rows, Mobile cards, and the Manage Clinic drawer, paired with a **Live 15s** auto-poll toggle.
+  - Enhanced `buildMyClinicAutoSyncKit()` (`src/lib/central-subscription.mjs`) with `synced_at` + `source` metadata and `startMyClinicAutoSync()` (auto-sync on load, tab focus, reconnect, and 15-minute heartbeat).
+
 ## [2.1.0] - 2026-11-06
 
 ### Changed

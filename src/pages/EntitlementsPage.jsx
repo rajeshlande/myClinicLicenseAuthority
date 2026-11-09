@@ -37,8 +37,10 @@ import {
   computeFleetMetrics,
   computeStanding,
   defaultExpirationDate,
+  describeClientSyncState,
   describeClinicIdentity,
   formatDisplayDate,
+  formatSyncTimestamp,
   sanitizeCsvCell,
   validateProvisionInput,
   validateRoutingUpdateInput,
@@ -81,6 +83,7 @@ export default function EntitlementsPage({
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [livePolling, setLivePolling] = useState(true);
   const [errorBanner, setErrorBanner] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -156,6 +159,31 @@ export default function EntitlementsPage({
   useEffect(() => {
     void fetchEntitlements();
   }, [fetchEntitlements]);
+
+  useEffect(() => {
+    if (!livePolling) return undefined;
+    const pollId = setInterval(() => {
+      if (
+        typeof document !== 'undefined' &&
+        document.visibilityState !== 'visible'
+      ) {
+        return;
+      }
+      void fetchEntitlements({ silent: true });
+      if (inspectedLicenseId) {
+        void supabase
+          .from('activated_machines')
+          .select('*')
+          .eq('license_id', inspectedLicenseId)
+          .then(({ data, error }) => {
+            if (!error && Array.isArray(data)) {
+              setBoundMachines(data);
+            }
+          });
+      }
+    }, 15000);
+    return () => clearInterval(pollId);
+  }, [livePolling, fetchEntitlements, inspectedLicenseId, supabase]);
 
   const inspectedRow = useMemo(
     () => records.find((r) => r.license_id === inspectedLicenseId) ?? null,
@@ -368,13 +396,15 @@ export default function EntitlementsPage({
 
       if (error) throw error;
 
+      const nowIso = new Date().toISOString();
       setRecords((prev) =>
         prev.map((item) =>
           item.license_id === row.license_id
-            ? { ...item, is_active: nextActiveState }
+            ? { ...item, is_active: nextActiveState, updated_at: nowIso }
             : item,
         ),
       );
+      void fetchEntitlements({ silent: true });
       showToast(
         nextActiveState
           ? 'Subscription resumed — clinic can auto-sync.'
@@ -446,16 +476,19 @@ export default function EntitlementsPage({
   const handleExportCsv = () => {
     if (filteredRecords.length === 0) return;
     const csvLines = [
-      'customer_email,allowed_origin,match_mode,tier,status,registered_machines,max_machines,expires_at',
+      'customer_email,allowed_origin,match_mode,tier,status,client_sync_state,last_heartbeat,registered_machines,max_machines,expires_at',
       ...filteredRecords.map((row) => {
         const standing = computeStanding(row);
         const identity = describeClinicIdentity(row);
+        const syncState = describeClientSyncState(row);
         return [
           row.customer_email ?? '',
           row.allowed_origin ?? '',
           identity.mode,
           row.tier,
           standing.label,
+          syncState.badgeLabel,
+          row.last_heartbeat ?? '',
           row.registered_machines,
           row.max_machines,
           row.expires_at,
@@ -573,22 +606,29 @@ export default function EntitlementsPage({
               style={{ color: 'var(--text-secondary)' }}
               className="font-mono text-[10px] font-bold tracking-wider uppercase"
             >
-              Synced Deployments
+              Client Sync Live
             </span>
             <Globe
               style={{ color: 'var(--brand-text)' }}
               className="h-4 w-4 shrink-0"
             />
           </div>
-          <div className="mt-2 flex items-baseline gap-1.5">
+          <div className="mt-2 flex flex-wrap items-baseline gap-1.5">
             <span className="tabular-nums text-2xl font-bold tracking-tight">
-              {metrics.totalRegisteredNodes}
+              {metrics.inSyncClinicsCount}
             </span>
             <span
-              style={{ color: 'var(--text-secondary)' }}
-              className="tabular-nums font-mono text-xs"
+              style={{
+                color:
+                  metrics.pendingSyncClinicsCount > 0
+                    ? 'var(--warn-text)'
+                    : 'var(--text-secondary)',
+              }}
+              className="tabular-nums font-mono text-[11px] font-semibold"
             >
-              / {metrics.totalCapacityNodes}
+              {metrics.pendingSyncClinicsCount > 0
+                ? `synced · ${metrics.pendingSyncClinicsCount} pending`
+                : `/ ${metrics.connectedClinicsCount} connected`}
             </span>
           </div>
         </div>
@@ -721,6 +761,31 @@ export default function EntitlementsPage({
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setLivePolling((prev) => !prev)}
+                title={
+                  livePolling
+                    ? 'Auto-polling Central every 15s for live client syncs (click to pause)'
+                    : 'Click to resume 15s live client sync polling'
+                }
+                className={`${
+                  livePolling ? 'badge-success' : 'console-btn-secondary'
+                } inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 font-mono text-[10.5px] font-bold`}
+              >
+                <span
+                  style={{
+                    backgroundColor: livePolling
+                      ? 'var(--ok-main)'
+                      : 'var(--text-muted)',
+                  }}
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    livePolling ? 'animate-pulse' : ''
+                  }`}
+                />
+                <span>{livePolling ? 'Live 15s' : 'Paused'}</span>
+              </button>
+
               <button
                 type="button"
                 disabled={filteredRecords.length === 0}
@@ -880,6 +945,7 @@ export default function EntitlementsPage({
                 const standing = computeStanding(row);
                 const pill = buildStandingPillStyle(standing);
                 const identity = describeClinicIdentity(row);
+                const syncState = describeClientSyncState(row);
                 const seatSpec =
                   MYCLINIC_TIER_ENTITLEMENTS[row.tier] ??
                   MYCLINIC_TIER_ENTITLEMENTS.standard;
@@ -911,8 +977,27 @@ export default function EntitlementsPage({
                             {seatSpec.plan}
                           </span>
 
-                          <span className="console-well rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold">
-                            {identity.modeLabel}
+                          <span
+                            className={`${
+                              syncState.tone === 'ok'
+                                ? 'badge-success'
+                                : syncState.tone === 'warn'
+                                  ? 'badge-warning'
+                                  : 'console-well'
+                            } inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold`}
+                          >
+                            <span
+                              style={{
+                                backgroundColor:
+                                  syncState.tone === 'ok'
+                                    ? 'var(--ok-main)'
+                                    : syncState.tone === 'warn'
+                                      ? 'var(--warn-main)'
+                                      : 'var(--text-muted)',
+                              }}
+                              className="h-1.5 w-1.5 rounded-full"
+                            />
+                            {syncState.badgeLabel}
                           </span>
                         </div>
 
@@ -935,6 +1020,18 @@ export default function EntitlementsPage({
                             </span>
                           </div>
                         ) : null}
+
+                        <div
+                          style={{
+                            color:
+                              syncState.tone === 'warn'
+                                ? 'var(--warn-text)'
+                                : 'var(--text-secondary)',
+                          }}
+                          className="mt-1 font-mono text-[10.5px]"
+                        >
+                          {identity.modeLabel} · {syncState.detail}
+                        </div>
                       </div>
                     </div>
 
@@ -1016,7 +1113,9 @@ export default function EntitlementsPage({
                     <th className="px-4 py-3 font-bold">
                       Clinic (Email / Website URL)
                     </th>
-                    <th className="px-3 py-3 font-bold">Auto-Sync Routing</th>
+                    <th className="px-3 py-3 font-bold">
+                      Client Sync &amp; Routing
+                    </th>
                     <th className="px-3 py-3 font-bold">Plan &amp; Limits</th>
                     <th className="px-3 py-3 font-bold">Seats &amp; Term</th>
                     <th className="px-4 py-3 text-right font-bold">Actions</th>
@@ -1027,6 +1126,7 @@ export default function EntitlementsPage({
                     const standing = computeStanding(row);
                     const pill = buildStandingPillStyle(standing);
                     const identity = describeClinicIdentity(row);
+                    const syncState = describeClientSyncState(row);
                     const seatSpec =
                       MYCLINIC_TIER_ENTITLEMENTS[row.tier] ??
                       MYCLINIC_TIER_ENTITLEMENTS.standard;
@@ -1089,18 +1189,46 @@ export default function EntitlementsPage({
                           ) : null}
                         </td>
 
-                        {/* Col 2 */}
+                        {/* Col 2: Live Client Connection & Plan Sync Receipt */}
                         <td className="px-3 py-3.5 whitespace-nowrap">
-                          <span className="console-well inline-block rounded-md px-2 py-0.5 font-mono text-[10.5px] font-bold">
-                            {identity.modeLabel}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span
+                              className={`${
+                                syncState.tone === 'ok'
+                                  ? 'badge-success'
+                                  : syncState.tone === 'warn'
+                                    ? 'badge-warning'
+                                    : 'console-well'
+                              } inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold`}
+                            >
+                              <span
+                                style={{
+                                  backgroundColor:
+                                    syncState.tone === 'ok'
+                                      ? 'var(--ok-main)'
+                                      : syncState.tone === 'warn'
+                                        ? 'var(--warn-main)'
+                                        : 'var(--text-muted)',
+                                }}
+                                className="h-1.5 w-1.5 rounded-full"
+                              />
+                              {syncState.badgeLabel}
+                            </span>
+
+                            <span className="console-well inline-block rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold">
+                              {identity.modeLabel}
+                            </span>
+                          </div>
                           <div
-                            style={{ color: 'var(--text-secondary)' }}
-                            className="mt-1 font-mono text-[10px]"
+                            style={{
+                              color:
+                                syncState.tone === 'warn'
+                                  ? 'var(--warn-text)'
+                                  : 'var(--text-secondary)',
+                            }}
+                            className="mt-1 font-mono text-[10px] font-medium"
                           >
-                            {row.last_heartbeat
-                              ? `Synced ${formatDisplayDate(row.last_heartbeat)}`
-                              : 'Awaiting first sync'}
+                            {syncState.detail}
                           </div>
                         </td>
 
@@ -1488,6 +1616,51 @@ export default function EntitlementsPage({
       >
         {inspectedRow ? (
           <div className="space-y-5">
+            {/* Live Client Sync Receipt Card */}
+            {(() => {
+              const syncState = describeClientSyncState(inspectedRow);
+              return (
+                <div
+                  className={`${
+                    syncState.tone === 'ok'
+                      ? 'badge-success'
+                      : syncState.tone === 'warn'
+                        ? 'badge-warning'
+                        : 'console-well'
+                  } flex flex-wrap items-center justify-between gap-2.5 rounded-xl px-4 py-3`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 font-mono text-xs font-bold">
+                      <span
+                        style={{
+                          backgroundColor:
+                            syncState.tone === 'ok'
+                              ? 'var(--ok-main)'
+                              : syncState.tone === 'warn'
+                                ? 'var(--warn-main)'
+                                : 'var(--text-muted)',
+                        }}
+                        className="h-2 w-2 shrink-0 rounded-full"
+                      />
+                      <span>Client Status: {syncState.badgeLabel}</span>
+                    </div>
+                    <p className="mt-0.5 font-mono text-[11px] opacity-90">
+                      {syncState.detail} · Client updates automatically on page
+                      open, tab focus, reconnect, or every 15m.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openInspector(inspectedRow)}
+                    className="console-btn-secondary inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[10.5px] font-bold"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Check Now
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* Live Routing & Tier Editor */}
             <div className="console-well space-y-3.5 rounded-xl p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1751,7 +1924,7 @@ export default function EntitlementsPage({
                       className="console-well flex flex-wrap items-center justify-between gap-2.5 rounded-xl px-3.5 py-2.5"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Globe
                             style={{ color: 'var(--brand-text)' }}
                             className="h-3.5 w-3.5 shrink-0"
@@ -1759,13 +1932,35 @@ export default function EntitlementsPage({
                           <code className="truncate font-mono text-xs font-bold">
                             {machine.machine_fingerprint}
                           </code>
+                          {machine.last_synced_tier ||
+                          machine.last_synced_status ? (
+                            <span
+                              className={`${
+                                machine.last_synced_status &&
+                                machine.last_synced_status !== 'active'
+                                  ? 'badge-error'
+                                  : 'badge-success'
+                              } rounded px-1.5 py-0.5 font-mono text-[9.5px] font-bold uppercase`}
+                            >
+                              {machine.last_synced_status &&
+                              machine.last_synced_status !== 'active'
+                                ? `${machine.last_synced_status} ack`
+                                : `${
+                                    MYCLINIC_TIER_ENTITLEMENTS[
+                                      machine.last_synced_tier
+                                    ]?.plan ??
+                                    machine.last_synced_tier ??
+                                    'synced'
+                                  } ack`}
+                            </span>
+                          ) : null}
                         </div>
                         <div
                           style={{ color: 'var(--text-secondary)' }}
                           className="mt-0.5 font-mono text-[10px]"
                         >
                           First seen {formatDisplayDate(machine.activated_at)} ·
-                          Last sync {formatDisplayDate(machine.last_heartbeat)}
+                          Last sync {formatSyncTimestamp(machine.last_heartbeat)}
                         </div>
                       </div>
 

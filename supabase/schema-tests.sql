@@ -199,6 +199,38 @@ begin
     raise exception 'FAIL: expected SUBSCRIPTION_PAUSED after kill-switch, got %', v_res;
   end if;
   raise notice 'PASS: central kill-switch immediately paused clinic auto-sync';
+end $$;
+reset role;
+
+-- 6. Verify admin_license_view surfaces exact client sync delivery receipts (`last_synced_tier` + `last_synced_status`)
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare
+  v_growth_ack record;
+  v_paused_ack record;
+begin
+  select last_synced_tier, last_synced_status
+    into v_growth_ack
+    from public.admin_license_view
+   where allowed_origin = 'https://dualclinic.github.io'
+   limit 1;
+
+  if v_growth_ack.last_synced_tier <> 'growth' or v_growth_ack.last_synced_status <> 'active' then
+    raise exception 'FAIL: expected last_synced_tier=growth & active, got %', v_growth_ack;
+  end if;
+
+  select last_synced_tier, last_synced_status
+    into v_paused_ack
+    from public.admin_license_view
+   where allowed_origin = 'https://urlclinic.github.io'
+   limit 1;
+
+  if v_paused_ack.last_synced_status <> 'paused' then
+    raise exception 'FAIL: expected last_synced_status=paused after client synced pause, got %', v_paused_ack;
+  end if;
+
+  raise notice 'PASS: admin_license_view tracks exact client-acknowledged tier & pause status';
   raise notice 'ALL CENTRAL DATABASE SECURITY & KEYLESS AUTO-SYNC CHECKS COMPLETED';
 end $$;
 reset role;

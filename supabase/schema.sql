@@ -222,18 +222,48 @@ create table if not exists public.licenses (
 create index if not exists idx_licenses_subscription_id
   on public.licenses (subscription_id);
 
--- 3. `activated_machines` (Domain / Device Seat Lock)
+-- Touch parent `subscriptions.updated_at` whenever `licenses.is_active` (Pause / Resume)
+-- flips so Central immediately knows a state change is pending client sync.
+create or replace function public.touch_parent_subscription_updated_at()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if old.is_active is distinct from new.is_active then
+    update public.subscriptions
+       set updated_at = now()
+     where id = new.subscription_id;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_licenses_touch_subscription on public.licenses;
+create trigger trg_licenses_touch_subscription
+  after update on public.licenses
+  for each row execute function public.touch_parent_subscription_updated_at();
+
+-- 3. `activated_machines` (Domain / Device Seat Lock + Client Sync Delivery Telemetry)
 create table if not exists public.activated_machines (
-  id                  uuid primary key default gen_random_uuid(),
-  license_id          uuid not null
-                      references public.licenses(id) on delete cascade,
-  machine_fingerprint text not null
-                      check (char_length(btrim(machine_fingerprint)) between 1 and 512),
-  activated_at        timestamptz not null default now(),
-  last_heartbeat      timestamptz not null default now(),
+  id                     uuid primary key default gen_random_uuid(),
+  license_id             uuid not null
+                         references public.licenses(id) on delete cascade,
+  machine_fingerprint    text not null
+                         check (char_length(btrim(machine_fingerprint)) between 1 and 512),
+  activated_at           timestamptz not null default now(),
+  last_heartbeat         timestamptz not null default now(),
+  last_synced_tier       text,
+  last_synced_status     text,
+  last_synced_expires_at timestamptz,
   constraint activated_machines_license_fingerprint_unique
     unique (license_id, machine_fingerprint)
 );
+
+-- Additive client sync delivery columns for existing Schema v1 / v2 databases:
+alter table public.activated_machines add column if not exists last_synced_tier text;
+alter table public.activated_machines add column if not exists last_synced_status text;
+alter table public.activated_machines add column if not exists last_synced_expires_at timestamptz;
 
 create index if not exists idx_activated_machines_license_id
   on public.activated_machines (license_id);
@@ -326,7 +356,28 @@ select
   s.created_at,
   s.updated_at,
   s.allowed_origin,
-  s.lock_first_origin
+  s.lock_first_origin,
+  (
+    select am.last_synced_tier
+    from public.activated_machines am
+    where am.license_id = l.id
+    order by am.last_heartbeat desc nulls last
+    limit 1
+  ) as last_synced_tier,
+  (
+    select am.last_synced_status
+    from public.activated_machines am
+    where am.license_id = l.id
+    order by am.last_heartbeat desc nulls last
+    limit 1
+  ) as last_synced_status,
+  (
+    select am.last_synced_expires_at
+    from public.activated_machines am
+    where am.license_id = l.id
+    order by am.last_heartbeat desc nulls last
+    limit 1
+  ) as last_synced_expires_at
 from public.licenses l
 join public.subscriptions s
   on s.id = l.subscription_id;
@@ -696,6 +747,7 @@ begin
     s.tier,
     s.max_machines,
     s.expires_at,
+    s.updated_at,
     l.id as license_id,
     l.is_active,
     case
@@ -751,13 +803,40 @@ begin
     );
   end if;
 
+  v_is_local := v_origin is null
+    or v_origin ~ '^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)';
+
+  if not v_is_local and v_origin is not null then
+    -- Cloud origins bind deterministically to `web:<origin>` so external curl callers
+    -- can never pre-empt or exhaust seats with random device IDs.
+    v_fingerprint := 'web:' || v_origin;
+  else
+    v_fingerprint := 'device:' || coalesce(v_origin, 'local') || '|' || coalesce(nullif(v_device, ''), 'default');
+  end if;
+
   if not v_sub.is_active then
+    if not v_is_preview then
+      update public.activated_machines
+         set last_heartbeat = v_now,
+             last_synced_tier = 'solo',
+             last_synced_status = 'paused',
+             last_synced_expires_at = v_sub.expires_at
+       where license_id = v_sub.license_id
+         and machine_fingerprint = v_fingerprint
+         and (
+           last_synced_status is distinct from 'paused'
+           or last_heartbeat < v_sub.updated_at
+           or last_heartbeat < (v_now - interval '5 minutes')
+         );
+    end if;
+
     return jsonb_build_object(
       'allowed', false,
       'status', 'paused',
       'code', 'SUBSCRIPTION_PAUSED',
       'tier', 'solo',
       'expires_at', v_sub.expires_at,
+      'server_time', v_now,
       'reason', 'Subscription is paused by the administrator.'
     );
   end if;
@@ -770,29 +849,57 @@ begin
          and status = 'active';
     end if;
 
+    if not v_is_preview then
+      update public.activated_machines
+         set last_heartbeat = v_now,
+             last_synced_tier = 'solo',
+             last_synced_status = 'expired',
+             last_synced_expires_at = v_sub.expires_at
+       where license_id = v_sub.license_id
+         and machine_fingerprint = v_fingerprint
+         and (
+           last_synced_status is distinct from 'expired'
+           or last_heartbeat < (v_now - interval '5 minutes')
+         );
+    end if;
+
     return jsonb_build_object(
       'allowed', false,
       'status', 'expired',
       'code', 'SUBSCRIPTION_EXPIRED',
       'tier', 'solo',
       'expires_at', v_sub.expires_at,
+      'server_time', v_now,
       'reason', 'Subscription expired. Please contact admin to renew.'
     );
   end if;
 
   if v_sub.status <> 'active' then
+    if not v_is_preview then
+      update public.activated_machines
+         set last_heartbeat = v_now,
+             last_synced_tier = 'solo',
+             last_synced_status = v_sub.status,
+             last_synced_expires_at = v_sub.expires_at
+       where license_id = v_sub.license_id
+         and machine_fingerprint = v_fingerprint
+         and (
+           last_synced_status is distinct from v_sub.status
+           or last_heartbeat < v_sub.updated_at
+           or last_heartbeat < (v_now - interval '5 minutes')
+         );
+    end if;
+
     return jsonb_build_object(
       'allowed', false,
       'status', v_sub.status,
       'code', 'SUBSCRIPTION_INACTIVE',
       'tier', 'solo',
       'expires_at', v_sub.expires_at,
+      'server_time', v_now,
       'reason', 'Subscription status is ' || v_sub.status || '.'
     );
   end if;
-
-  v_is_local := v_origin is null
-    or v_origin ~ '^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)';
 
   v_match_mode := v_sub.matched_by;
 
@@ -810,17 +917,9 @@ begin
     v_match_mode := 'email+url';
   end if;
 
-  -- Register or heartbeat deployment seat (skipped during admin simulator preview)
+  -- Register or heartbeat deployment seat + record exact delivered plan/status receipt
   if not v_is_preview then
-    if not v_is_local and v_origin is not null then
-      -- Cloud origins bind deterministically to `web:<origin>` so external curl callers
-      -- can never pre-empt or exhaust seats with random device IDs.
-      v_fingerprint := 'web:' || v_origin;
-    else
-      v_fingerprint := 'device:' || coalesce(v_origin, 'local') || '|' || coalesce(nullif(v_device, ''), 'default');
-    end if;
-
-    select id, last_heartbeat
+    select id, last_heartbeat, last_synced_tier, last_synced_status, last_synced_expires_at
       into v_machine
       from public.activated_machines
      where license_id = v_sub.license_id
@@ -828,18 +927,47 @@ begin
      limit 1;
 
     if found then
-      -- Throttle heartbeat disk writes to once every 5 minutes per seat
-      if v_machine.last_heartbeat < (v_now - interval '5 minutes') then
+      -- Write immediately when Central plan/term/standing changed since last client sync,
+      -- otherwise throttle steady-state heartbeats to once every 5 minutes per seat.
+      if v_machine.last_heartbeat < (v_now - interval '5 minutes')
+         or v_machine.last_heartbeat < v_sub.updated_at
+         or v_machine.last_synced_tier is distinct from v_sub.tier
+         or v_machine.last_synced_status is distinct from 'active'
+         or v_machine.last_synced_expires_at is distinct from v_sub.expires_at
+      then
         update public.activated_machines
-           set last_heartbeat = v_now
+           set last_heartbeat = v_now,
+               last_synced_tier = v_sub.tier,
+               last_synced_status = 'active',
+               last_synced_expires_at = v_sub.expires_at
          where id = v_machine.id;
       end if;
     else
       begin
-        insert into public.activated_machines (license_id, machine_fingerprint, activated_at, last_heartbeat)
-        values (v_sub.license_id, v_fingerprint, v_now, v_now)
+        insert into public.activated_machines (
+          license_id,
+          machine_fingerprint,
+          activated_at,
+          last_heartbeat,
+          last_synced_tier,
+          last_synced_status,
+          last_synced_expires_at
+        )
+        values (
+          v_sub.license_id,
+          v_fingerprint,
+          v_now,
+          v_now,
+          v_sub.tier,
+          'active',
+          v_sub.expires_at
+        )
         on conflict (license_id, machine_fingerprint)
-        do update set last_heartbeat = excluded.last_heartbeat;
+        do update set
+          last_heartbeat = excluded.last_heartbeat,
+          last_synced_tier = excluded.last_synced_tier,
+          last_synced_status = excluded.last_synced_status,
+          last_synced_expires_at = excluded.last_synced_expires_at;
       exception
         when sqlstate '53400' then
           return jsonb_build_object(
@@ -915,6 +1043,7 @@ revoke all on public.admin_license_view from public, anon;
 revoke all on function public.app_schema_version() from public, anon;
 revoke all on function public.app_migrations() from public, anon;
 revoke all on function public.generate_license_hex() from public, anon;
+revoke all on function public.touch_parent_subscription_updated_at() from public, anon;
 revoke all on function public.normalize_clinic_origin(text) from public, anon;
 revoke all on function public.is_license_admin() from public, anon;
 revoke all on function public.create_subscription_with_license(text, text, integer, timestamptz, text, text, boolean) from public, anon;

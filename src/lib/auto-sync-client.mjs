@@ -600,12 +600,19 @@ export async function syncMyClinicSubscription(ownerEmail = '') {
 
     if (!body?.allowed) {
       localStorage.removeItem(CACHE_KEY);
-      return { ...body, allowed: false };
+      return {
+        ...body,
+        allowed: false,
+        source: 'central_rpc',
+        synced_at: new Date().toISOString(),
+      };
     }
 
-    const seal = await sealOf(body, origin, email, deviceId);
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ lease: body, seal }));
-    return { ...body, allowed: true };
+    const syncedAt = new Date().toISOString();
+    const enriched = { ...body, allowed: true, synced_at: syncedAt };
+    const seal = await sealOf(enriched, origin, email, deviceId);
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ lease: enriched, seal }));
+    return { ...enriched, source: 'central_rpc' };
   } catch {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return { allowed: false, status: 'offline_unverified', reason: 'Connect to internet once to activate.' };
@@ -617,12 +624,40 @@ export async function syncMyClinicSubscription(ownerEmail = '') {
         localStorage.removeItem(CACHE_KEY);
         return { allowed: false, status: 'expired', reason: 'Subscription expired — contact admin.' };
       }
-      return { ...saved.lease, allowed: true, offline: true };
+      return { ...saved.lease, allowed: true, offline: true, source: 'offline_cache' };
     } catch {
       localStorage.removeItem(CACHE_KEY);
       return { allowed: false, status: 'expired', reason: 'Subscription verification required.' };
     }
   }
+}
+
+export function startMyClinicAutoSync({
+  getEmail = () => '',
+  onUpdate = () => {},
+  intervalMs = 15 * 60 * 1000,
+} = {}) {
+  const runSync = () =>
+    syncMyClinicSubscription(getEmail()).then((state) => {
+      onUpdate(state);
+      return state;
+    });
+
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') void runSync();
+  };
+  const onOnline = () => void runSync();
+
+  window.addEventListener('online', onOnline);
+  document.addEventListener('visibilitychange', onVisible);
+  const timer = setInterval(onOnline, intervalMs);
+  void runSync();
+
+  return () => {
+    clearInterval(timer);
+    window.removeEventListener('online', onOnline);
+    document.removeEventListener('visibilitychange', onVisible);
+  };
 }`;
 
   const viteObfuscatorSnippet = `// Add to myClinic/vite.config.js (devDependency: npm i -D javascript-obfuscator)

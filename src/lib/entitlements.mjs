@@ -81,6 +81,28 @@ export function formatDisplayDate(isoString) {
   });
 }
 
+export function formatSyncTimestamp(isoString, now = new Date()) {
+  if (!isoString) return 'never';
+  const parsed = new Date(isoString);
+  if (Number.isNaN(parsed.getTime())) return 'never';
+
+  const diffSec = Math.max(
+    0,
+    Math.floor((now.getTime() - parsed.getTime()) / 1000),
+  );
+  if (diffSec < 45) return 'just now';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)}d ago`;
+
+  return parsed.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export function normalizeAllowedOriginInput(rawOrigin) {
   const trimmed = String(rawOrigin ?? '').trim();
   if (!trimmed) return { ok: true, origin: null };
@@ -303,19 +325,137 @@ export function computeStanding(row, now = new Date()) {
   };
 }
 
+export function describeClientSyncState(row = {}, now = new Date()) {
+  const standing = computeStanding(row, now);
+  const usedNodes = standing.usedNodes;
+  const hbRaw = row?.last_heartbeat ?? null;
+  const hbMs = hbRaw ? Date.parse(hbRaw) : Number.NaN;
+
+  if (usedNodes <= 0 || !Number.isFinite(hbMs)) {
+    return {
+      state: 'awaiting_connect',
+      isConnected: false,
+      isPlanSynced: false,
+      tone: 'neutral',
+      badgeLabel: 'Awaiting Connect',
+      detail: 'Client app not opened yet',
+      lastSyncedAgo: 'never',
+    };
+  }
+
+  let expectedStatus = 'active';
+  if (standing.isKilled) {
+    expectedStatus = 'paused';
+  } else if (standing.isDateExpired) {
+    expectedStatus = 'expired';
+  } else if (standing.isSuspended) {
+    expectedStatus = 'suspended';
+  }
+
+  const expectedPlan = (
+    MYCLINIC_TIER_ENTITLEMENTS[row?.tier] ?? MYCLINIC_TIER_ENTITLEMENTS.standard
+  ).plan.toUpperCase();
+
+  const updMs = row?.updated_at ? Date.parse(row.updated_at) : Number.NaN;
+  const editedAfterLastHeartbeat =
+    Number.isFinite(updMs) && hbMs + 1000 < updMs;
+
+  const rawSyncedTier =
+    row?.last_synced_tier != null
+      ? String(row.last_synced_tier).trim().toLowerCase()
+      : null;
+  const rawSyncedStatus =
+    row?.last_synced_status != null
+      ? String(row.last_synced_status).trim().toLowerCase()
+      : null;
+
+  let receiptMismatch = false;
+  if (expectedStatus === 'active') {
+    const targetTier = String(row?.tier ?? 'standard').trim().toLowerCase();
+    const tierDiff = Boolean(rawSyncedTier && rawSyncedTier !== targetTier);
+    const statusDiff = Boolean(rawSyncedStatus && rawSyncedStatus !== 'active');
+    const expDiff =
+      row?.last_synced_expires_at != null &&
+      row?.expires_at != null &&
+      Math.abs(
+        Date.parse(row.last_synced_expires_at) - Date.parse(row.expires_at),
+      ) > 1000;
+    receiptMismatch = tierDiff || statusDiff || expDiff;
+  } else if (rawSyncedStatus) {
+    receiptMismatch = rawSyncedStatus !== expectedStatus;
+  }
+
+  const ago = formatSyncTimestamp(hbRaw, now);
+  const ackedPlan = rawSyncedTier
+    ? (
+        MYCLINIC_TIER_ENTITLEMENTS[rawSyncedTier]?.plan ?? rawSyncedTier
+      ).toUpperCase()
+    : null;
+
+  if (editedAfterLastHeartbeat || receiptMismatch) {
+    const clientCurrentLabel =
+      rawSyncedStatus && rawSyncedStatus !== 'active'
+        ? rawSyncedStatus.toUpperCase()
+        : ackedPlan;
+
+    return {
+      state: 'update_pending',
+      isConnected: true,
+      isPlanSynced: false,
+      tone: 'warn',
+      badgeLabel:
+        expectedStatus === 'paused' ? 'Pause Pending' : 'Update Pending',
+      detail: clientCurrentLabel
+        ? `Client on ${clientCurrentLabel} · last sync ${ago}`
+        : `Edited after last sync (${ago})`,
+      lastSyncedAgo: ago,
+    };
+  }
+
+  return {
+    state: 'in_sync',
+    isConnected: true,
+    isPlanSynced: true,
+    tone: 'ok',
+    badgeLabel:
+      expectedStatus === 'paused'
+        ? 'Pause Synced'
+        : expectedStatus === 'expired'
+          ? 'Expiry Synced'
+          : 'Plan Synced',
+    detail:
+      expectedStatus === 'active'
+        ? `${ackedPlan ?? expectedPlan} live · ${ago}`
+        : `${expectedStatus.toUpperCase()} enforced · ${ago}`,
+    lastSyncedAgo: ago,
+  };
+}
+
 export function computeFleetMetrics(records = [], now = new Date()) {
   let activeCount = 0;
   let totalRegisteredNodes = 0;
   let totalCapacityNodes = 0;
   let expiringSoonCount = 0;
+  let connectedClinicsCount = 0;
+  let inSyncClinicsCount = 0;
+  let pendingSyncClinicsCount = 0;
 
   for (const row of records) {
     const standing = computeStanding(row, now);
+    const syncState = describeClientSyncState(row, now);
     if (standing.isOperational) {
       activeCount += 1;
       if (standing.daysLeft !== null && standing.daysLeft <= 14) {
         expiringSoonCount += 1;
       }
+    }
+    if (syncState.isConnected) {
+      connectedClinicsCount += 1;
+    }
+    if (syncState.state === 'in_sync') {
+      inSyncClinicsCount += 1;
+    } else if (syncState.state === 'update_pending') {
+      pendingSyncClinicsCount += 1;
     }
     totalRegisteredNodes += standing.usedNodes;
     totalCapacityNodes += standing.maxNodes;
@@ -328,6 +468,9 @@ export function computeFleetMetrics(records = [], now = new Date()) {
     totalRegisteredNodes,
     totalCapacityNodes,
     expiringSoonCount,
+    connectedClinicsCount,
+    inSyncClinicsCount,
+    pendingSyncClinicsCount,
   };
 }
 
