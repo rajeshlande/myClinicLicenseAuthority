@@ -2,6 +2,13 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [2.2.1] - 2026-11-06
+
+### Fixed
+- **Windows Node 22/24 `node --test` Child-Process Crash Fix (`scripts/run-tests.mjs`, `src/lib/pages-client-validator.mjs`, `src/lib/auto-sync-client.mjs`, `package.json`):**
+  - Updated `scripts/run-tests.mjs` to run suites in a single test runner process (`--test-isolation=none` on Node >= 22.8 and single-entrypoint dynamic import on Node 20), eliminating Windows V8 `CppgcMixin::~CppgcMixin()` / `ContextifyScript` child-worker teardown crashes (`0xC0000005`, `nodejs/node#65756`) on WebCrypto `CryptoKey` tests (`myclinic-compat.test.mjs`, `pages-client-validator.test.mjs`).
+  - Guarded `defaultStorage()` against Node 22+'s experimental `globalThis.localStorage` getter when `window` is absent, and relaxed `package.json` `engines.node` to `>=22.0.0` so Node `v22.18.0` runs without `EBADENGINE` warnings.
+
 ## [2.2.0] - 2026-11-06
 
 ### Added

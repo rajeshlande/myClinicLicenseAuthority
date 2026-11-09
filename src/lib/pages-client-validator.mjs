@@ -32,7 +32,13 @@ export function buildPagesFingerprint({ origin, clinicId = '' } = {}) {
 
 function defaultStorage() {
   try {
-    if (globalThis.localStorage) return globalThis.localStorage;
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      typeof window.localStorage.getItem === 'function'
+    ) {
+      return window.localStorage;
+    }
   } catch {
     // Blocked storage in strict iframe
   }

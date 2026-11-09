@@ -1,12 +1,12 @@
 {
   "name": "myclinic-license-authority",
   "private": true,
-  "version": "2.2.0",
+  "version": "2.2.1",
   "type": "module",
   "description": "Hunter Green & Vanilla Cream Editorial Control Plane for Keyless myClinic Subscription Auto-Sync.",
   "engines": {
-    "node": ">=22.22.0",
-    "npm": ">=10.9.0"
+    "node": ">=22.0.0",
+    "npm": ">=10.8.0"
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",

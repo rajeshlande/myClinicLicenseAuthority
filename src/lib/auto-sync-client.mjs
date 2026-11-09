@@ -110,7 +110,13 @@ export function buildCentralPostgrestHeaders(anonKey, { bearerToken = '' } = {})
 
 function defaultStorage() {
   try {
-    if (globalThis.localStorage) return globalThis.localStorage;
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      typeof window.localStorage.getItem === 'function'
+    ) {
+      return window.localStorage;
+    }
   } catch {
     // Sandboxed iframe fallback
   }
