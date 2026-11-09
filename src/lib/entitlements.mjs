@@ -81,18 +81,139 @@ export function formatDisplayDate(isoString) {
   });
 }
 
+export function normalizeAllowedOriginInput(rawOrigin) {
+  const trimmed = String(rawOrigin ?? '').trim();
+  if (!trimmed) return { ok: true, origin: null };
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return {
+        ok: false,
+        error: 'Clinic URL must start with https:// or http:// (for example https://clinic.github.io).',
+      };
+    }
+    const normalized = `${parsed.protocol}//${parsed.host}`.toLowerCase();
+    if (normalized.length > 255 || !/^https?:\/\/[a-z0-9.-]+(:[0-9]{1,5})?$/.test(normalized)) {
+      return {
+        ok: false,
+        error: 'Enter a valid Clinic URL domain (for example https://clinic.github.io).',
+      };
+    }
+    return { ok: true, origin: normalized };
+  } catch {
+    return {
+      ok: false,
+      error: 'Clinic URL must include https:// (for example https://clinic.github.io).',
+    };
+  }
+}
+
+export function describeClinicIdentity(row = {}) {
+  const email = String(row?.customer_email ?? '').trim();
+  const origin = String(row?.allowed_origin ?? '').trim();
+  const lockFirst = Boolean(row?.lock_first_origin);
+
+  if (email && origin) {
+    return {
+      primary: email,
+      secondary: origin,
+      mode: 'email+url',
+      modeLabel: 'Email + URL Pinned',
+    };
+  }
+  if (email) {
+    return {
+      primary: email,
+      secondary: lockFirst ? 'Auto-locks first cloud URL' : 'Any clinic URL',
+      mode: lockFirst ? 'email+tofu' : 'email',
+      modeLabel: lockFirst ? 'Email + Auto-URL Lock' : 'Email Match',
+    };
+  }
+  if (origin) {
+    return {
+      primary: origin,
+      secondary: 'All staff on this URL',
+      mode: 'url',
+      modeLabel: 'URL Match',
+    };
+  }
+  return {
+    primary: 'Unassigned clinic',
+    secondary: '',
+    mode: 'none',
+    modeLabel: 'Unassigned',
+  };
+}
+
+export function validateRoutingUpdateInput({
+  subscriptionId,
+  customerEmail = '',
+  allowedOrigin = '',
+  lockFirstOrigin = false,
+} = {}) {
+  const subId = String(subscriptionId ?? '').trim();
+  if (!subId) {
+    return { ok: false, error: 'Missing subscription identifier.' };
+  }
+
+  const email = String(customerEmail ?? '').trim().toLowerCase();
+  if (email && (email.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))) {
+    return {
+      ok: false,
+      error: 'Enter a valid clinic owner email address (or leave blank for URL-only matching).',
+    };
+  }
+
+  const originCheck = normalizeAllowedOriginInput(allowedOrigin);
+  if (!originCheck.ok) {
+    return originCheck;
+  }
+
+  if (!email && !originCheck.origin) {
+    return {
+      ok: false,
+      error: 'Provide at least a Clinic Owner Email, a Clinic URL (https://...), or both.',
+    };
+  }
+
+  return {
+    ok: true,
+    payload: {
+      p_subscription_id: subId,
+      p_customer_email: email || null,
+      p_allowed_origin: originCheck.origin,
+      p_lock_first_origin: Boolean(lockFirstOrigin),
+    },
+  };
+}
+
 export function validateProvisionInput({
-  customerEmail,
+  customerEmail = '',
+  allowedOrigin = '',
+  lockFirstOrigin = false,
   tier = 'standard',
   maxMachines = 1,
   expiresDate,
   notes = '',
 } = {}) {
   const email = String(customerEmail ?? '').trim().toLowerCase();
-  if (!email || email.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+  if (email && (email.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))) {
     return {
       ok: false,
-      error: 'Enter a valid customer billing email address.',
+      error: 'Enter a valid clinic owner email address (or leave blank for URL-only matching).',
+    };
+  }
+
+  const originCheck = normalizeAllowedOriginInput(allowedOrigin);
+  if (!originCheck.ok) {
+    return originCheck;
+  }
+
+  if (!email && !originCheck.origin) {
+    return {
+      ok: false,
+      error: 'Provide a Clinic Owner Email, a Clinic URL (https://...), or both.',
     };
   }
 
@@ -132,11 +253,13 @@ export function validateProvisionInput({
   return {
     ok: true,
     payload: {
-      p_customer_email: email,
+      p_customer_email: email || null,
       p_tier: cleanTier,
       p_max_machines: parsedLimit,
       p_expires_at: expirationIso,
       p_notes: cleanNotes,
+      p_allowed_origin: originCheck.origin,
+      p_lock_first_origin: Boolean(lockFirstOrigin),
     },
   };
 }

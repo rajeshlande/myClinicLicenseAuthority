@@ -282,6 +282,26 @@ export function explainError(error, { context = 'Operation failed' } = {}) {
   const missingCol = missingColumn(raw);
   const missingObj = missingSchemaObject(raw);
 
+  if (code === 'SCHEMA_V2_REQUIRED' || /sync_clinic_subscription|update_subscription_routing/i.test(raw)) {
+    return buildExplained({
+      code: 'SCHEMA_V2_REQUIRED',
+      title: `${context}: Keyless Auto-Sync RPC is not installed yet (Schema v2 required).`,
+      fix: 'schema',
+      target: 'sync_clinic_subscription() (Schema v2)',
+      raw,
+    });
+  }
+
+  if (code === 'CENTRAL_SECRET_KEY_BLOCKED') {
+    return buildExplained({
+      code: 'CENTRAL_SECRET_KEY_BLOCKED',
+      title: `${context}: privileged Supabase secret key was blocked for safety.`,
+      fix: 'auth',
+      raw,
+      hint: 'Never use a service_role or sb_secret_ key in a browser app. Copy your publishable / anon key from Central Supabase → Project Settings → API.',
+    });
+  }
+
   // 1. Missing schema column / table / view / RPC
   if (
     missingCol ||

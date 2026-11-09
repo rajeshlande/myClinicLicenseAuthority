@@ -36,10 +36,12 @@ import {
   computeFleetMetrics,
   computeStanding,
   defaultExpirationDate,
+  describeClinicIdentity,
   formatDisplayDate,
   getTierMeta,
   sanitizeCsvCell,
   validateProvisionInput,
+  validateRoutingUpdateInput,
 } from '../lib/entitlements.mjs';
 import { errorLine, rememberError } from '../lib/errors.mjs';
 
@@ -102,9 +104,16 @@ export default function EntitlementsPage({
   const [loadingMachines, setLoadingMachines] = useState(false);
   const [renewDateInput, setRenewDateInput] = useState('');
   const [savingTerm, setSavingTerm] = useState(false);
+  const [editEmailInput, setEditEmailInput] = useState('');
+  const [editOriginInput, setEditOriginInput] = useState('');
+  const [editLockFirstOrigin, setEditLockFirstOrigin] = useState(false);
+  const [savingRouting, setSavingRouting] = useState(false);
+  const [savingTier, setSavingTier] = useState(false);
 
-  // Provision form state
+  // Provision form state (supports Email, Clinic URL, or BOTH)
   const [customerEmail, setCustomerEmail] = useState('');
+  const [allowedOrigin, setAllowedOrigin] = useState('');
+  const [lockFirstOrigin, setLockFirstOrigin] = useState(true);
   const [tier, setTier] = useState('growth');
   const [maxMachines, setMaxMachines] = useState(2);
   const [expiresDate, setExpiresDate] = useState(() => defaultExpirationDate(365));
@@ -164,6 +173,9 @@ export default function EntitlementsPage({
     setRenewDateInput(
       row.expires_at ? String(row.expires_at).slice(0, 10) : defaultExpirationDate(365),
     );
+    setEditEmailInput(row.customer_email ?? '');
+    setEditOriginInput(row.allowed_origin ?? '');
+    setEditLockFirstOrigin(Boolean(row.lock_first_origin));
     setLoadingMachines(true);
     try {
       const { data, error } = await supabase
@@ -180,6 +192,68 @@ export default function EntitlementsPage({
       );
     } finally {
       setLoadingMachines(false);
+    }
+  };
+
+  const handleSaveRouting = async () => {
+    if (!inspectedRow) return;
+    const check = validateRoutingUpdateInput({
+      subscriptionId: inspectedRow.subscription_id,
+      customerEmail: editEmailInput,
+      allowedOrigin: editOriginInput,
+      lockFirstOrigin: editLockFirstOrigin,
+    });
+    if (!check.ok) {
+      showToast(check.error, 'error');
+      return;
+    }
+
+    setSavingRouting(true);
+    try {
+      const { data, error } = await supabase.rpc(
+        'update_subscription_routing',
+        check.payload,
+      );
+      if (error) throw error;
+      if (data) {
+        const updated = Array.isArray(data) ? data[0] : data;
+        setRecords((prev) =>
+          prev.map((r) => (r.license_id === updated.license_id ? updated : r)),
+        );
+        setEditEmailInput(updated.customer_email ?? '');
+        setEditOriginInput(updated.allowed_origin ?? '');
+        setEditLockFirstOrigin(Boolean(updated.lock_first_origin));
+      } else {
+        await fetchEntitlements({ silent: true });
+      }
+      showToast('Updated clinic auto-sync email / URL routing.');
+    } catch (err) {
+      rememberError(err, 'Update clinic routing');
+      showToast(
+        errorLine(err, { context: 'Could not update clinic email/URL' }),
+        'error',
+      );
+    } finally {
+      setSavingRouting(false);
+    }
+  };
+
+  const handleUpdateTier = async (nextTier) => {
+    if (!inspectedRow || !nextTier || inspectedRow.tier === nextTier) return;
+    setSavingTier(true);
+    try {
+      const { error } = await supabase
+        .from('subscriptions')
+        .update({ tier: nextTier })
+        .eq('id', inspectedRow.subscription_id);
+      if (error) throw error;
+      await fetchEntitlements({ silent: true });
+      showToast(`Changed clinic plan to ${nextTier.toUpperCase()} — auto-syncs on client.`);
+    } catch (err) {
+      rememberError(err, 'Change subscription tier');
+      showToast(errorLine(err, { context: 'Could not change tier' }), 'error');
+    } finally {
+      setSavingTier(false);
     }
   };
 
@@ -230,6 +304,8 @@ export default function EntitlementsPage({
     event.preventDefault();
     const validation = validateProvisionInput({
       customerEmail,
+      allowedOrigin,
+      lockFirstOrigin,
       tier,
       maxMachines,
       expiresDate,
@@ -259,13 +335,19 @@ export default function EntitlementsPage({
         await fetchEntitlements({ silent: true });
       }
 
+      const targetLabel =
+        validation.payload.p_customer_email ||
+        validation.payload.p_allowed_origin ||
+        'clinic';
       setCustomerEmail('');
+      setAllowedOrigin('');
+      setLockFirstOrigin(true);
       setMaxMachines(2);
       setExpiresDate(defaultExpirationDate(365));
       setNotes('');
       setIssueOpen(false);
       showToast(
-        `Issued ${validation.payload.p_tier.toUpperCase()} key for ${validation.payload.p_customer_email}.`,
+        `Added ${validation.payload.p_tier.toUpperCase()} subscription for ${targetLabel}.`,
       );
     } catch (err) {
       const explained = rememberError(err, 'Issue clinic license');
@@ -393,6 +475,7 @@ export default function EntitlementsPage({
       if (!q) return true;
       return (
         String(row.customer_email ?? '').toLowerCase().includes(q) ||
+        String(row.allowed_origin ?? '').toLowerCase().includes(q) ||
         String(row.license_key ?? '').toLowerCase().includes(q) ||
         String(row.tier ?? '').toLowerCase().includes(q) ||
         String(row.notes ?? '').toLowerCase().includes(q)
@@ -828,8 +911,16 @@ export default function EntitlementsPage({
                           style={{ color: 'var(--text-primary)' }}
                           className="truncate text-left text-xs font-semibold hover:underline"
                         >
-                          {row.customer_email}
+                          {describeClinicIdentity(row).primary}
                         </button>
+                        {row.allowed_origin && row.customer_email ? (
+                          <span
+                            style={{ color: 'var(--text-muted)' }}
+                            className="truncate font-mono text-[10.5px]"
+                          >
+                            {row.allowed_origin}
+                          </span>
+                        ) : null}
                         <span
                           style={{
                             backgroundColor: 'var(--bg-elevated)',
@@ -961,8 +1052,8 @@ export default function EntitlementsPage({
                   }}
                   className="font-mono text-[10px] tracking-wider uppercase"
                 >
-                  <th className="px-4 py-2.5 font-semibold">Clinic &amp; Standing</th>
-                  <th className="px-3 py-2.5 font-semibold">License Key</th>
+                  <th className="px-4 py-2.5 font-semibold">Clinic (Email / URL)</th>
+                  <th className="px-3 py-2.5 font-semibold">Auto-Sync Match</th>
                   <th className="px-3 py-2.5 font-semibold">Plan &amp; Seats</th>
                   <th className="px-3 py-2.5 font-semibold">Locks &amp; Expiry</th>
                   <th className="px-4 py-2.5 text-right font-semibold">Controls</th>
@@ -972,6 +1063,7 @@ export default function EntitlementsPage({
                 {filteredRecords.map((row) => {
                   const standing = computeStanding(row);
                   const pill = buildStandingPillStyle(standing);
+                  const identity = describeClinicIdentity(row);
                   const seatSpec =
                     MYCLINIC_TIER_ENTITLEMENTS[row.tier] ??
                     MYCLINIC_TIER_ENTITLEMENTS.standard;
@@ -984,8 +1076,8 @@ export default function EntitlementsPage({
                       style={{ borderBottom: '1px solid var(--border-subtle)' }}
                       className="console-row-hover align-top transition-colors"
                     >
-                      {/* Col 1: Clinic + Standing Pill + Compact Notes */}
-                      <td className="min-w-[200px] px-4 py-3.5">
+                      {/* Col 1: Clinic Identity (Email and/or URL) + Standing Pill */}
+                      <td className="min-w-[220px] px-4 py-3.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <span
                             style={{
@@ -1004,9 +1096,18 @@ export default function EntitlementsPage({
                             style={{ color: 'var(--text-primary)' }}
                             className="truncate text-left font-medium hover:underline"
                           >
-                            {row.customer_email}
+                            {identity.primary}
                           </button>
                         </div>
+                        {identity.secondary ? (
+                          <div
+                            style={{ color: 'var(--text-muted)' }}
+                            className="mt-1 flex items-center gap-1 font-mono text-[10.5px]"
+                          >
+                            <Globe className="h-3 w-3 shrink-0 text-emerald-400" />
+                            <span className="truncate">{identity.secondary}</span>
+                          </div>
+                        ) : null}
                         {row.notes ? (
                           <div className="max-w-md">
                             <RichNotesView notes={row.notes} compact />
@@ -1014,32 +1115,40 @@ export default function EntitlementsPage({
                         ) : null}
                       </td>
 
-                      {/* Col 2: Compact License Key + Copy */}
+                      {/* Col 2: Auto-Sync Match Mode + Optional Legacy Key */}
                       <td className="px-3 py-3.5 whitespace-nowrap">
-                        <div className="inline-flex items-center gap-1">
-                          <code
-                            style={{
-                              backgroundColor: 'var(--bg-well)',
-                              border: '1px solid var(--border-subtle)',
-                              color: 'var(--text-primary)',
-                            }}
-                            className="rounded-md px-2 py-1 font-mono text-[11px]"
-                            title={row.license_key}
+                        <span
+                          style={{
+                            backgroundColor: 'var(--bg-well)',
+                            border: '1px solid var(--border-subtle)',
+                            color: 'var(--text-primary)',
+                          }}
+                          className="inline-block rounded-md px-2 py-0.5 font-mono text-[10.5px] font-semibold"
+                        >
+                          {identity.modeLabel}
+                        </span>
+                        <div className="mt-1 flex items-center gap-1">
+                          <span
+                            style={{ color: 'var(--text-muted)' }}
+                            className="font-mono text-[10px]"
+                            title={`Optional legacy key: ${row.license_key}`}
                           >
-                            {formatCompactKey(row.license_key)}
-                          </code>
+                            {row.last_heartbeat
+                              ? `Synced ${formatDisplayDate(row.last_heartbeat)}`
+                              : 'Waiting first sync'}
+                          </span>
                           <button
                             type="button"
                             onClick={() =>
                               handleCopyLicenseKey(row.license_id, row.license_key)
                             }
-                            title={`Copy ${row.license_key}`}
-                            className="console-btn-secondary inline-flex h-6 w-6 items-center justify-center rounded-md"
+                            title={`Copy optional legacy key (${row.license_key})`}
+                            className="console-btn-secondary inline-flex h-5 w-5 items-center justify-center rounded"
                           >
                             {isCopied ? (
-                              <Check className="h-3 w-3 text-emerald-400" />
+                              <Check className="h-2.5 w-2.5 text-emerald-400" />
                             ) : (
-                              <Copy className="h-3 w-3" />
+                              <Copy className="h-2.5 w-2.5" />
                             )}
                           </button>
                         </div>
@@ -1169,31 +1278,68 @@ export default function EntitlementsPage({
         )}
       </section>
 
-      {/* Slide-Over Drawer 1: Provision New Subscription & License Key */}
+      {/* Slide-Over Drawer 1: Provision New Clinic Subscription (Email, URL, or Both) */}
       <SlideOverDrawer
         open={issueOpen}
         onClose={() => setIssueOpen(false)}
-        title="Provision Subscription & RS256 License"
-        subtitle="Executes atomic create_subscription_with_license() RPC and mints a 32-char CSPRNG hex key."
+        title="Add Clinic Subscription (Keyless Auto-Sync)"
+        subtitle="Match clinics automatically by Owner Email, Clinic Website URL, or BOTH — no license key required on the client."
       >
         <form id="provision-license-form" onSubmit={handleProvisionSubmit} className="space-y-5">
-          <div>
-            <label
-              htmlFor="prov-customer-email"
-              style={{ color: 'var(--text-secondary)' }}
-              className="block text-xs font-medium"
-            >
-              Clinic Owner / Billing Email
-            </label>
-            <input
-              id="prov-customer-email"
-              type="email"
-              required
-              value={customerEmail}
-              onChange={(e) => setCustomerEmail(e.target.value)}
-              placeholder="owner@cityclinic.in"
-              className="console-input mt-1.5 w-full rounded-lg px-3 py-2 text-xs"
-            />
+          <div className="console-well space-y-3.5 rounded-xl p-3.5">
+            <p style={{ color: 'var(--text-muted)' }} className="text-[11px] leading-relaxed">
+              Fill <strong>Owner Email</strong>, <strong>Clinic URL</strong>, or <strong>both</strong> (filling both requires both to match — strongest protection).
+            </p>
+
+            <div>
+              <label
+                htmlFor="prov-customer-email"
+                style={{ color: 'var(--text-secondary)' }}
+                className="block text-xs font-medium"
+              >
+                1. Clinic Owner Email <span style={{ color: 'var(--text-muted)' }}>(optional if URL set)</span>
+              </label>
+              <input
+                id="prov-customer-email"
+                type="email"
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                placeholder="owner@cityclinic.in"
+                className="console-input mt-1 w-full rounded-lg px-3 py-2 text-xs"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="prov-allowed-origin"
+                style={{ color: 'var(--text-secondary)' }}
+                className="block text-xs font-medium"
+              >
+                2. Clinic Website URL <span style={{ color: 'var(--text-muted)' }}>(optional if Email set)</span>
+              </label>
+              <input
+                id="prov-allowed-origin"
+                type="url"
+                value={allowedOrigin}
+                onChange={(e) => setAllowedOrigin(e.target.value)}
+                placeholder="https://sharmaclinic.github.io"
+                className="console-input mt-1 w-full rounded-lg px-3 py-2 font-mono text-xs"
+              />
+            </div>
+
+            {!allowedOrigin.trim() ? (
+              <label className="flex cursor-pointer items-start gap-2 pt-0.5 text-xs">
+                <input
+                  type="checkbox"
+                  checked={lockFirstOrigin}
+                  onChange={(e) => setLockFirstOrigin(e.target.checked)}
+                  className="mt-0.5 rounded"
+                />
+                <span style={{ color: 'var(--text-secondary)' }} className="text-[11px] leading-relaxed">
+                  <strong>Auto-lock to first cloud URL</strong> — automatically pins the clinic&apos;s domain the first time they open <code className="font-mono">myClinic</code> online.
+                </span>
+              </label>
+            ) : null}
           </div>
 
           {/* Visual 3-Card Plan Picker */}
@@ -1350,70 +1496,141 @@ export default function EntitlementsPage({
         </form>
       </SlideOverDrawer>
 
-      {/* Slide-Over Drawer 2: License Dossier & Hardware Lock Inspector */}
+      {/* Slide-Over Drawer 2: Subscription Dossier & Auto-Sync Routing Inspector */}
       <SlideOverDrawer
         open={Boolean(inspectedRow)}
         onClose={() => setInspectedLicenseId(null)}
-        title={inspectedRow ? inspectedRow.customer_email : 'License Inspector'}
+        title={inspectedRow ? describeClinicIdentity(inspectedRow).primary : 'Clinic Inspector'}
         subtitle={
           inspectedRow
-            ? `Subscription ${String(inspectedRow.subscription_id).slice(0, 8)} · ${getTierMeta(inspectedRow.tier).label}`
+            ? `Subscription ${String(inspectedRow.subscription_id).slice(0, 8)} · ${describeClinicIdentity(inspectedRow).modeLabel}`
             : ''
         }
         widthClass="max-w-2xl"
       >
         {inspectedRow ? (
           <div className="space-y-6">
-            {/* Key & Deployment Kit Card */}
-            <div className="console-well rounded-xl p-4">
-              <div className="flex items-center justify-between gap-2">
+            {/* Auto-Sync Identity Routing Card (Email + Clinic URL) */}
+            <div className="console-well space-y-3 rounded-xl p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span
                   style={{ color: 'var(--text-muted)' }}
                   className="font-mono text-[10px] font-semibold tracking-wider uppercase"
                 >
-                  32-Character CSPRNG License Key
+                  Keyless Auto-Sync Match Rules (Email &amp; Clinic URL)
                 </span>
-                <button
-                  type="button"
-                  onClick={() => openDeploymentKit(inspectedRow)}
+                <span
                   style={{ color: 'var(--accent-primary)' }}
-                  className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold hover:underline"
+                  className="font-mono text-[11px] font-semibold"
                 >
-                  Open in Deployment &amp; Pages Kit
-                  <ArrowUpRight className="h-3.5 w-3.5" />
-                </button>
+                  {describeClinicIdentity(inspectedRow).modeLabel}
+                </span>
               </div>
 
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <code className="break-all font-mono text-xs font-semibold">
-                  {inspectedRow.license_key}
-                </code>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleCopyLicenseKey(
-                      inspectedRow.license_id,
-                      inspectedRow.license_key,
-                    )
-                  }
-                  className="console-btn-secondary inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[11px]"
-                >
-                  {copiedKeyId === inspectedRow.license_id ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-400" />
-                      Copied
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" />
-                      Copy Key
-                    </>
-                  )}
-                </button>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label
+                    style={{ color: 'var(--text-secondary)' }}
+                    className="block text-[11px] font-medium"
+                  >
+                    Clinic Owner Email
+                  </label>
+                  <input
+                    type="email"
+                    value={editEmailInput}
+                    onChange={(e) => setEditEmailInput(e.target.value)}
+                    placeholder="owner@cityclinic.in"
+                    className="console-input mt-1 w-full rounded-lg px-2.5 py-1.5 text-xs"
+                  />
+                </div>
+                <div>
+                  <label
+                    style={{ color: 'var(--text-secondary)' }}
+                    className="block text-[11px] font-medium"
+                  >
+                    Clinic Website URL (Origin)
+                  </label>
+                  <input
+                    type="url"
+                    value={editOriginInput}
+                    onChange={(e) => setEditOriginInput(e.target.value)}
+                    placeholder="https://sharmaclinic.github.io"
+                    className="console-input mt-1 w-full rounded-lg px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <label className="flex cursor-pointer items-center gap-2 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={editLockFirstOrigin}
+                    onChange={(e) => setEditLockFirstOrigin(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    Auto-lock first cloud URL when URL is blank
+                  </span>
+                </label>
+
+                <div className="flex items-center gap-2">
+                  {editOriginInput ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditOriginInput('')}
+                      className="console-btn-secondary rounded-lg px-2.5 py-1 text-[11px]"
+                    >
+                      Clear URL
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={savingRouting}
+                    onClick={handleSaveRouting}
+                    className="console-btn-primary rounded-lg px-3 py-1.5 text-xs disabled:opacity-50"
+                  >
+                    {savingRouting ? 'Saving...' : 'Save Match Rules'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Live Plan Tier Switcher */}
+              <div
+                style={{ borderTop: '1px solid var(--border-subtle)' }}
+                className="flex flex-wrap items-center justify-between gap-2 pt-3"
+              >
+                <span style={{ color: 'var(--text-secondary)' }} className="text-[11px] font-medium">
+                  Plan Tier (auto-updates client):
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {['solo', 'growth', 'chain'].map((planOpt) => {
+                    const active = inspectedRow.tier === planOpt;
+                    return (
+                      <button
+                        key={planOpt}
+                        type="button"
+                        disabled={savingTier}
+                        onClick={() => handleUpdateTier(planOpt)}
+                        style={
+                          active
+                            ? {
+                                backgroundColor: 'var(--accent-soft)',
+                                border: '1px solid var(--accent-border)',
+                                color: 'var(--accent-primary)',
+                              }
+                            : undefined
+                        }
+                        className="console-btn-secondary rounded-lg px-2.5 py-1 font-mono text-[11px] font-semibold uppercase"
+                      >
+                        {planOpt}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {inspectedRow.notes ? (
-                <div className="mt-3">
+                <div className="pt-1">
                   <RichNotesView notes={inspectedRow.notes} />
                 </div>
               ) : null}

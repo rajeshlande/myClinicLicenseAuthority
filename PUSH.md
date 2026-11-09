@@ -1,6 +1,6 @@
-# Pushing `myClinicLicenseAuthority` (`v1.5.3`) to GitHub
+# Pushing `myClinicLicenseAuthority` (`v1.6.0`) to GitHub
 
-Your full Git repository history (`main` branch + `v1.0.0` .. `v1.5.3` tags) is packaged into **`myclinic-license-authority.bundle`**.
+Your full Git repository history (`main` branch + `v1.0.0` .. `v1.6.0` tags) is packaged into **`myclinic-license-authority.bundle`**.
 
 ---
 

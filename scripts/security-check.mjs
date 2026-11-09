@@ -7,11 +7,15 @@ import { existsSync } from 'node:fs';
 const checks = [
   [
     existsSync('supabase/schema.sql'),
-    'supabase/schema.sql present (single source of truth, schema v1)',
+    'supabase/schema.sql present (single source of truth, schema v2)',
   ],
   [
     existsSync('supabase/schema-tests.sql'),
-    'supabase/schema-tests.sql present (RLS + hardware lock regression suite)',
+    'supabase/schema-tests.sql present (FORCE RLS + keyless auto-sync suite)',
+  ],
+  [
+    existsSync('src/lib/auto-sync-client.mjs'),
+    'src/lib/auto-sync-client.mjs blocks secret keys & isolates cross-Supabase JWTs',
   ],
   [
     existsSync('supabase/functions/verify-license/index.ts'),

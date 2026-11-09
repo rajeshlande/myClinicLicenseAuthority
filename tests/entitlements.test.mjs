@@ -6,22 +6,71 @@ import {
   buildMyClinicCloudSetup,
   computeFleetMetrics,
   computeStanding,
+  describeClinicIdentity,
+  normalizeAllowedOriginInput,
   sanitizeCsvCell,
   validateProvisionInput,
+  validateRoutingUpdateInput,
 } from '../src/lib/entitlements.mjs';
 
-test('validateProvisionInput normalizes valid inputs and rejects malformed fields', () => {
-  const valid = validateProvisionInput({
+test('validateProvisionInput supports Email-only, URL-only, and Dual Email+URL routing', () => {
+  // 1. Email + URL together (normalizes GitHub Pages path to origin)
+  const dual = validateProvisionInput({
     customerEmail: '  Dr.Rao@Clinic.IN ',
+    allowedOrigin: 'https://RaoClinic.github.io/myClinic/',
+    lockFirstOrigin: false,
     tier: 'growth',
     maxMachines: 3,
     expiresDate: '2027-12-31',
     notes: '**PO#:** `PO-101`',
   });
-  assert.equal(valid.ok, true);
-  assert.equal(valid.payload.p_customer_email, 'dr.rao@clinic.in');
-  assert.equal(valid.payload.p_tier, 'growth');
-  assert.equal(valid.payload.p_max_machines, 3);
+  assert.equal(dual.ok, true);
+  assert.equal(dual.payload.p_customer_email, 'dr.rao@clinic.in');
+  assert.equal(dual.payload.p_allowed_origin, 'https://raoclinic.github.io');
+  assert.equal(dual.payload.p_tier, 'growth');
+  assert.equal(dual.payload.p_max_machines, 3);
+
+  // 2. URL-only (customerEmail omitted)
+  const urlOnly = validateProvisionInput({
+    customerEmail: '',
+    allowedOrigin: 'https://urlclinic.github.io',
+    tier: 'chain',
+    maxMachines: 1,
+    expiresDate: '2027-12-31',
+  });
+  assert.equal(urlOnly.ok, true);
+  assert.equal(urlOnly.payload.p_customer_email, null);
+  assert.equal(urlOnly.payload.p_allowed_origin, 'https://urlclinic.github.io');
+
+  // 3. Reject when BOTH email and URL are empty
+  assert.equal(
+    validateProvisionInput({
+      customerEmail: '',
+      allowedOrigin: '',
+      tier: 'solo',
+      maxMachines: 1,
+      expiresDate: '2027-12-31',
+    }).ok,
+    false,
+  );
+
+  // 4. Reject malformed email or non-http(s) URL
+  assert.equal(normalizeAllowedOriginInput('ftp://bad.example.com').ok, false);
+  assert.equal(
+    describeClinicIdentity({
+      customer_email: 'dr.rao@clinic.in',
+      allowed_origin: 'https://raoclinic.github.io',
+    }).mode,
+    'email+url',
+  );
+  assert.equal(
+    validateRoutingUpdateInput({
+      subscriptionId: '00000000-0000-0000-0000-000000000001',
+      customerEmail: '',
+      allowedOrigin: 'https://raoclinic.github.io/',
+    }).ok,
+    true,
+  );
 
   assert.equal(
     validateProvisionInput({

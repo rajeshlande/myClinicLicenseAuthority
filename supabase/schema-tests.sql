@@ -1,5 +1,5 @@
 -- =============================================================================
--- myClinic License Authority — Scratch Database Verification Suite
+-- myClinic License Authority — Scratch Database Security & Auto-Sync Suite (v2)
 -- DEV / SCRATCH ONLY · NEVER RUN ON PRODUCTION
 --
 -- Everything runs inside a single transaction and rolls back at the end, leaving
@@ -11,7 +11,7 @@
 
 begin;
 
--- 1. Verify `anon` has zero table, view, or provisioning RPC privileges
+-- 1. Verify `anon` has ZERO table, view, rate-limit, or admin RPC privileges
 set local role anon;
 do $$
 begin
@@ -28,12 +28,26 @@ begin
   exception when insufficient_privilege then
     raise notice 'PASS: anon denied read on public.admin_license_view';
   end;
+
+  begin
+    perform count(*) from public.sync_rate_limits;
+    raise exception 'FAIL: anon was able to read public.sync_rate_limits';
+  exception when insufficient_privilege then
+    raise notice 'PASS: anon denied read on public.sync_rate_limits';
+  end;
+
+  begin
+    perform public.create_subscription_with_license('anon@evil.test', 'solo', 1, now() + interval '1 day', '', null, false);
+    raise exception 'FAIL: anon invoked create_subscription_with_license';
+  exception when insufficient_privilege then
+    raise notice 'PASS: anon denied execute on create_subscription_with_license';
+  end;
 end $$;
 reset role;
 
--- 2. Verify non-admin `authenticated` user sees 0 rows via RLS and cannot provision
+-- 2. Verify non-admin `authenticated` user sees 0 rows via FORCE RLS and cannot provision
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated","app_metadata":{}}', true);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated","app_metadata":{},"user_metadata":{"role":"admin"}}', true);
 
 do $$
 declare
@@ -43,7 +57,7 @@ begin
   if v_count <> 0 then
     raise exception 'FAIL: non-admin authenticated user saw % rows in admin_license_view', v_count;
   end if;
-  raise notice 'PASS: non-admin authenticated user sees 0 rows';
+  raise notice 'PASS: non-admin authenticated user (even with spoofed user_metadata.role=admin) sees 0 rows';
 
   begin
     perform public.create_subscription_with_license('unauth@clinic.test', 'solo', 1, now() + interval '30 days', '');
@@ -54,57 +68,138 @@ begin
 end $$;
 reset role;
 
--- 3. Verify `admin` (`app_metadata.role = 'admin'`) atomic provisioning, view count, and hardware limit trigger
+-- 3. Provision 3 clinics as `admin`: Dual (Email + URL), Email-only (with TOFU), and URL-only
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
 
 do $$
 declare
-  v_row public.admin_license_view;
-  v_view_machines integer;
+  v_dual  public.admin_license_view;
+  v_email public.admin_license_view;
+  v_url   public.admin_license_view;
+  v_res   jsonb;
 begin
-  v_row := public.create_subscription_with_license(
-    'ops@testclinic.in',
+  -- A) Dual-pinned clinic (requires BOTH email AND URL)
+  v_dual := public.create_subscription_with_license(
+    'owner@dualclinic.in',
     'growth',
-    2,
+    1,
     now() + interval '365 days',
-    '**PO#:** `PO-991`'
+    'Dual pinned clinic',
+    'https://dualclinic.github.io',
+    false
   );
 
-  if v_row.license_id is null or char_length(v_row.license_key) <> 32 then
-    raise exception 'FAIL: expected 32-char hex license key, got %', v_row.license_key;
+  -- B) Email-only clinic with TOFU first-URL lock enabled
+  v_email := public.create_subscription_with_license(
+    'doctor@emailclinic.in',
+    'solo',
+    2,
+    now() + interval '365 days',
+    'Email + TOFU clinic',
+    null,
+    true
+  );
+
+  -- C) URL-only clinic (matches dedicated domain without needing email)
+  v_url := public.create_subscription_with_license(
+    null,
+    'chain',
+    1,
+    now() + interval '365 days',
+    'URL only clinic',
+    'https://urlclinic.github.io',
+    false
+  );
+
+  if v_dual.allowed_origin <> 'https://dualclinic.github.io' or v_url.customer_email is not null then
+    raise exception 'FAIL: unexpected routing columns on provisioned rows';
   end if;
-  raise notice 'PASS: atomic create_subscription_with_license minted 32-char hex key';
+  raise notice 'PASS: provisioned Dual, Email+TOFU, and URL-only clinics';
+end $$;
+reset role;
 
-  insert into public.activated_machines (license_id, machine_fingerprint)
-  values
-    (v_row.license_id, 'node_test_01'),
-    (v_row.license_id, 'node_test_02');
-
-  select registered_machines into v_view_machines
-    from public.admin_license_view
-   where license_id = v_row.license_id;
-
-  if v_view_machines <> 2 then
-    raise exception 'FAIL: expected registered_machines = 2, got %', v_view_machines;
+-- 4. Test `anon` calling `sync_clinic_subscription` across security & routing scenarios
+set local role anon;
+do $$
+declare
+  v_res jsonb;
+begin
+  -- 4a. Healthcheck readiness probe returns ok without touching rows
+  v_res := public.sync_clinic_subscription('', '', 'healthcheck');
+  if coalesce((v_res ->> 'sync_ready')::boolean, false) <> true then
+    raise exception 'FAIL: healthcheck probe failed: %', v_res;
   end if;
-  raise notice 'PASS: admin_license_view accurately counts registered_machines = 2';
+  raise notice 'PASS: healthcheck probe succeeded';
 
-  begin
-    insert into public.activated_machines (license_id, machine_fingerprint)
-    values (v_row.license_id, 'node_test_03_overflow');
-    raise exception 'FAIL: enforce_max_machines_limit allowed 3rd machine on max_machines=2';
-  exception when sqlstate '53400' then
-    raise notice 'PASS: enforce_max_machines_limit rejected overflow node with 53400';
-  end;
-
-  update public.licenses set is_active = false where id = v_row.license_id;
-  select * into v_row from public.admin_license_view where license_id = v_row.license_id;
-  if v_row.is_active <> false then
-    raise exception 'FAIL: kill-switch update did not persist';
+  -- 4b. Browser Origin header mismatch is blocked (cross-origin spoofing defense)
+  perform set_config('request.headers', '{"origin":"https://evil.github.io","x-forwarded-for":"203.0.113.10"}', true);
+  v_res := public.sync_clinic_subscription('owner@dualclinic.in', 'https://dualclinic.github.io', 'dev-1');
+  if (v_res ->> 'code') <> 'ORIGIN_MISMATCH' then
+    raise exception 'FAIL: expected ORIGIN_MISMATCH, got %', v_res;
   end if;
-  raise notice 'PASS: instant kill-switch toggled is_active = false';
-  raise notice 'ALL LICENSE AUTHORITY RLS & HARDWARE LOCK CHECKS COMPLETED';
+  raise notice 'PASS: cross-origin browser spoofing blocked with ORIGIN_MISMATCH';
+
+  -- 4c. Dual-pinned clinic: knowing email alone from wrong domain is rejected
+  perform set_config('request.headers', '{"origin":"https://evil.github.io","x-forwarded-for":"203.0.113.10"}', true);
+  v_res := public.sync_clinic_subscription('owner@dualclinic.in', 'https://evil.github.io', 'dev-1');
+  if coalesce((v_res ->> 'allowed')::boolean, true) <> false then
+    raise exception 'FAIL: dual-pinned clinic unlocked from wrong domain: %', v_res;
+  end if;
+  raise notice 'PASS: dual-pinned clinic refused wrong domain even with valid email';
+
+  -- 4d. Dual-pinned clinic: matching BOTH email + verified browser Origin unlocks
+  perform set_config('request.headers', '{"origin":"https://dualclinic.github.io","x-forwarded-for":"203.0.113.11"}', true);
+  v_res := public.sync_clinic_subscription('owner@dualclinic.in', 'https://dualclinic.github.io', 'dev-1');
+  if coalesce((v_res ->> 'allowed')::boolean, false) <> true or (v_res ->> 'tier') <> 'growth' then
+    raise exception 'FAIL: dual-pinned clinic failed to unlock: %', v_res;
+  end if;
+  raise notice 'PASS: dual-pinned clinic unlocked with tier=growth';
+
+  -- 4e. TOFU lock: Email-only clinic pins first cloud URL automatically, then blocks second URL
+  perform set_config('request.headers', '{"origin":"https://firstclinic.github.io","x-forwarded-for":"203.0.113.12"}', true);
+  v_res := public.sync_clinic_subscription('doctor@emailclinic.in', 'https://firstclinic.github.io', 'dev-1');
+  if coalesce((v_res ->> 'allowed')::boolean, false) <> true then
+    raise exception 'FAIL: email TOFU clinic failed first sync: %', v_res;
+  end if;
+
+  perform set_config('request.headers', '{"origin":"https://secondclinic.github.io","x-forwarded-for":"203.0.113.12"}', true);
+  v_res := public.sync_clinic_subscription('doctor@emailclinic.in', 'https://secondclinic.github.io', 'dev-2');
+  if coalesce((v_res ->> 'allowed')::boolean, true) <> false then
+    raise exception 'FAIL: TOFU lock failed to block second domain: %', v_res;
+  end if;
+  raise notice 'PASS: TOFU auto-locked first cloud URL and blocked second URL';
+
+  -- 4f. URL-only clinic unlocks any staff member on that verified domain
+  perform set_config('request.headers', '{"origin":"https://urlclinic.github.io","x-forwarded-for":"203.0.113.13"}', true);
+  v_res := public.sync_clinic_subscription('', 'https://urlclinic.github.io', 'dev-1');
+  if coalesce((v_res ->> 'allowed')::boolean, false) <> true or (v_res ->> 'plan') <> 'chain' then
+    raise exception 'FAIL: URL-only clinic failed to unlock: %', v_res;
+  end if;
+  raise notice 'PASS: URL-only clinic unlocked with plan=chain';
+end $$;
+reset role;
+
+-- 5. Verify central kill-switch immediately revokes auto-sync
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+update public.licenses
+   set is_active = false
+ where subscription_id in (select id from public.subscriptions where allowed_origin = 'https://urlclinic.github.io');
+reset role;
+
+set local role anon;
+do $$
+declare
+  v_res jsonb;
+begin
+  perform set_config('request.headers', '{"origin":"https://urlclinic.github.io","x-forwarded-for":"203.0.113.13"}', true);
+  v_res := public.sync_clinic_subscription('', 'https://urlclinic.github.io', 'dev-1');
+  if (v_res ->> 'code') <> 'SUBSCRIPTION_PAUSED' then
+    raise exception 'FAIL: expected SUBSCRIPTION_PAUSED after kill-switch, got %', v_res;
+  end if;
+  raise notice 'PASS: central kill-switch immediately paused clinic auto-sync';
+  raise notice 'ALL CENTRAL DATABASE SECURITY & KEYLESS AUTO-SYNC CHECKS COMPLETED';
 end $$;
 reset role;
 

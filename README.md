@@ -1,120 +1,59 @@
-<div align="center">
-  <img src="public/icon.svg" width="84" height="84" alt="myClinicLicenseAuthority" />
-  <h1><a href="https://github.com/rajeshlande/myClinicLicenseAuthority">myClinicLicenseAuthority</a></h1>
-  <p><strong>Manual Subscription &amp; RS256 License Control Room for <a href="https://github.com/rajeshlande/myClinic">myClinic</a></strong></p>
+# myClinicLicenseAuthority (`v1.6.0` · Schema v2)
 
-  <p>
-    <a href="https://github.com/rajeshlande/myClinicLicenseAuthority/actions/workflows/ci.yml"><img src="https://github.com/rajeshlande/myClinicLicenseAuthority/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-    <a href="https://github.com/rajeshlande/myClinicLicenseAuthority/actions/workflows/pages.yml"><img src="https://github.com/rajeshlande/myClinicLicenseAuthority/actions/workflows/pages.yml/badge.svg" alt="Deploy to GitHub Pages" /></a>
-    <img src="https://img.shields.io/badge/schema-1-10b981.svg" alt="schema 1" />
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT" /></a>
-  </p>
-
-  <p>
-    <a href="https://rajeshlande.github.io/myClinicLicenseAuthority/"><strong>Live Console</strong></a> ·
-    <a href="#side-1--mycliniclicenseauthority-side-do-once"><strong>Authority Steps</strong></a> ·
-    <a href="#side-2--myclinic-side-do-per-clinic"><strong>myClinic Steps</strong></a> ·
-    <a href="#common-errors--fixes"><strong>Error Fixes</strong></a>
-  </p>
-</div>
+Central subscription management & **Keyless Auto-Sync** server for [`myClinic`](https://github.com/rajeshlande/myClinic) — manage every clinic's plan, seats, expiry, and pause/kill-switch from one Central Supabase dashboard with **zero Edge Functions, zero RSA keys, and zero manual license keys required**.
 
 ---
 
-## Big Picture (In 30 Seconds)
+## Two-Side Setup (No Keys · No Edge Functions)
 
-You use **2 separate free Supabase projects**:
+### Side 1 — Central Server (`myClinicLicenseAuthority` · Do Once)
 
-| App | Who owns it | Supabase Project | Holds which key? |
-| --- | --- | --- | --- |
-| **[myClinicLicenseAuthority](https://github.com/rajeshlande/myClinicLicenseAuthority)** | **You (Vendor)** | **Project #1** (Authority DB) | **`LICENSE_PRIVATE_KEY`** *(signs 7-day tokens)* |
-| **[myClinic](https://github.com/rajeshlande/myClinic)** | **Each Clinic** | **Project #2** (Clinic DB) | **`LICENSE_PUBLIC_KEY`** *(verifies tokens only — cannot forge)* |
-
-Everything below takes **3 steps on your Authority side (done once)** and **3 steps on the `myClinic` side (done per clinic)** — **100% in the browser, zero terminal required**.
-
----
-
-## Side 1 — `myClinicLicenseAuthority` Side *(Do Once)*
-
-### Step 1 — Set Up Authority Database & Your Admin Login
-1. Create **Supabase Project #1** (Authority).
-2. Open **SQL Editor**, paste [`supabase/schema.sql`](supabase/schema.sql), and click **Run**.
-3. Open **Authentication → Users → Add user**, create your email + password *(and turn OFF "Allow new users to sign up" under Authentication → Providers → Email)*.
-4. In **SQL Editor**, make your email an admin:
+1. **Paste `supabase/schema.sql` (v2) in Central Supabase → SQL Editor** and click **Run** *(safe & idempotent on both new and v1 projects)*.
+2. **Grant your operator email Admin standing** (in SQL Editor):
    ```sql
    update auth.users
    set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb
-   where email = 'your-email@example.com';
+   where email = 'ops@yourdomain.com';
    ```
-5. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (Project #1's URL and **anon/publishable** key) in your GitHub repo **Settings → Secrets and variables → Actions → Secrets** (or `.env.local` locally).
-
-### Step 2 — Generate Keys & Paste `verify-license` in Supabase
-1. Sign in to **[myClinicLicenseAuthority](https://rajeshlande.github.io/myClinicLicenseAuthority/)**, open **Step-by-Step Guide (`#/guide`)**, and click **Generate Keys**.
-2. In **Project #1 → Edge Functions → Secrets**, add:
-   - `LICENSE_PRIVATE_KEY` = *(click **1. Private Key** in `#/guide` to copy)*
-3. In **Project #1 → Edge Functions → Deploy a new function → Via Editor**:
-   - **Name:** `verify-license`
-   - **Verify JWT:** turn **OFF**
-   - **Code:** click **2. Function Script** in `#/guide` (or copy [`supabase/functions/verify-license/index.ts`](supabase/functions/verify-license/index.ts)) → click **Deploy**.
-4. Click **3. Public Key** in `#/guide` and save it for Side 2.
-
-### Step 3 — Issue a Clinic License Key
-1. Click **+ Issue License** in the console (`#/dashboard`).
-2. Enter the clinic's email, pick a plan (`solo`, `growth`, or `chain`), and click **Provision**.
-3. Copy the **32-character `LICENSE_KEY`**.
+   *(Recommended: turn OFF **"Allow new users to sign up"** under **Authentication → Providers → Email** after creating your admin user).*
+3. **Add Clinics in Subscriptions (`#/dashboard`)** using **any of 3 matching modes**:
+   - **Email + Clinic URL (`email+url` — Strongest):** e.g. `dr.sharma@gmail.com` + `https://sharmaclinic.github.io` *(both must match)*.
+   - **Email Only (`email` / `email+tofu`):** e.g. `dr.sharma@gmail.com` *(optional checkbox auto-locks their first cloud URL on first sync)*.
+   - **Clinic URL Only (`url`):** e.g. `https://sharmaclinic.github.io` *(unlocks every doctor & receptionist on that domain automatically)*.
 
 ---
 
-## Side 2 — `myClinic` Side *(Do Per Clinic)*
+### Side 2 — Client App (`myClinic` · Build Once, Ship Anywhere)
 
-### Step 1 — Add `VITE_LICENSE_PUBLIC_KEY` to `myClinic`
-In the clinic's [`myClinic`](https://github.com/rajeshlande/myClinic) GitHub repo (**Settings → Secrets and variables → Actions → Variables**) — or in `myClinic/.env.local` — add:
+1. Add **only** your Central Supabase URL and **publishable `anon` key** to `myClinic/.env.production` *(never `service_role` / `sb_secret_`)*:
+   ```dotenv
+   VITE_CENTRAL_SUPABASE_URL="https://<YOUR_CENTRAL_REF>.supabase.co"
+   VITE_CENTRAL_SUPABASE_ANON_KEY="sb_publishable_..."
+   ```
+2. Open **`#/guide`** inside `myClinicLicenseAuthority` and click **`Copy central-subscription.mjs`** + **`Copy Vite Obfuscator Plugin`** to drop auto-sync + 7-day offline grace + scoped JS obfuscation into `myClinic`.
 
-```dotenv
-VITE_LICENSE_PUBLIC_KEY="<Paste Public Key from Side 1 Step 2>"
-```
-
-### Step 2 — Add 3 Secrets & Deploy `sync-clinic-license` on Clinic Supabase
-1. Make sure `myClinic/supabase/schema.sql` (schema 18) has been run in **Supabase Project #2** (the clinic's SQL Editor).
-2. In **Project #2 → Edge Functions → Secrets**, add these **3 secrets**:
-
-| Secret Name | Value |
-| --- | --- |
-| `AUTHORITY_VERIFY_URL` | `https://<YOUR-PROJECT-1-REF>.supabase.co/functions/v1/verify-license` |
-| `LICENSE_KEY` | `<32-character key from Side 1 Step 3>` |
-| `LICENSE_PUBLIC_KEY` | `<Public Key from Side 1 Step 2>` |
-
-3. In **Project #2 → Edge Functions → Deploy a new function → Via Editor**:
-   - **Name:** `sync-clinic-license`
-   - **Verify JWT:** turn **OFF**
-   - **Code:** paste `myClinic/supabase/functions/sync-clinic-license/index.ts` → click **Deploy**.
-
-### Step 3 — Click "Check the licence now" in `myClinic`
-Sign in to **`myClinic`** as the clinic **Owner** → open **Subscription** → click **"Check the licence now"**.
-Done! `myClinic` now enforces your plan (`solo` = 1 doc, `growth` = 5 docs, `chain` = unlimited) and refreshes automatically every 6 hours with a 7-day offline grace token.
+Whenever you **Pause**, **Extend**, or **Change Tier** (`Solo` / `Growth` / `Chain`) on Central, every `myClinic` client updates automatically on next load, tab focus, or 30-minute background sync.
 
 ---
 
-## Common Errors & Fixes
+## Central Database Security Architecture (Schema v2)
 
-Every screen in `myClinicLicenseAuthority` translates database, auth, network, and Edge Function errors into plain-English **"How to fix"** banners (`src/lib/errors.mjs`, `ErrorBoundary.jsx`, and **Settings → Diagnostics**):
-
-| Error | Why it happened | Fix |
-| --- | --- | --- |
-| **`Admin role required`** | Your user doesn't have `role: "admin"` yet | Copy the SQL shown right on the Sign-In card → run in Project #1 SQL Editor → click **Check again**. |
-| **`PGRST204` / missing `admin_license_view`** | `supabase/schema.sql` wasn't run | Paste [`supabase/schema.sql`](supabase/schema.sql) into Project #1 SQL Editor → **Run**. |
-| **`not-configured`** in `myClinic` | Missing secret on Clinic Supabase | Add `AUTHORITY_VERIFY_URL`, `LICENSE_KEY`, and `LICENSE_PUBLIC_KEY` in Project #2 → Edge Functions → Secrets. |
-| **`Hardware seat limit reached` / `expired`** | Max origins reached or expiry passed | Open **Licenses (`#/dashboard`) → Inspect** to release an old node or extend the expiry date. |
+| Threat Vector | Active Defense in `supabase/schema.sql` & `auto-sync-client.mjs` |
+|---|---|
+| Direct table/view read or write with `anon` key | `REVOKE ALL` on all tables/views from `public, anon` + `FORCE ROW LEVEL SECURITY`. `anon` can access **0 tables** and **1 RPC** (`sync_clinic_subscription`). |
+| Rogue user signup on Central Auth | RLS checks immutable `auth.jwt() -> 'app_metadata' ->> 'role' = 'admin'` (ignores user-editable `user_metadata`). Non-admin sees `0` rows. |
+| Another website spoofing a clinic's URL | `sync_clinic_subscription` cross-checks `p_origin` against PostgREST's unforgeable browser `Origin` HTTP header (`ORIGIN_MISMATCH`). |
+| Brute-force customer email enumeration | SHA-256 IP rate limiter (`public.sync_rate_limits`) caps lookups at **60/min** and **15 misses/5min** per IP without storing raw IPs; returns zero PII. |
+| Seat-exhaustion DoS via `curl` | Cloud deployments bind deterministically to `web:<origin>` so external callers cannot consume extra seats with fake device IDs. |
+| Cross-Supabase JWT leakage | Client calls Central PostgREST via raw `fetch` with only Central's `anon` key — never forwards `myClinic`'s user session JWT across projects. |
+| Accidental `service_role` paste in client | `assertPublishableAnonKey()` hard-blocks `sb_secret_` and `service_role` keys at startup. |
 
 ---
 
-## Local Dev & CI Commands
+## Local Verification
 
 ```bash
 npm ci
-npm run dev       # Start local console on http://localhost:5173
-npm run verify    # Run all 29 tests + build + Pages check + 26 CONTRIBUTING checks
+npm run verify          # 33/33 tests + Vite production build + Pages check + 26/26 CONTRIBUTING checks
+npm run test:security   # Security boundary pre-flight
 ```
-
-## License
-
-[MIT](LICENSE) · Security policy in [`SECURITY.md`](SECURITY.md) · Standards in [`CONTRIBUTING.md`](CONTRIBUTING.md).

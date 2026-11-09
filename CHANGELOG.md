@@ -2,6 +2,16 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [1.6.0] - 2026-11-06
+
+### Added
+- **Keyless Central-to-Client Auto-Sync (`supabase/schema.sql` Schema v2, `src/lib/auto-sync-client.mjs`):**
+  - Eliminated the requirement for `LICENSE_KEY`, `LICENSE_PRIVATE_KEY`, `LICENSE_PUBLIC_KEY`, and both Edge Functions (`verify-license` + `sync-clinic-license`).
+  - Added dual-identity routing on `public.subscriptions` (`customer_email`, `allowed_origin`, and `lock_first_origin` TOFU pinning) supporting **Email-only**, **Clinic-URL-only**, and **Email + URL** matching, plus `public.update_subscription_routing()` for live editing in the Inspector drawer.
+  - Added hardened `public.sync_clinic_subscription(p_email, p_origin, p_device_id)` RPC (`SECURITY DEFINER`, pinned `search_path`, zero dynamic SQL) with PostgREST HTTP `Origin` header spoofing protection (`ORIGIN_MISMATCH`), SHA-256 per-IP rate limiting (`public.sync_rate_limits`: 60 req/min, 15 misses/5min), deterministic `web:<origin>` cloud seat locking, 5-minute heartbeat write throttling, and zero-PII responses.
+  - Enabled `FORCE ROW LEVEL SECURITY` across all 6 tables and verified `anon` holds `EXECUTE` on `sync_clinic_subscription` only (0 table/view grants).
+  - Updated `#/guide` (`src/pages/GuidePage.jsx`) and `#/dashboard` (`src/pages/EntitlementsPage.jsx`) with 1-click `schema.sql` v2 copy, live Auto-Sync simulator, live Tier/Email/URL editing, and ready-to-paste `myClinic` auto-sync + scoped Vite obfuscator snippets.
+
 ## [1.5.3] - 2026-11-06
 
 ### Fixed

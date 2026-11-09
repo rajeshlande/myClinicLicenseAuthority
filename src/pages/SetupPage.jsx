@@ -20,10 +20,10 @@ import {
   validatePasswordUpdate,
 } from '../lib/auth.mjs';
 import { copyTextToClipboard } from '../lib/clipboard.mjs';
+import { probeCentralAutoSync } from '../lib/auto-sync-client.mjs';
 import {
   clearRecentErrors,
   diagnosticsText,
-  probeVerifyLicenseEndpoint,
   recentErrors,
   rememberError,
 } from '../lib/errors.mjs';
@@ -117,24 +117,19 @@ export function SetupPage({
         throw error;
       }
 
-      // 3. Check Edge Function reachability + JWT toggle + secret status
-      const verifyEndpoint =
-        backend.verifyUrl ||
-        `${String(backend.health?.url ?? '').replace(/\/+$/, '')}/functions/v1/verify-license`;
-      let edgeStatus = 'ready';
+      // 3. Check Keyless Auto-Sync RPC (`sync_clinic_subscription` — Schema v2)
+      let autoSyncStatus = 'ready (Schema v2)';
       try {
-        const probe = await probeVerifyLicenseEndpoint(verifyEndpoint, {
-          anonKey: backend.health?.anonKey ?? '',
-          timeoutMs: 8000,
-        });
-        edgeStatus = probe.signerVerified ? 'ready (key verified)' : 'online';
-      } catch (edgeErr) {
-        if (edgeErr?.code === 'EDGE_JWT_ENABLED') {
-          edgeStatus = 'turn OFF "Verify JWT" in Supabase';
-        } else if (edgeErr?.code === 'SIGNER_SECRET_MISSING') {
-          edgeStatus = 'missing LICENSE_PRIVATE_KEY secret';
+        await probeCentralAutoSync(
+          backend.health?.url ?? '',
+          backend.health?.anonKey ?? '',
+          { timeoutMs: 8000 },
+        );
+      } catch (rpcErr) {
+        if (rpcErr?.code === 'SCHEMA_V2_REQUIRED') {
+          autoSyncStatus = 're-run schema.sql (v2) in SQL Editor';
         } else {
-          edgeStatus = 'not deployed yet (see Guide → Step 2)';
+          autoSyncStatus = rpcErr?.message || 'unreachable';
         }
       }
 
@@ -143,7 +138,7 @@ export function SetupPage({
         ok: true,
         latencyMs,
         licenseCount: count ?? 0,
-        edgeStatus,
+        autoSyncStatus,
       });
     } catch (err) {
       const explained = rememberError(err, 'System health check');
@@ -386,8 +381,9 @@ export function SetupPage({
             >
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                Admin auth + database schema healthy ({testResult.latencyMs} ms ·{' '}
-                {testResult.licenseCount} licenses) · Edge signer: {testResult.edgeStatus}
+                Admin auth + database healthy ({testResult.latencyMs} ms ·{' '}
+                {testResult.licenseCount} clinics) · Keyless Auto-Sync:{' '}
+                {testResult.autoSyncStatus}
               </span>
             </div>
           ) : null}
