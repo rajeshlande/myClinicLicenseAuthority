@@ -1,4 +1,4 @@
-# myClinicLicenseAuthority (`v2.1.0` · Schema v2)
+# myClinicLicenseAuthority (`v2.3.0` · Schema v3)
 
 Central subscription management & **Keyless Auto-Sync** server for [`myClinic`](https://github.com/rajeshlande/myClinic) — manage every clinic's plan, seats, expiry, and pause/kill-switch from one Central Supabase dashboard with **zero Edge Functions, zero RSA keys, and zero manual license keys required**.
 
@@ -8,7 +8,7 @@ Central subscription management & **Keyless Auto-Sync** server for [`myClinic`](
 
 ### Side 1 — Central Server (`myClinicLicenseAuthority` · Do Once)
 
-1. **Paste `supabase/schema.sql` (v2) in Central Supabase → SQL Editor** and click **Run** *(safe & idempotent on both new and v1 projects)*.
+1. **Paste `supabase/schema.sql` (v3) in Central Supabase → SQL Editor** and click **Run** *(safe & idempotent on new, v1 and v2 projects — the v3 refusal audit is purely additive)*.
 2. **Grant your operator email Admin standing** (in SQL Editor):
    ```sql
    update auth.users
@@ -36,7 +36,7 @@ Whenever you **Pause**, **Extend**, or **Change Tier** (`Solo` / `Growth` / `Cha
 
 ---
 
-## Central Database Security Architecture (Schema v2)
+## Central Database Security Architecture (Schema v3)
 
 | Threat Vector | Active Defense in `supabase/schema.sql` & `auto-sync-client.mjs` |
 |---|---|
@@ -47,6 +47,8 @@ Whenever you **Pause**, **Extend**, or **Change Tier** (`Solo` / `Growth` / `Cha
 | Seat-exhaustion DoS via `curl` | Cloud deployments bind deterministically to `web:<origin>` so external callers cannot consume extra seats with fake device IDs. |
 | Cross-Supabase JWT leakage | Client calls Central PostgREST via raw `fetch` with only Central's `anon` key — never forwards `myClinic`'s user session JWT across projects. |
 | Accidental `service_role` paste in client | `assertPublishableAnonKey()` hard-blocks `sb_secret_` and `service_role` keys at startup. |
+| Audit-table flooding by an unauthenticated caller | `record_sync_attempt()` is `SECURITY DEFINER` with **no grant** to `anon`/`authenticated`, and budgets **12 rows per hashed IP per 10 minutes**; rows self-prune after **30 days** behind a hard 100k ceiling. |
+| A silent client that is actually being refused | Every refusal is written to `public.sync_attempts` (hashed IP, masked mailbox, verbatim claimed URL) and **attributed to the subscription it almost matched**, so the console shows `Refused · SUBSCRIPTION_NOT_FOUND` instead of `Awaiting Connect`. |
 
 ---
 

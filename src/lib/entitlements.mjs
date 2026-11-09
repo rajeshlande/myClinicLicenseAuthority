@@ -325,6 +325,100 @@ export function computeStanding(row, now = new Date()) {
   };
 }
 
+/**
+ * Every refusal `public.sync_clinic_subscription()` can answer with, and the one
+ * action that clears it.
+ *
+ * Schema v3 records refusals in `public.sync_attempts` and surfaces the latest one
+ * per subscription through `admin_license_view`, so the console can finally tell
+ * "the client never called" apart from "the client calls every 30 minutes and is
+ * refused every time". These hints are the operator-facing half of that: the code
+ * alone (`SUBSCRIPTION_NOT_FOUND`) says what happened, the hint says what to do.
+ */
+export const SYNC_REFUSAL_HINTS = Object.freeze({
+  SUBSCRIPTION_NOT_FOUND: {
+    label: 'No match',
+    hint: 'The client called but nothing matched. Compare the email and Clinic URL it claimed with the pinned values — on a dual-pinned row BOTH must match exactly.',
+  },
+  ORIGIN_MISMATCH: {
+    label: 'Origin blocked',
+    hint: 'The browser Origin header disagreed with the claimed Clinic URL. Open the app from its real deployed address, not a proxy, tunnel or preview host.',
+  },
+  INVALID_ORIGIN: {
+    label: 'Bad Clinic URL',
+    hint: 'The claimed Clinic URL is not scheme + host. It must look like https://clinic.github.io — no path, no trailing slash.',
+  },
+  INVALID_EMAIL: {
+    label: 'Bad owner email',
+    hint: 'The claimed owner email is malformed. Fix the owner row in the clinic app, then let it re-sync.',
+  },
+  MISSING_IDENTITY: {
+    label: 'No identity sent',
+    hint: 'The client sent neither an owner email nor a Clinic URL. Sign in as the clinic owner, or pin a URL-only subscription.',
+  },
+  RATE_LIMITED: {
+    label: 'Rate limited',
+    hint: 'Too many calls from this network: Central allows 60/min and 15 unmatched lookups per 5 min. Wait, then re-check.',
+  },
+  SEAT_LIMIT_REACHED: {
+    label: 'Seats full',
+    hint: 'Every deployment seat is taken. Raise the device limit or revoke a stale node.',
+  },
+  SUBSCRIPTION_PAUSED: {
+    label: 'Paused',
+    hint: 'The kill-switch is on for this subscription. Resume it and the client writes again on its next sync.',
+  },
+  SUBSCRIPTION_EXPIRED: {
+    label: 'Expired',
+    hint: 'The contract end date has passed. Renew the subscription.',
+  },
+  SUBSCRIPTION_INACTIVE: {
+    label: 'Not active',
+    hint: 'The subscription status is not active. Set the status back to active.',
+  },
+});
+
+/**
+ * The latest refusal Central recorded for this subscription, or `null`.
+ *
+ * The claimed email arrives already masked by the database (`o***@clinic.com`) and
+ * the claimed origin is stored verbatim, because a clinic website address is public
+ * and is already pinned in `subscriptions.allowed_origin` — hiding it would make the
+ * single most common refusal undiagnosable.
+ */
+export function describeRefusal(row = {}, now = new Date()) {
+  const code = String(row?.last_refusal_code ?? '')
+    .trim()
+    .toUpperCase();
+  if (!code) return null;
+
+  const atMs = row?.last_refusal_at ? Date.parse(row.last_refusal_at) : Number.NaN;
+  const known = SYNC_REFUSAL_HINTS[code] ?? null;
+  const claimedEmail = String(row?.last_refusal_email_hint ?? '').trim();
+  const claimedOrigin = String(row?.last_refusal_origin ?? '').trim();
+  const browserOrigin = String(row?.last_refusal_browser_origin ?? '').trim();
+
+  const claimParts = [];
+  if (claimedEmail) claimParts.push(`email ${claimedEmail}`);
+  if (claimedOrigin) claimParts.push(`URL ${claimedOrigin}`);
+  if (browserOrigin && browserOrigin !== claimedOrigin) {
+    claimParts.push(`browser ${browserOrigin}`);
+  }
+
+  return {
+    code,
+    label: known?.label ?? 'Refused',
+    hint: known?.hint ?? `Central refused the client with ${code}. Check the pinned email and Clinic URL.`,
+    at: Number.isFinite(atMs) ? new Date(atMs).toISOString() : null,
+    ago: Number.isFinite(atMs) ? formatSyncTimestamp(row.last_refusal_at, now) : 'at an unknown time',
+    claimedEmailHint: claimedEmail || null,
+    claimedOrigin: claimedOrigin || null,
+    browserOrigin: browserOrigin || null,
+    count24h: Math.max(0, Math.floor(Number(row?.refusals_24h ?? 0)) || 0),
+    claim: claimParts.join(' · '),
+  };
+}
+
 export function describeClientSyncState(row = {}, now = new Date()) {
   const standing = computeStanding(row, now);
   const usedNodes = standing.usedNodes;
@@ -332,6 +426,28 @@ export function describeClientSyncState(row = {}, now = new Date()) {
   const hbMs = hbRaw ? Date.parse(hbRaw) : Number.NaN;
 
   if (usedNodes <= 0 || !Number.isFinite(hbMs)) {
+    // No seat has ever been granted. Schema v3 can now say WHY: if Central recorded
+    // a refusal for this subscription, the client IS calling and being turned away,
+    // which is a completely different conversation from "nobody opened the app".
+    const refusal = describeRefusal(row, now);
+    if (refusal) {
+      return {
+        state: 'refused',
+        isConnected: false,
+        isPlanSynced: false,
+        tone: 'error',
+        badgeLabel: 'Refused',
+        // Kept short on purpose: this string lands in a 10.5px mono line on a
+        // 375px card. The full claim (`refusal.claim`) and the fix (`hint`) are
+        // rendered in the inspector, where there is room for them.
+        detail: `${refusal.code} · ${refusal.ago}`,
+        hint: refusal.hint,
+        refusal,
+        refusals24h: refusal.count24h,
+        lastSyncedAgo: 'never',
+      };
+    }
+
     return {
       state: 'awaiting_connect',
       isConnected: false,
@@ -339,9 +455,17 @@ export function describeClientSyncState(row = {}, now = new Date()) {
       tone: 'neutral',
       badgeLabel: 'Awaiting Connect',
       detail: 'Client app not opened yet',
+      hint: 'No sync attempt has reached Central for this clinic. Open the client app and sign in as the owner.',
+      refusal: null,
+      refusals24h: 0,
       lastSyncedAgo: 'never',
     };
   }
+
+  // A seat exists, so the client connected at least once. Refusals recorded since
+  // then are carried alongside the verdict for the inspector, but they never
+  // override it: a paused or expired clinic must keep saying so.
+  const refusal = describeRefusal(row, now);
 
   let expectedStatus = 'active';
   if (standing.isKilled) {
@@ -408,6 +532,9 @@ export function describeClientSyncState(row = {}, now = new Date()) {
       detail: clientCurrentLabel
         ? `Client on ${clientCurrentLabel} · last sync ${ago}`
         : `Edited after last sync (${ago})`,
+      hint: 'Central changed after the last delivery. The client picks it up on page open, tab focus, reconnect, or its 30-minute timer.',
+      refusal,
+      refusals24h: refusal?.count24h ?? 0,
       lastSyncedAgo: ago,
     };
   }
@@ -427,6 +554,9 @@ export function describeClientSyncState(row = {}, now = new Date()) {
       expectedStatus === 'active'
         ? `${ackedPlan ?? expectedPlan} live · ${ago}`
         : `${expectedStatus.toUpperCase()} enforced · ${ago}`,
+    hint: '',
+    refusal,
+    refusals24h: refusal?.count24h ?? 0,
     lastSyncedAgo: ago,
   };
 }
@@ -439,6 +569,8 @@ export function computeFleetMetrics(records = [], now = new Date()) {
   let connectedClinicsCount = 0;
   let inSyncClinicsCount = 0;
   let pendingSyncClinicsCount = 0;
+  let refusedClinicsCount = 0;
+  let awaitingClinicsCount = 0;
 
   for (const row of records) {
     const standing = computeStanding(row, now);
@@ -456,6 +588,10 @@ export function computeFleetMetrics(records = [], now = new Date()) {
       inSyncClinicsCount += 1;
     } else if (syncState.state === 'update_pending') {
       pendingSyncClinicsCount += 1;
+    } else if (syncState.state === 'refused') {
+      refusedClinicsCount += 1;
+    } else if (syncState.state === 'awaiting_connect') {
+      awaitingClinicsCount += 1;
     }
     totalRegisteredNodes += standing.usedNodes;
     totalCapacityNodes += standing.maxNodes;
@@ -471,6 +607,8 @@ export function computeFleetMetrics(records = [], now = new Date()) {
     connectedClinicsCount,
     inSyncClinicsCount,
     pendingSyncClinicsCount,
+    refusedClinicsCount,
+    awaitingClinicsCount,
   };
 }
 

@@ -7,12 +7,22 @@ const schemaSql = readFileSync('supabase/schema.sql', 'utf8');
 const schemaTestsSql = readFileSync('supabase/schema-tests.sql', 'utf8');
 
 test('supabase/schema.sql is wrapped in one transaction and matches SCHEMA_VERSION', () => {
-  assert.equal(SCHEMA_VERSION, 2);
+  assert.equal(SCHEMA_VERSION, 3);
   assert.match(schemaSql, /^\s*begin;/im);
   assert.match(schemaSql, /commit;\s*$/im);
+  assert.match(schemaSql, /\(2,\s*'keyless-auto-sync-core'/);
   assert.match(
     schemaSql,
-    new RegExp(`\\(${SCHEMA_VERSION},\\s*'keyless-auto-sync-core'`),
+    new RegExp(`\\(${SCHEMA_VERSION},\\s*'refused-attempt-audit'`),
+  );
+  assert.match(
+    schemaSql,
+    new RegExp(`greatest\\(schema_version,\\s*${SCHEMA_VERSION}\\)`),
+  );
+  // The readiness probe answers with the same version the app advertises.
+  assert.match(
+    schemaSql,
+    new RegExp(`'schema_version',\\s*${SCHEMA_VERSION},`),
   );
 });
 
@@ -47,6 +57,7 @@ test('Central DB enforces FORCE RLS, zero anon table access, and single-RPC surf
     'licenses',
     'activated_machines',
     'sync_rate_limits',
+    'sync_attempts',
   ]) {
     assert.match(
       schemaSql,
@@ -62,6 +73,7 @@ test('Central DB enforces FORCE RLS, zero anon table access, and single-RPC surf
   assert.match(schemaSql, /revoke\s+all\s+on\s+public\.subscriptions\s+from\s+public,\s*anon/i);
   assert.match(schemaSql, /revoke\s+all\s+on\s+public\.admin_license_view\s+from\s+public,\s*anon/i);
   assert.match(schemaSql, /revoke\s+all\s+on\s+public\.sync_rate_limits\s+from\s+public,\s*anon,\s*authenticated/i);
+  assert.match(schemaSql, /revoke\s+all\s+on\s+public\.sync_attempts\s+from\s+public,\s*anon/i);
 
   // anon ONLY receives EXECUTE on sync_clinic_subscription
   const anonGrants = schemaSql.match(/grant\s+[^\n;]+\bto\b[^\n;]*\banon\b[^\n;]*;/gi) ?? [];

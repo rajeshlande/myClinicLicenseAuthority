@@ -21,9 +21,9 @@ import { rememberError } from '../lib/errors.mjs';
 const SECURITY_LAYERS = [
   {
     id: 'rls',
-    title: 'FORCE ROW LEVEL SECURITY on all 6 Central tables',
+    title: 'FORCE ROW LEVEL SECURITY on all 7 Central tables',
     detail:
-      'anon has REVOKE ALL on subscriptions, licenses, activated_machines, sync_rate_limits, app_meta, and admin_license_view.',
+      'anon has REVOKE ALL on subscriptions, licenses, activated_machines, sync_rate_limits, sync_attempts, app_meta, and admin_license_view.',
   },
   {
     id: 'origin',
@@ -42,6 +42,12 @@ const SECURITY_LAYERS = [
     title: 'Deterministic Cloud Seat Fingerprinting',
     detail:
       'Cloud URLs bind deterministically to web:<origin> so external curl scripts cannot exhaust clinic deployment seats.',
+  },
+  {
+    id: 'audit',
+    title: 'Read-Only Refused-Attempt Audit (Schema v3)',
+    detail:
+      'Every refusal lands in sync_attempts with a hashed IP and a masked mailbox, attributed to the subscription it almost matched. Admins can read it; nobody — not even an admin token — can write or erase it.',
   },
 ];
 

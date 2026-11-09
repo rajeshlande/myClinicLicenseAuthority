@@ -1,5 +1,5 @@
 -- =============================================================================
--- myClinic License Authority — Scratch Database Security & Auto-Sync Suite (v2)
+-- myClinic License Authority — Scratch Database Security & Auto-Sync Suite (v3)
 -- DEV / SCRATCH ONLY · NEVER RUN ON PRODUCTION
 --
 -- Everything runs inside a single transaction and rolls back at the end, leaving
@@ -231,8 +231,205 @@ begin
   end if;
 
   raise notice 'PASS: admin_license_view tracks exact client-acknowledged tier & pause status';
-  raise notice 'ALL CENTRAL DATABASE SECURITY & KEYLESS AUTO-SYNC CHECKS COMPLETED';
 end $$;
 reset role;
+
+-- 7. Verify the v3 refused-attempt audit: refusals leave evidence, the allowed path
+--    and the healthcheck leave none, and nothing raw (IP / mailbox) is ever stored.
+--    Every refusal asserted below was produced by sections 4-6 in THIS transaction.
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare
+  v_dual    record;
+  v_email   record;
+  v_url     record;
+  v_spoof   record;
+  v_rows    integer;
+  v_cols    text;
+begin
+  -- 7a. Near-miss attribution: section 4c sent the RIGHT owner email from the WRONG
+  --     domain, so no subscription matched — yet the refusal is pinned to the
+  --     dual clinic's own license, which is the whole point of schema v3.
+  select last_refusal_code, last_refusal_email_hint, last_refusal_origin, refusals_24h
+    into v_dual
+    from public.admin_license_view
+   where allowed_origin = 'https://dualclinic.github.io'
+   limit 1;
+
+  if v_dual.last_refusal_code <> 'SUBSCRIPTION_NOT_FOUND' then
+    raise exception 'FAIL: expected near-miss SUBSCRIPTION_NOT_FOUND on the dual clinic, got %', v_dual;
+  end if;
+  if v_dual.last_refusal_email_hint <> 'o***@dualclinic.in' then
+    raise exception 'FAIL: expected masked email hint o***@dualclinic.in, got %', v_dual.last_refusal_email_hint;
+  end if;
+  if v_dual.last_refusal_origin <> 'https://evil.github.io' then
+    raise exception 'FAIL: expected the claimed origin to be preserved verbatim, got %', v_dual.last_refusal_origin;
+  end if;
+  if coalesce(v_dual.refusals_24h, 0) < 1 then
+    raise exception 'FAIL: refusals_24h should count the near-miss attempt, got %', v_dual.refusals_24h;
+  end if;
+  raise notice 'PASS: unmatched dual-pinned client call is attributed to its subscription with masked email + verbatim origin';
+
+  -- 7b. The TOFU clinic refused a second domain (4e) and the killed URL clinic
+  --     refused with SUBSCRIPTION_PAUSED (5) — both attributed, both readable.
+  select last_refusal_code, last_refusal_origin
+    into v_email
+    from public.admin_license_view
+   where customer_email = 'doctor@emailclinic.in'
+   limit 1;
+  if v_email.last_refusal_code <> 'SUBSCRIPTION_NOT_FOUND'
+     or v_email.last_refusal_origin <> 'https://secondclinic.github.io' then
+    raise exception 'FAIL: expected the TOFU second-domain refusal on the email clinic, got %', v_email;
+  end if;
+
+  select last_refusal_code, last_refusal_origin, last_refusal_at
+    into v_url
+    from public.admin_license_view
+   where allowed_origin = 'https://urlclinic.github.io'
+   limit 1;
+  if v_url.last_refusal_code <> 'SUBSCRIPTION_PAUSED' then
+    raise exception 'FAIL: expected SUBSCRIPTION_PAUSED on the killed clinic, got %', v_url;
+  end if;
+  if v_url.last_refusal_at is null then
+    raise exception 'FAIL: last_refusal_at must be set for an attributed refusal';
+  end if;
+  raise notice 'PASS: TOFU refusal and central kill-switch refusal are both attributed and timestamped';
+
+  -- 7c. The ORIGIN_MISMATCH defence (4b) keeps the unforgeable browser header next to
+  --     the claim, and flags the contradiction.
+  select code, claimed_origin, browser_origin, origin_header_ok, ip_hash
+    into v_spoof
+    from public.sync_attempts
+   where code = 'ORIGIN_MISMATCH'
+   order by attempted_at desc, id desc
+   limit 1;
+  if v_spoof.claimed_origin <> 'https://dualclinic.github.io'
+     or v_spoof.browser_origin <> 'https://evil.github.io'
+     or v_spoof.origin_header_ok then
+    raise exception 'FAIL: ORIGIN_MISMATCH evidence is wrong: %', v_spoof;
+  end if;
+  raise notice 'PASS: ORIGIN_MISMATCH records the claim, the real browser Origin, and the contradiction';
+
+  -- 7d. Privacy: the caller IP exists only as the rate limiter's own digest, and the
+  --     mailbox only as digest + mask.
+  if v_spoof.ip_hash <> encode(digest('myclinic-sync-v2:203.0.113.10', 'sha256'), 'hex') then
+    raise exception 'FAIL: ip_hash is not the peppered SHA-256 of the caller IP: %', v_spoof.ip_hash;
+  end if;
+  if position('203.0.113' in v_spoof.ip_hash) > 0 then
+    raise exception 'FAIL: raw IP leaked into ip_hash';
+  end if;
+
+  select string_agg(column_name, ',' order by column_name) into v_cols
+    from information_schema.columns
+   where table_schema = 'public' and table_name = 'sync_attempts';
+  if v_cols ~ '(^|,)(ip|raw_ip|ip_address|email|customer_email|email_address|device_id)(,|$)' then
+    raise exception 'FAIL: sync_attempts exposes a raw identifier column: %', v_cols;
+  end if;
+  if v_cols not like '%ip_hash%' or v_cols not like '%claimed_email_hash%' then
+    raise exception 'FAIL: sync_attempts is missing its hashed identifier columns: %', v_cols;
+  end if;
+  raise notice 'PASS: audit stores hashed IP + hashed/masked email only (% )', v_cols;
+
+  -- 7e. The allowed path (4d, 4e first URL, 4f) and the healthcheck write NOTHING:
+  --     a healthy fleet must not grow this table, and the probe stays zero-side-effect.
+  select count(*) into v_rows from public.sync_attempts where code in ('ACTIVE', 'GRANTED', 'OK');
+  if v_rows <> 0 then
+    raise exception 'FAIL: allowed syncs must not be audited, found % rows', v_rows;
+  end if;
+  raise notice 'PASS: allowed verdicts are never audited (table holds only refusals)';
+end $$;
+reset role;
+
+-- 7f. `anon` has no read access to the audit, and an admin token cannot write to it:
+--     the evidence is read-only for everyone except the SECURITY DEFINER RPC.
+set local role anon;
+do $$
+begin
+  begin
+    perform count(*) from public.sync_attempts;
+    raise exception 'FAIL: anon was able to read public.sync_attempts';
+  exception when insufficient_privilege then
+    raise notice 'PASS: anon denied read on public.sync_attempts';
+  end;
+end $$;
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+begin
+  begin
+    insert into public.sync_attempts (code, status, ip_hash)
+    values ('FORGED', 'test', repeat('a', 64));
+    raise exception 'FAIL: an admin token was able to forge audit evidence';
+  exception when insufficient_privilege then
+    raise notice 'PASS: admin token cannot insert into sync_attempts (RPC is the only writer)';
+  end;
+end $$;
+reset role;
+
+-- 7g. 30-day retention: an aged row disappears on the next refusal, once per 24h.
+do $$
+declare
+  v_aged_id uuid;
+  v_left    integer;
+begin
+  insert into public.sync_attempts (attempted_at, code, status, ip_hash)
+  values (clock_timestamp() - interval '40 days', 'AGED_OUT', 'test', repeat('b', 64))
+  returning id into v_aged_id;
+
+  -- The prune is throttled through the rate-limit bucket table; free it so this
+  -- assertion is deterministic instead of depending on earlier calls.
+  delete from public.sync_rate_limits
+   where bucket_key like 'prune:%' or bucket_key like 'audit:%' or bucket_key like 'miss:%';
+end $$;
+
+set local role anon;
+select set_config('request.headers', '{"origin":"https://unmatched.test","x-forwarded-for":"203.0.113.99"}', true);
+do $$
+declare
+  v_res jsonb;
+begin
+  v_res := public.sync_clinic_subscription('nobody@unmatched.test', 'https://unmatched.test', 'dev-retention');
+  if (v_res ->> 'code') <> 'SUBSCRIPTION_NOT_FOUND' then
+    raise exception 'FAIL: expected SUBSCRIPTION_NOT_FOUND for the retention probe, got %', v_res;
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  v_aged  integer;
+  v_fresh integer;
+  v_mode  text;
+begin
+  select count(*) into v_aged  from public.sync_attempts where code = 'AGED_OUT';
+  select count(*) into v_fresh from public.sync_attempts where code = 'SUBSCRIPTION_NOT_FOUND' and claimed_origin = 'https://unmatched.test';
+  if v_aged <> 0 then
+    raise exception 'FAIL: 40-day-old audit row survived the 30-day retention prune';
+  end if;
+  if v_fresh < 1 then
+    raise exception 'FAIL: the fresh refusal was pruned along with the aged row';
+  end if;
+
+  select match_mode into v_mode
+    from public.sync_attempts
+   where claimed_origin = 'https://unmatched.test'
+   order by attempted_at desc, id desc
+   limit 1;
+  if v_mode <> 'no-candidate' then
+    raise exception 'FAIL: an unmatched identity must be recorded as no-candidate, got %', v_mode;
+  end if;
+  raise notice 'PASS: 30-day retention pruned the aged row and kept the fresh refusal';
+
+  raise notice 'PASS: refused-attempt audit is admin-only, privacy-preserving and self-pruning';
+
+  if public.app_schema_version() <> 3 then
+    raise exception 'FAIL: app_schema_version() must be 3 after the v3 migration, got %', public.app_schema_version();
+  end if;
+  raise notice 'PASS: app_schema_version() = 3 (refused-attempt audit applied)';
+  raise notice 'ALL CENTRAL DATABASE SECURITY & KEYLESS AUTO-SYNC CHECKS COMPLETED';
+end $$;
 
 rollback;

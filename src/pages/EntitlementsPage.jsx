@@ -47,6 +47,41 @@ import {
 } from '../lib/entitlements.mjs';
 import { errorLine, rememberError } from '../lib/errors.mjs';
 
+/**
+ * Client Sync badge palette (UI Component Mapping Guide).
+ *
+ * `error` is the schema-v3 `Refused` state: the client IS calling Central and is
+ * being turned away, which is a fault, not a neutral "not connected yet".
+ */
+function buildSyncPillStyle(syncState) {
+  if (syncState.tone === 'ok') {
+    return {
+      badgeClass: 'badge-success',
+      dotColor: 'var(--ok-main)',
+      textColor: 'var(--ok-text)',
+    };
+  }
+  if (syncState.tone === 'warn') {
+    return {
+      badgeClass: 'badge-warning',
+      dotColor: 'var(--warn-main)',
+      textColor: 'var(--warn-text)',
+    };
+  }
+  if (syncState.tone === 'error') {
+    return {
+      badgeClass: 'badge-error',
+      dotColor: 'var(--danger-main)',
+      textColor: 'var(--danger-text)',
+    };
+  }
+  return {
+    badgeClass: 'console-well',
+    dotColor: 'var(--text-muted)',
+    textColor: 'var(--text-secondary)',
+  };
+}
+
 function buildStandingPillStyle(standing) {
   if (standing.isOperational) {
     return {
@@ -476,7 +511,7 @@ export default function EntitlementsPage({
   const handleExportCsv = () => {
     if (filteredRecords.length === 0) return;
     const csvLines = [
-      'customer_email,allowed_origin,match_mode,tier,status,client_sync_state,last_heartbeat,registered_machines,max_machines,expires_at',
+      'customer_email,allowed_origin,match_mode,tier,status,client_sync_state,last_heartbeat,registered_machines,max_machines,expires_at,last_refusal_code,refusals_24h',
       ...filteredRecords.map((row) => {
         const standing = computeStanding(row);
         const identity = describeClinicIdentity(row);
@@ -492,6 +527,8 @@ export default function EntitlementsPage({
           row.registered_machines,
           row.max_machines,
           row.expires_at,
+          syncState.refusal?.code ?? '',
+          syncState.refusals24h ?? 0,
         ]
           .map(sanitizeCsvCell)
           .join(',');
@@ -620,15 +657,19 @@ export default function EntitlementsPage({
             <span
               style={{
                 color:
-                  metrics.pendingSyncClinicsCount > 0
-                    ? 'var(--warn-text)'
-                    : 'var(--text-secondary)',
+                  metrics.refusedClinicsCount > 0
+                    ? 'var(--danger-text)'
+                    : metrics.pendingSyncClinicsCount > 0
+                      ? 'var(--warn-text)'
+                      : 'var(--text-secondary)',
               }}
               className="tabular-nums font-mono text-[11px] font-semibold"
             >
-              {metrics.pendingSyncClinicsCount > 0
-                ? `synced · ${metrics.pendingSyncClinicsCount} pending`
-                : `/ ${metrics.connectedClinicsCount} connected`}
+              {metrics.refusedClinicsCount > 0
+                ? `synced · ${metrics.refusedClinicsCount} refused`
+                : metrics.pendingSyncClinicsCount > 0
+                  ? `synced · ${metrics.pendingSyncClinicsCount} pending`
+                  : `/ ${metrics.connectedClinicsCount} connected`}
             </span>
           </div>
         </div>
@@ -946,6 +987,7 @@ export default function EntitlementsPage({
                 const pill = buildStandingPillStyle(standing);
                 const identity = describeClinicIdentity(row);
                 const syncState = describeClientSyncState(row);
+                const syncPill = buildSyncPillStyle(syncState);
                 const seatSpec =
                   MYCLINIC_TIER_ENTITLEMENTS[row.tier] ??
                   MYCLINIC_TIER_ENTITLEMENTS.standard;
@@ -978,23 +1020,10 @@ export default function EntitlementsPage({
                           </span>
 
                           <span
-                            className={`${
-                              syncState.tone === 'ok'
-                                ? 'badge-success'
-                                : syncState.tone === 'warn'
-                                  ? 'badge-warning'
-                                  : 'console-well'
-                            } inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold`}
+                            className={`${syncPill.badgeClass} inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold`}
                           >
                             <span
-                              style={{
-                                backgroundColor:
-                                  syncState.tone === 'ok'
-                                    ? 'var(--ok-main)'
-                                    : syncState.tone === 'warn'
-                                      ? 'var(--warn-main)'
-                                      : 'var(--text-muted)',
-                              }}
+                              style={{ backgroundColor: syncPill.dotColor }}
                               className="h-1.5 w-1.5 rounded-full"
                             />
                             {syncState.badgeLabel}
@@ -1022,12 +1051,7 @@ export default function EntitlementsPage({
                         ) : null}
 
                         <div
-                          style={{
-                            color:
-                              syncState.tone === 'warn'
-                                ? 'var(--warn-text)'
-                                : 'var(--text-secondary)',
-                          }}
+                          style={{ color: syncPill.textColor }}
                           className="mt-1 font-mono text-[10.5px]"
                         >
                           {identity.modeLabel} · {syncState.detail}
@@ -1127,6 +1151,7 @@ export default function EntitlementsPage({
                     const pill = buildStandingPillStyle(standing);
                     const identity = describeClinicIdentity(row);
                     const syncState = describeClientSyncState(row);
+                    const syncPill = buildSyncPillStyle(syncState);
                     const seatSpec =
                       MYCLINIC_TIER_ENTITLEMENTS[row.tier] ??
                       MYCLINIC_TIER_ENTITLEMENTS.standard;
@@ -1194,22 +1219,11 @@ export default function EntitlementsPage({
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span
                               className={`${
-                                syncState.tone === 'ok'
-                                  ? 'badge-success'
-                                  : syncState.tone === 'warn'
-                                    ? 'badge-warning'
-                                    : 'console-well'
+                                syncPill.badgeClass
                               } inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold`}
                             >
                               <span
-                                style={{
-                                  backgroundColor:
-                                    syncState.tone === 'ok'
-                                      ? 'var(--ok-main)'
-                                      : syncState.tone === 'warn'
-                                        ? 'var(--warn-main)'
-                                        : 'var(--text-muted)',
-                                }}
+                                style={{ backgroundColor: syncPill.dotColor }}
                                 className="h-1.5 w-1.5 rounded-full"
                               />
                               {syncState.badgeLabel}
@@ -1220,12 +1234,7 @@ export default function EntitlementsPage({
                             </span>
                           </div>
                           <div
-                            style={{
-                              color:
-                                syncState.tone === 'warn'
-                                  ? 'var(--warn-text)'
-                                  : 'var(--text-secondary)',
-                            }}
+                            style={{ color: syncPill.textColor }}
                             className="mt-1 font-mono text-[10px] font-medium"
                           >
                             {syncState.detail}
@@ -1619,44 +1628,76 @@ export default function EntitlementsPage({
             {/* Live Client Sync Receipt Card */}
             {(() => {
               const syncState = describeClientSyncState(inspectedRow);
+              const syncPill = buildSyncPillStyle(syncState);
+              const refusal = syncState.refusal;
+              const isRefused = syncState.state === 'refused';
+              const pinned = describeClinicIdentity(inspectedRow);
               return (
-                <div
-                  className={`${
-                    syncState.tone === 'ok'
-                      ? 'badge-success'
-                      : syncState.tone === 'warn'
-                        ? 'badge-warning'
-                        : 'console-well'
-                  } flex flex-wrap items-center justify-between gap-2.5 rounded-xl px-4 py-3`}
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 font-mono text-xs font-bold">
-                      <span
-                        style={{
-                          backgroundColor:
-                            syncState.tone === 'ok'
-                              ? 'var(--ok-main)'
-                              : syncState.tone === 'warn'
-                                ? 'var(--warn-main)'
-                                : 'var(--text-muted)',
-                        }}
-                        className="h-2 w-2 shrink-0 rounded-full"
-                      />
-                      <span>Client Status: {syncState.badgeLabel}</span>
-                    </div>
-                    <p className="mt-0.5 font-mono text-[11px] opacity-90">
-                      {syncState.detail} · Client updates automatically on page
-                      open, tab focus, reconnect, or every 15m.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => openInspector(inspectedRow)}
-                    className="console-btn-secondary inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[10.5px] font-bold"
+                <div className="space-y-2.5">
+                  <div
+                    className={`${syncPill.badgeClass} flex flex-wrap items-center justify-between gap-2.5 rounded-xl px-4 py-3`}
                   >
-                    <RefreshCw className="h-3 w-3" />
-                    Check Now
-                  </button>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 font-mono text-xs font-bold">
+                        <span
+                          style={{ backgroundColor: syncPill.dotColor }}
+                          className="h-2 w-2 shrink-0 rounded-full"
+                        />
+                        <span>Client Status: {syncState.badgeLabel}</span>
+                      </div>
+                      <p className="mt-0.5 font-mono text-[11px] opacity-90">
+                        {syncState.detail} · Client updates automatically on page
+                        open, tab focus, reconnect, or every 30m.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openInspector(inspectedRow)}
+                      className="console-btn-secondary inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 font-mono text-[10.5px] font-bold"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Check Now
+                    </button>
+                  </div>
+
+                  {/* Schema v3 refused-attempt evidence: what the client actually
+                      sent, and the one action that clears it. */}
+                  {isRefused && refusal ? (
+                    <div className="badge-error space-y-1 rounded-xl px-4 py-3">
+                      <div className="font-mono text-[10px] font-bold tracking-wider uppercase">
+                        Refused {refusal.ago} · {refusal.code}
+                        {refusal.count24h > 1
+                          ? ` · ${refusal.count24h} attempts in 24h`
+                          : ''}
+                      </div>
+                      {refusal.claim ? (
+                        <p className="break-words font-mono text-[11px]">
+                          Client sent {refusal.claim}
+                        </p>
+                      ) : null}
+                      <p
+                        style={{ color: 'var(--danger-text)' }}
+                        className="break-words font-mono text-[11px] opacity-95"
+                      >
+                        Pinned here: {pinned.primary}
+                        {pinned.secondary ? ` · ${pinned.secondary}` : ''}
+                      </p>
+                      <p className="text-[11px] leading-relaxed">
+                        {refusal.hint}
+                      </p>
+                    </div>
+                  ) : refusal && refusal.count24h > 0 ? (
+                    <div className="console-well rounded-xl px-4 py-2.5">
+                      <p
+                        style={{ color: 'var(--text-secondary)' }}
+                        className="break-words font-mono text-[10.5px]"
+                      >
+                        {refusal.count24h} refused attempt
+                        {refusal.count24h === 1 ? '' : 's'} in the last 24h ·
+                        latest {refusal.code} {refusal.ago}
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
               );
             })()}

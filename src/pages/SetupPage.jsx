@@ -108,7 +108,7 @@ export function SetupPage({ backend, session, onBackendChanged, onSignOut }) {
         .select('license_id', { count: 'exact', head: true });
       if (error) throw error;
 
-      let autoSyncStatus = 'ready (Schema v2)';
+      let autoSyncStatus = `ready (Schema v${SCHEMA_VERSION})`;
       try {
         await probeCentralAutoSync(
           backend.health?.url ?? '',
@@ -117,7 +117,7 @@ export function SetupPage({ backend, session, onBackendChanged, onSignOut }) {
         );
       } catch (rpcErr) {
         if (rpcErr?.code === 'SCHEMA_V2_REQUIRED') {
-          autoSyncStatus = 're-run schema.sql (v2) in SQL Editor';
+          autoSyncStatus = `re-run schema.sql (v${SCHEMA_VERSION}) in SQL Editor`;
         } else {
           autoSyncStatus = rpcErr?.message || 'unreachable';
         }

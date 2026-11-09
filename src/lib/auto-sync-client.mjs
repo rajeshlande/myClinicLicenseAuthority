@@ -303,7 +303,7 @@ export async function probeCentralAutoSync(
     const payload = await res.json().catch(() => ({}));
     if (res.status === 404 || payload?.code === 'PGRST202') {
       const err = new Error(
-        'sync_clinic_subscription RPC not found (Schema v2 not applied yet). Re-run supabase/schema.sql in Central Supabase SQL Editor.',
+        'sync_clinic_subscription RPC not found (Schema v3 not applied yet). Re-run supabase/schema.sql in Central Supabase SQL Editor.',
       );
       err.code = 'SCHEMA_V2_REQUIRED';
       throw err;
@@ -321,7 +321,7 @@ export async function probeCentralAutoSync(
 
     return {
       ok: true,
-      schemaVersion: Number(payload.schema_version ?? 2),
+      schemaVersion: Number(payload.schema_version ?? 3),
       serverTime: payload.server_time ?? null,
     };
   } finally {
@@ -375,7 +375,7 @@ export async function syncCentralSubscription({
     const body = await res.json().catch(() => ({}));
     if (res.status === 404 || body?.code === 'PGRST202') {
       const err = new Error(
-        'Central Supabase is still on Schema v1. Paste & run supabase/schema.sql (v2) in Central SQL Editor.',
+        'Central Supabase is still on Schema v1/v2. Paste & run supabase/schema.sql (v3) in Central SQL Editor.',
       );
       err.code = 'SCHEMA_V2_REQUIRED';
       throw err;

@@ -1,5 +1,5 @@
 -- =============================================================================
--- myClinic License Authority — Single Source-of-Truth Database Schema (v2)
+-- myClinic License Authority — Single Source-of-Truth Database Schema (v3)
 --
 --   ██  THIS IS THE ONLY SQL FILE CENTRAL SUPABASE NEEDS.
 --   ██  NO EDGE FUNCTIONS OR RSA KEYS REQUIRED FOR KEYLESS AUTO-SYNC.
@@ -14,11 +14,13 @@
 --   §0  version + migration registry     public.app_meta, public.schema_migrations
 --   §1  helpers + admin predicate        normalize_clinic_origin(), is_license_admin()
 --   §2  core entitlement tables          subscriptions (email + URL), licenses,
---                                        activated_machines, sync_rate_limits
+--                                        activated_machines, sync_rate_limits,
+--                                        sync_attempts (refused-attempt audit)
 --   §3  hardware lock + secure view      enforce_max_machines_limit(), admin_license_view
 --   §4  admin & keyless auto-sync RPCs   create_subscription_with_license(),
 --                                        update_subscription_routing(),
 --                                        revoke_machine_node(),
+--                                        record_sync_attempt(),
 --                                        sync_clinic_subscription()
 --   §5  zero-trust row-level security    FORCE RLS; anon has ZERO table access
 --                                        and can ONLY execute sync_clinic_subscription()
@@ -47,18 +49,19 @@ create table if not exists public.schema_migrations (
 );
 
 insert into public.app_meta (schema_version, notes)
-select 2, 'central subscription & keyless auto-sync authority schema'
+select 3, 'central subscription, keyless auto-sync + refused-attempt audit schema'
 where not exists (select 1 from public.app_meta);
 
 insert into public.schema_migrations (version, name, app_version, summary) values
   (1, 'license-authority-core', '1.0.0', 'subscriptions, licenses, activated_machines hardware lock, admin_license_view, transactional provisioning RPC, admin RLS'),
-  (2, 'keyless-auto-sync-core', '1.6.0', 'email + clinic URL dual routing, TOFU origin lock, per-IP SHA-256 rate limiter, hardened sync_clinic_subscription RPC, FORCE RLS')
+  (2, 'keyless-auto-sync-core', '1.6.0', 'email + clinic URL dual routing, TOFU origin lock, per-IP SHA-256 rate limiter, hardened sync_clinic_subscription RPC, FORCE RLS'),
+  (3, 'refused-attempt-audit', '2.3.0', 'public.sync_attempts privacy-preserving refusal log (hashed IP + email, 30-day retention, admin-only), near-miss subscription attribution, admin_license_view last_refusal_* columns')
 on conflict (version) do nothing;
 
 update public.app_meta
-   set schema_version = greatest(schema_version, 2),
+   set schema_version = greatest(schema_version, 3),
        applied_at = now(),
-       notes = 'keyless auto-sync + dual email/origin routing enabled';
+       notes = 'keyless auto-sync + dual email/origin routing + refused-attempt audit enabled';
 
 create or replace function public.app_schema_version()
 returns integer
@@ -278,6 +281,66 @@ create table if not exists public.sync_rate_limits (
 create index if not exists idx_sync_rate_limits_window
   on public.sync_rate_limits (window_started_at);
 
+-- 5. `sync_attempts` (Refused-Attempt Audit — schema v3, additive)
+--
+-- WHY THIS EXISTS: `sync_clinic_subscription()` writes an `activated_machines`
+-- seat row ONLY on the fully-allowed path, so every refusal (SUBSCRIPTION_NOT_FOUND,
+-- ORIGIN_MISMATCH, RATE_LIMITED, SEAT_LIMIT_REACHED, SUBSCRIPTION_PAUSED, ...) left
+-- absolutely no trace. The admin console could then only say "Awaiting Connect /
+-- client app not opened yet" — indistinguishable from a client that calls every
+-- 15 minutes and is refused every time because the pinned email or URL differs by
+-- one character. This table is that missing evidence.
+--
+-- PRIVACY RULES (deliberate, and asserted by tests/schema.test.mjs):
+--   * The caller IP is stored ONLY as a SHA-256 digest, with the same pepper as the
+--     rate limiter, so `left(ip_hash, 40)` correlates with `sync_rate_limits.bucket_key`.
+--   * The claimed email is stored ONLY as a SHA-256 digest plus a masked hint
+--     (`r***@gmail.com`) — enough for an operator to compare against the pinned
+--     address, never enough to reconstruct the mailbox.
+--   * `claimed_origin` / `browser_origin` are plain text on purpose: a clinic website
+--     address is public information and is already stored verbatim in
+--     `subscriptions.allowed_origin`. Hiding it would make the single most common
+--     refusal undiagnosable.
+--   * Rows are pruned after 30 days (at most once per 24h, throttled through the
+--     existing rate-limit bucket table), and cascade away with their subscription.
+--   * FORCE RLS + admin-only SELECT: `anon` and non-admin `authenticated` see nothing.
+create table if not exists public.sync_attempts (
+  id                 uuid primary key default gen_random_uuid(),
+  attempted_at       timestamptz not null default now(),
+  code               text not null
+                     check (char_length(btrim(code)) between 1 and 64),
+  status             text not null default ''
+                     check (char_length(status) <= 32),
+  subscription_id    uuid
+                     references public.subscriptions(id) on delete cascade,
+  license_id         uuid
+                     references public.licenses(id) on delete cascade,
+  match_mode         text
+                     check (match_mode is null or char_length(match_mode) <= 32),
+  claimed_origin     text
+                     check (claimed_origin is null or char_length(claimed_origin) <= 255),
+  browser_origin     text
+                     check (browser_origin is null or char_length(browser_origin) <= 255),
+  claimed_email_hint text
+                     check (claimed_email_hint is null or char_length(claimed_email_hint) <= 128),
+  claimed_email_hash text
+                     check (claimed_email_hash is null or claimed_email_hash ~ '^[a-f0-9]{64}$'),
+  ip_hash            text not null
+                     check (ip_hash ~ '^[a-f0-9]{64}$'),
+  origin_header_ok   boolean not null default true
+);
+
+create index if not exists idx_sync_attempts_attempted_at
+  on public.sync_attempts (attempted_at desc);
+
+create index if not exists idx_sync_attempts_license_recent
+  on public.sync_attempts (license_id, attempted_at desc)
+  where license_id is not null;
+
+create index if not exists idx_sync_attempts_subscription_recent
+  on public.sync_attempts (subscription_id, attempted_at desc)
+  where subscription_id is not null;
+
 -- =============================================================================
 -- §3 · CONCURRENCY-SAFE HARDWARE LOCK & SECURE FLATTENED VIEW
 -- =============================================================================
@@ -327,8 +390,9 @@ create trigger trg_enforce_max_machines_limit
 
 -- Flattened view (`security_invoker = true`) so `.from('admin_license_view').select('*')`
 -- retrieves complete operational standing in one round trip while respecting RLS.
--- Note: v2 columns (`allowed_origin`, `lock_first_origin`) are appended at the end so
--- `CREATE OR REPLACE VIEW` upgrades live v1 installations cleanly in place.
+-- Note: v2 columns (`allowed_origin`, `lock_first_origin`) and the v3 refusal-audit
+-- columns are appended at the end so `CREATE OR REPLACE VIEW` upgrades live v1/v2
+-- installations cleanly in place.
 create or replace view public.admin_license_view
 with (security_invoker = true)
 as
@@ -377,7 +441,52 @@ select
     where am.license_id = l.id
     order by am.last_heartbeat desc nulls last
     limit 1
-  ) as last_synced_expires_at
+  ) as last_synced_expires_at,
+  -- ── v3 refused-attempt evidence (appended last: CREATE OR REPLACE VIEW may only
+  --    add columns at the end, so live v1/v2 installations upgrade in place).
+  --    A refusal is the ONLY signal Central gets from a client that calls but does
+  --    not match, so these five columns are what turn "Awaiting Connect" into
+  --    "SUBSCRIPTION_NOT_FOUND — the client claimed r***@gmail.com from
+  --    https://clinic.github.io 4 minutes ago".
+  (
+    select sa.code
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_code,
+  (
+    select max(sa.attempted_at)
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+  ) as last_refusal_at,
+  (
+    select count(*)::integer
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+      and sa.attempted_at > (now() - interval '24 hours')
+  ) as refusals_24h,
+  (
+    select sa.claimed_email_hint
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_email_hint,
+  (
+    select sa.claimed_origin
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_origin,
+  (
+    select sa.browser_origin
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_browser_origin
 from public.licenses l
 join public.subscriptions s
   on s.id = l.subscription_id;
@@ -579,6 +688,123 @@ end;
 $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- REFUSED-ATTEMPT AUDIT WRITER (`record_sync_attempt`) — schema v3
+--
+-- Best-effort by contract: an audit row is evidence, never a verdict, so every
+-- failure inside is swallowed (`when others then null`) and a full or broken
+-- audit table can never stop a clinic from syncing. The caller passes only what
+-- it already has; the IP digest and the email mask are computed HERE so no raw
+-- IP and no raw mailbox can be stored by accident.
+--
+-- The claim is stored as the client sent it (lower-cased, trimmed, truncated) —
+-- deliberately NOT normalised, because "the client sent https://clinic.github.io/
+-- myClinic/ with a path" is exactly the evidence an operator needs.
+--
+-- `attempted_at` uses `clock_timestamp()`, not `now()`: an audit log must order real
+-- events, and `now()` is frozen for a whole transaction, which would make the
+-- "latest refusal" ambiguous for anything logged in the same transaction.
+--
+-- Never granted to `public`, `anon` or `authenticated`: only the SECURITY DEFINER
+-- auto-sync RPC (same owner) can reach it, so it cannot be used to flood the table.
+-- ─────────────────────────────────────────────────────────────────────────────
+create or replace function public.record_sync_attempt(
+  p_code             text,
+  p_status           text default '',
+  p_claimed_email    text default null,
+  p_claimed_origin   text default null,
+  p_browser_origin   text default null,
+  p_subscription_id  uuid default null,
+  p_license_id       uuid default null,
+  p_match_mode       text default null,
+  p_origin_header_ok boolean default true
+)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_now     timestamptz := clock_timestamp();
+  v_headers jsonb := '{}'::jsonb;
+  v_raw_ip  text;
+  v_ip_hash text;
+  v_email   text;
+  v_hint    text := null;
+  v_hash    text := null;
+begin
+  begin
+    begin
+      v_headers := coalesce(nullif(current_setting('request.headers', true), '')::jsonb, '{}'::jsonb);
+    exception when others then
+      v_headers := '{}'::jsonb;
+    end;
+
+    v_raw_ip := coalesce(
+      nullif(btrim(split_part(coalesce(v_headers ->> 'cf-connecting-ip', ''), ',', 1)), ''),
+      nullif(btrim(split_part(coalesce(v_headers ->> 'x-forwarded-for', ''), ',', 1)), ''),
+      'direct'
+    );
+    -- Same pepper as the rate limiter, so left(ip_hash, 40) correlates with the
+    -- 'req:' / 'miss:' buckets in sync_rate_limits during an investigation.
+    v_ip_hash := encode(digest('myclinic-sync-v2:' || v_raw_ip, 'sha256'), 'hex');
+
+    v_email := nullif(lower(btrim(coalesce(p_claimed_email, ''))), '');
+    if v_email is not null then
+      v_hint := left(v_email, 1) || '***@' || split_part(v_email, '@', 2);
+      v_hash := encode(digest('myclinic-email-v3:' || v_email, 'sha256'), 'hex');
+    end if;
+
+    -- Per-IP audit budget: 12 rows / 10 minutes. The validation refusals happen
+    -- BEFORE the RPC's own rate limiter, so without this an unauthenticated caller
+    -- could grow the table at will. A real clinic needs one row per failed attempt
+    -- and retries at most every 15 minutes, so 12 is generous; a flooder simply
+    -- stops adding evidence and never changes a verdict.
+    if not public.consume_sync_rate_limit('audit:' || left(v_ip_hash, 40), 600, 12) then
+      return;
+    end if;
+
+    insert into public.sync_attempts (
+      attempted_at, code, status, subscription_id, license_id, match_mode,
+      claimed_origin, browser_origin, claimed_email_hint, claimed_email_hash,
+      ip_hash, origin_header_ok
+    ) values (
+      v_now,
+      left(btrim(coalesce(p_code, 'UNKNOWN')), 64),
+      left(btrim(coalesce(p_status, '')), 32),
+      p_subscription_id,
+      p_license_id,
+      nullif(left(btrim(coalesce(p_match_mode, '')), 32), ''),
+      nullif(left(lower(btrim(coalesce(p_claimed_origin, ''))), 255), ''),
+      nullif(left(lower(btrim(coalesce(p_browser_origin, ''))), 255), ''),
+      nullif(left(v_hint, 128), ''),
+      v_hash,
+      v_ip_hash,
+      coalesce(p_origin_header_ok, true)
+    );
+
+    -- 30-day retention plus a hard 100k ceiling, at most once per 24h — throttled
+    -- through the same bucket table the rate limiter already uses, so this adds no
+    -- new machinery and no write amplification on a busy project.
+    if public.consume_sync_rate_limit('prune:sync_attempts', 86400, 1) then
+      delete from public.sync_attempts
+       where attempted_at < (v_now - interval '30 days');
+
+      delete from public.sync_attempts
+       where id in (
+         select sa.id
+           from public.sync_attempts sa
+          order by sa.attempted_at desc
+          offset 100000
+       );
+    end if;
+  exception when others then
+    null;
+  end;
+end;
+$$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- PUBLIC CLIENT AUTO-SYNC RPC (`sync_clinic_subscription`)
 --
 -- The ONLY object in Central Supabase callable by `anon` (`VITE_CENTRAL_SUPABASE_ANON_KEY`).
@@ -592,6 +818,10 @@ $$;
 --   6. Deterministic `web:<origin>` seat fingerprint for cloud clinics (prevents curl seat DoS)
 --      and 5-minute heartbeat write throttling (prevents DB write amplification).
 --   7. Returns ONLY minimal plan capability JSON — zero customer PII, notes, or other rows.
+--   8. Every REFUSAL is written to `public.sync_attempts` (schema v3) as hashed-IP /
+--      masked-email evidence, so the admin console can tell "the client never called"
+--      apart from "the client calls and is refused". The healthcheck probe and the
+--      allowed path write nothing, and an audit failure can never change a verdict.
 -- ─────────────────────────────────────────────────────────────────────────────
 create or replace function public.sync_clinic_subscription(
   p_email     text default '',
@@ -625,42 +855,18 @@ declare
   v_grace_until    timestamptz;
   v_sub            record;
   v_machine        record;
+  -- Near-miss attribution for the v3 refusal audit (scalars, so an unmatched
+  -- lookup leaves them NULL instead of raising on an unassigned record).
+  v_near_sub       uuid;
+  v_near_lic       uuid;
+  v_near_mode      text;
 begin
   v_email  := nullif(lower(btrim(coalesce(p_email, ''))), '');
   v_origin := public.normalize_clinic_origin(p_origin);
   v_device := left(regexp_replace(btrim(coalesce(p_device_id, '')), '[^a-zA-Z0-9._:-]', '', 'g'), 96);
 
-  -- Safe zero-side-effect readiness check used by Guide & Settings diagnostics
-  if v_email is null and v_origin is null and v_device = 'healthcheck' then
-    return jsonb_build_object(
-      'ok', true,
-      'sync_ready', true,
-      'schema_version', 2,
-      'server_time', v_now
-    );
-  end if;
-
-  if v_email is not null and (char_length(v_email) > 254 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$') then
-    return jsonb_build_object(
-      'allowed', false,
-      'status', 'invalid_request',
-      'code', 'INVALID_EMAIL',
-      'tier', 'solo',
-      'reason', 'Invalid clinic email format.'
-    );
-  end if;
-
-  if v_origin is not null and (char_length(v_origin) > 255 or v_origin !~ '^https?://[a-z0-9.-]+(:[0-9]{1,5})?$') then
-    return jsonb_build_object(
-      'allowed', false,
-      'status', 'invalid_request',
-      'code', 'INVALID_ORIGIN',
-      'tier', 'solo',
-      'reason', 'Clinic URL must be scheme + domain (for example https://clinic.github.io).'
-    );
-  end if;
-
-  -- Extract PostgREST HTTP request headers safely
+  -- Extract PostgREST HTTP request headers safely. Done before every refusal so the
+  -- v3 audit trail can record the unforgeable browser Origin next to the claim.
   begin
     v_headers := coalesce(nullif(current_setting('request.headers', true), '')::jsonb, '{}'::jsonb);
   exception when others then
@@ -672,6 +878,42 @@ begin
     v_header_origin := null;
   end if;
 
+  -- Safe zero-side-effect readiness check used by Guide & Settings diagnostics
+  if v_email is null and v_origin is null and v_device = 'healthcheck' then
+    return jsonb_build_object(
+      'ok', true,
+      'sync_ready', true,
+      'schema_version', 3,
+      'server_time', v_now
+    );
+  end if;
+
+  if v_email is not null and (char_length(v_email) > 254 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$') then
+    perform public.record_sync_attempt(
+      'INVALID_EMAIL', 'invalid_request', p_email, p_origin, v_headers ->> 'origin'
+    );
+    return jsonb_build_object(
+      'allowed', false,
+      'status', 'invalid_request',
+      'code', 'INVALID_EMAIL',
+      'tier', 'solo',
+      'reason', 'Invalid clinic email format.'
+    );
+  end if;
+
+  if v_origin is not null and (char_length(v_origin) > 255 or v_origin !~ '^https?://[a-z0-9.-]+(:[0-9]{1,5})?$') then
+    perform public.record_sync_attempt(
+      'INVALID_ORIGIN', 'invalid_request', p_email, p_origin, v_headers ->> 'origin'
+    );
+    return jsonb_build_object(
+      'allowed', false,
+      'status', 'invalid_request',
+      'code', 'INVALID_ORIGIN',
+      'tier', 'solo',
+      'reason', 'Clinic URL must be scheme + domain (for example https://clinic.github.io).'
+    );
+  end if;
+
   v_is_preview := v_is_admin and v_device = 'admin-preview';
 
   -- Enforce browser HTTP Origin header integrity for all non-admin-preview calls
@@ -679,6 +921,10 @@ begin
     if v_origin is null then
       v_origin := v_header_origin;
     elsif v_origin <> v_header_origin then
+      perform public.record_sync_attempt(
+        'ORIGIN_MISMATCH', 'origin_mismatch', p_email, p_origin, v_headers ->> 'origin',
+        null, null, null, false
+      );
       return jsonb_build_object(
         'allowed', false,
         'status', 'origin_mismatch',
@@ -690,6 +936,11 @@ begin
   end if;
 
   if v_email is null and v_origin is null then
+    if not v_is_preview then
+      perform public.record_sync_attempt(
+        'MISSING_IDENTITY', 'unlicensed', p_email, p_origin, v_headers ->> 'origin'
+      );
+    end if;
     return jsonb_build_object(
       'allowed', false,
       'status', 'unlicensed',
@@ -708,6 +959,11 @@ begin
   v_ip_hash := encode(digest('myclinic-sync-v2:' || v_raw_ip, 'sha256'), 'hex');
 
   if not public.consume_sync_rate_limit('req:' || left(v_ip_hash, 40), 60, 60) then
+    if not v_is_preview then
+      perform public.record_sync_attempt(
+        'RATE_LIMITED', 'rate_limited', p_email, p_origin, v_headers ->> 'origin'
+      );
+    end if;
     return jsonb_build_object(
       'allowed', false,
       'status', 'rate_limited',
@@ -725,6 +981,12 @@ begin
        and window_started_at > (v_now - interval '5 minutes')
        and hit_count >= 15
   ) then
+    if not v_is_preview then
+      perform public.record_sync_attempt(
+        'RATE_LIMITED', 'rate_limited', p_email, p_origin, v_headers ->> 'origin',
+        null, null, 'miss-budget'
+      );
+    end if;
     return jsonb_build_object(
       'allowed', false,
       'status', 'rate_limited',
@@ -794,6 +1056,49 @@ begin
 
   if not found then
     perform public.consume_sync_rate_limit('miss:' || left(v_ip_hash, 40), 300, 15);
+
+    -- Near-miss attribution (AUDIT ONLY — it never changes the verdict above).
+    -- A dual-pinned row missed by one character in the email or the URL would
+    -- otherwise be invisible forever: no match means no license_id means nothing
+    -- to hang the refusal on, and the console could only say "Awaiting Connect".
+    -- Finding the row that ALMOST matched is what lets it say
+    -- "SUBSCRIPTION_NOT_FOUND — client claimed r***@gmail.com from
+    --  https://clinic.github.io, 4 minutes ago" on the subscription the operator
+    -- actually pinned. Origin candidates win over email-only candidates because an
+    -- origin is the harder of the two to guess.
+    if not v_is_preview then
+      select s.id, l.id,
+             case
+               when s.customer_email is not null and s.allowed_origin is not null then 'email+url'
+               when s.customer_email is not null then 'email'
+               else 'url'
+             end
+        into v_near_sub, v_near_lic, v_near_mode
+        from public.subscriptions s
+        join public.licenses l on l.subscription_id = s.id
+       where (v_origin is not null and s.allowed_origin is not null
+              and lower(s.allowed_origin) = v_origin)
+          or (v_email is not null and s.customer_email is not null
+              and lower(s.customer_email) = v_email)
+       order by
+         case
+           when v_origin is not null and s.allowed_origin is not null
+                and lower(s.allowed_origin) = v_origin then 0
+           else 1
+         end,
+         s.updated_at desc
+       limit 1;
+
+      perform public.record_sync_attempt(
+        'SUBSCRIPTION_NOT_FOUND', 'unlicensed', p_email, p_origin, v_headers ->> 'origin',
+        v_near_sub, v_near_lic,
+        case
+          when v_near_sub is not null then 'near-miss:' || coalesce(v_near_mode, '')
+          else 'no-candidate'
+        end
+      );
+    end if;
+
     return jsonb_build_object(
       'allowed', false,
       'status', 'unlicensed',
@@ -828,6 +1133,11 @@ begin
            or last_heartbeat < v_sub.updated_at
            or last_heartbeat < (v_now - interval '5 minutes')
          );
+
+      perform public.record_sync_attempt(
+        'SUBSCRIPTION_PAUSED', 'paused', p_email, p_origin, v_headers ->> 'origin',
+        v_sub.subscription_id, v_sub.license_id, v_sub.matched_by
+      );
     end if;
 
     return jsonb_build_object(
@@ -861,6 +1171,11 @@ begin
            last_synced_status is distinct from 'expired'
            or last_heartbeat < (v_now - interval '5 minutes')
          );
+
+      perform public.record_sync_attempt(
+        'SUBSCRIPTION_EXPIRED', 'expired', p_email, p_origin, v_headers ->> 'origin',
+        v_sub.subscription_id, v_sub.license_id, v_sub.matched_by
+      );
     end if;
 
     return jsonb_build_object(
@@ -888,6 +1203,11 @@ begin
            or last_heartbeat < v_sub.updated_at
            or last_heartbeat < (v_now - interval '5 minutes')
          );
+
+      perform public.record_sync_attempt(
+        'SUBSCRIPTION_INACTIVE', v_sub.status, p_email, p_origin, v_headers ->> 'origin',
+        v_sub.subscription_id, v_sub.license_id, v_sub.matched_by
+      );
     end if;
 
     return jsonb_build_object(
@@ -970,6 +1290,10 @@ begin
           last_synced_expires_at = excluded.last_synced_expires_at;
       exception
         when sqlstate '53400' then
+          perform public.record_sync_attempt(
+            'SEAT_LIMIT_REACHED', 'seat_limit', p_email, p_origin, v_headers ->> 'origin',
+            v_sub.subscription_id, v_sub.license_id, v_match_mode
+          );
           return jsonb_build_object(
             'allowed', false,
             'status', 'seat_limit',
@@ -1023,6 +1347,7 @@ alter table public.subscriptions enable row level security;
 alter table public.licenses enable row level security;
 alter table public.activated_machines enable row level security;
 alter table public.sync_rate_limits enable row level security;
+alter table public.sync_attempts enable row level security;
 
 alter table public.app_meta force row level security;
 alter table public.schema_migrations force row level security;
@@ -1030,6 +1355,7 @@ alter table public.subscriptions force row level security;
 alter table public.licenses force row level security;
 alter table public.activated_machines force row level security;
 alter table public.sync_rate_limits force row level security;
+alter table public.sync_attempts force row level security;
 
 -- Revoke ALL table, view, and function privileges from `public` and `anon` first
 revoke all on public.app_meta from public, anon;
@@ -1038,6 +1364,7 @@ revoke all on public.subscriptions from public, anon;
 revoke all on public.licenses from public, anon;
 revoke all on public.activated_machines from public, anon;
 revoke all on public.sync_rate_limits from public, anon, authenticated;
+revoke all on public.sync_attempts from public, anon;
 revoke all on public.admin_license_view from public, anon;
 
 revoke all on function public.app_schema_version() from public, anon;
@@ -1050,6 +1377,7 @@ revoke all on function public.create_subscription_with_license(text, text, integ
 revoke all on function public.update_subscription_routing(uuid, text, text, boolean) from public, anon;
 revoke all on function public.revoke_machine_node(uuid) from public, anon;
 revoke all on function public.consume_sync_rate_limit(text, integer, integer) from public, anon, authenticated;
+revoke all on function public.record_sync_attempt(text, text, text, text, text, uuid, uuid, text, boolean) from public, anon, authenticated;
 revoke all on function public.sync_clinic_subscription(text, text, text) from public;
 
 -- Authenticated Central Admin grants (still gated by `is_license_admin()` RLS & checks)
@@ -1058,6 +1386,7 @@ grant select on public.schema_migrations to authenticated;
 grant select, insert, update, delete on public.subscriptions to authenticated;
 grant select, insert, update, delete on public.licenses to authenticated;
 grant select, insert, update, delete on public.activated_machines to authenticated;
+grant select on public.sync_attempts to authenticated;
 grant select on public.admin_license_view to authenticated;
 
 grant execute on function public.app_schema_version() to authenticated;
@@ -1098,5 +1427,13 @@ create policy admin_all_activated_machines
   on public.activated_machines for all to authenticated
   using (public.is_license_admin())
   with check (public.is_license_admin());
+
+-- Refusal audit: READ-ONLY for admins. Writes happen exclusively inside
+-- `record_sync_attempt()` (SECURITY DEFINER, no grant to anon/authenticated), so a
+-- compromised operator token cannot erase or forge evidence of a refusal.
+drop policy if exists sync_attempts_admin_read on public.sync_attempts;
+create policy sync_attempts_admin_read
+  on public.sync_attempts for select to authenticated
+  using (public.is_license_admin());
 
 commit;
