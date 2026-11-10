@@ -7,7 +7,6 @@ import {
   Building2,
   Calendar,
   Check,
-  Clock,
   Copy,
   Cpu,
   Download,
@@ -30,6 +29,7 @@ import ErrorAlert from '../components/ErrorAlert.jsx';
 import RichNotesField from '../components/RichNotesField.jsx';
 import RichNotesView from '../components/RichNotesView.jsx';
 import SlideOverDrawer from '../components/SlideOverDrawer.jsx';
+import FleetMetricTiles from '../components/entitlements/FleetMetricTiles.jsx';
 import RefusalEvidenceCard from '../components/entitlements/RefusalEvidenceCard.jsx';
 import SyncStateBadge from '../components/entitlements/SyncStateBadge.jsx';
 import { copyTextToClipboard } from '../lib/clipboard.mjs';
@@ -544,150 +544,7 @@ export default function EntitlementsPage({
       ) : null}
 
       {/* 1. 4-Metric Zone Overview Strip */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <button
-          type="button"
-          onClick={() => setStatusFilter('active')}
-          className="console-panel relative overflow-hidden rounded-xl p-4 text-left transition hover:opacity-95"
-        >
-          <span
-            style={{ backgroundColor: 'var(--brand-primary)' }}
-            className="absolute inset-x-0 top-0 h-[3px]"
-          />
-          <div className="flex items-center justify-between gap-2">
-            <span
-              style={{ color: 'var(--text-secondary)' }}
-              className="font-mono text-[10px] font-bold tracking-wider uppercase"
-            >
-              Active Clinics
-            </span>
-            <ShieldCheck
-              style={{ color: 'var(--ok-main)' }}
-              className="h-4 w-4 shrink-0"
-            />
-          </div>
-          <div className="mt-2 flex items-baseline gap-1.5">
-            <span className="tabular-nums text-2xl font-bold tracking-tight">
-              {metrics.activeCount}
-            </span>
-            <span
-              style={{ color: 'var(--text-secondary)' }}
-              className="tabular-nums font-mono text-xs"
-            >
-              / {metrics.total}
-            </span>
-          </div>
-        </button>
-
-        <div className="console-panel relative overflow-hidden rounded-xl p-4 text-left">
-          <span
-            style={{ backgroundColor: 'var(--accent-energy)' }}
-            className="absolute inset-x-0 top-0 h-[3px]"
-          />
-          <div className="flex items-center justify-between gap-2">
-            <span
-              style={{ color: 'var(--text-secondary)' }}
-              className="font-mono text-[10px] font-bold tracking-wider uppercase"
-            >
-              Client Sync Live
-            </span>
-            <Globe
-              style={{ color: 'var(--brand-text)' }}
-              className="h-4 w-4 shrink-0"
-            />
-          </div>
-          <div className="mt-2 flex flex-wrap items-baseline gap-1.5">
-            <span className="tabular-nums text-2xl font-bold tracking-tight">
-              {metrics.inSyncClinicsCount}
-            </span>
-            <span
-              style={{
-                color:
-                  metrics.refusedClinicsCount > 0
-                    ? 'var(--danger-text)'
-                    : metrics.pendingSyncClinicsCount > 0
-                      ? 'var(--warn-text)'
-                      : 'var(--text-secondary)',
-              }}
-              className="tabular-nums font-mono text-[11px] font-semibold"
-            >
-              {metrics.refusedClinicsCount > 0
-                ? `synced · ${metrics.refusedClinicsCount} refused`
-                : metrics.pendingSyncClinicsCount > 0
-                  ? `synced · ${metrics.pendingSyncClinicsCount} pending`
-                  : `/ ${metrics.connectedClinicsCount} connected`}
-            </span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setStatusFilter('expiring')}
-          className="console-panel relative overflow-hidden rounded-xl p-4 text-left transition hover:opacity-95"
-        >
-          <span
-            style={{ backgroundColor: 'var(--warn-main)' }}
-            className="absolute inset-x-0 top-0 h-[3px]"
-          />
-          <div className="flex items-center justify-between gap-2">
-            <span
-              style={{ color: 'var(--text-secondary)' }}
-              className="font-mono text-[10px] font-bold tracking-wider uppercase"
-            >
-              Expiring &le; 14d
-            </span>
-            <Clock
-              style={{ color: 'var(--warn-main)' }}
-              className="h-4 w-4 shrink-0"
-            />
-          </div>
-          <div className="mt-2 flex items-baseline gap-1.5">
-            <span className="tabular-nums text-2xl font-bold tracking-tight">
-              {metrics.expiringSoonCount}
-            </span>
-            <span
-              style={{ color: 'var(--text-secondary)' }}
-              className="font-mono text-xs"
-            >
-              renew soon
-            </span>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setStatusFilter('revoked')}
-          className="console-panel relative overflow-hidden rounded-xl p-4 text-left transition hover:opacity-95"
-        >
-          <span
-            style={{ backgroundColor: 'var(--danger-main)' }}
-            className="absolute inset-x-0 top-0 h-[3px]"
-          />
-          <div className="flex items-center justify-between gap-2">
-            <span
-              style={{ color: 'var(--text-secondary)' }}
-              className="font-mono text-[10px] font-bold tracking-wider uppercase"
-            >
-              Paused / Lapsed
-            </span>
-            <ShieldAlert
-              style={{ color: 'var(--danger-main)' }}
-              className="h-4 w-4 shrink-0"
-            />
-          </div>
-          <div className="mt-2 flex items-baseline gap-1.5">
-            <span className="tabular-nums text-2xl font-bold tracking-tight">
-              {metrics.revokedOrExpiredCount}
-            </span>
-            <span
-              style={{ color: 'var(--text-secondary)' }}
-              className="font-mono text-xs"
-            >
-              read-only
-            </span>
-          </div>
-        </button>
-      </div>
+      <FleetMetricTiles metrics={metrics} onSelectFilter={setStatusFilter} />
 
       {/* 2. Subscriptions Registry Card (neutral.white #fcfaf5) */}
       <section className="console-panel overflow-hidden rounded-2xl">
