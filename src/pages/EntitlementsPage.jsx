@@ -30,6 +30,7 @@ import ErrorAlert from '../components/ErrorAlert.jsx';
 import RichNotesField from '../components/RichNotesField.jsx';
 import RichNotesView from '../components/RichNotesView.jsx';
 import SlideOverDrawer from '../components/SlideOverDrawer.jsx';
+import SyncStateBadge from '../components/entitlements/SyncStateBadge.jsx';
 import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import {
   MYCLINIC_TIER_ENTITLEMENTS,
@@ -46,66 +47,10 @@ import {
   validateRoutingUpdateInput,
 } from '../lib/entitlements.mjs';
 import { errorLine, rememberError } from '../lib/errors.mjs';
-
-/**
- * Client Sync badge palette (UI Component Mapping Guide).
- *
- * `error` is the schema-v3 `Refused` state: the client IS calling Central and is
- * being turned away, which is a fault, not a neutral "not connected yet".
- */
-function buildSyncPillStyle(syncState) {
-  if (syncState.tone === 'ok') {
-    return {
-      badgeClass: 'badge-success',
-      dotColor: 'var(--ok-main)',
-      textColor: 'var(--ok-text)',
-    };
-  }
-  if (syncState.tone === 'warn') {
-    return {
-      badgeClass: 'badge-warning',
-      dotColor: 'var(--warn-main)',
-      textColor: 'var(--warn-text)',
-    };
-  }
-  if (syncState.tone === 'error') {
-    return {
-      badgeClass: 'badge-error',
-      dotColor: 'var(--danger-main)',
-      textColor: 'var(--danger-text)',
-    };
-  }
-  return {
-    badgeClass: 'console-well',
-    dotColor: 'var(--text-muted)',
-    textColor: 'var(--text-secondary)',
-  };
-}
-
-function buildStandingPillStyle(standing) {
-  if (standing.isOperational) {
-    return {
-      bg: 'var(--ok-soft)',
-      border: 'var(--ok-border)',
-      text: 'var(--ok-text)',
-      dotColor: 'var(--ok-main)',
-    };
-  }
-  if (standing.stateCode === 'KEY_KILLED') {
-    return {
-      bg: 'var(--danger-soft)',
-      border: 'var(--danger-border)',
-      text: 'var(--danger-text)',
-      dotColor: 'var(--danger-main)',
-    };
-  }
-  return {
-    bg: 'var(--warn-soft)',
-    border: 'var(--warn-border)',
-    text: 'var(--warn-text)',
-    dotColor: 'var(--warn-main)',
-  };
-}
+import {
+  buildStandingPillStyle,
+  buildSyncPillStyle,
+} from '../lib/status-palette.mjs';
 
 export default function EntitlementsPage({
   backend,
@@ -1019,15 +964,7 @@ export default function EntitlementsPage({
                             {seatSpec.plan}
                           </span>
 
-                          <span
-                            className={`${syncPill.badgeClass} inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold`}
-                          >
-                            <span
-                              style={{ backgroundColor: syncPill.dotColor }}
-                              className="h-1.5 w-1.5 rounded-full"
-                            />
-                            {syncState.badgeLabel}
-                          </span>
+                          <SyncStateBadge syncState={syncState} variant="card" />
                         </div>
 
                         <button
@@ -1217,17 +1154,7 @@ export default function EntitlementsPage({
                         {/* Col 2: Live Client Connection & Plan Sync Receipt */}
                         <td className="px-3 py-3.5 whitespace-nowrap">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span
-                              className={`${
-                                syncPill.badgeClass
-                              } inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold`}
-                            >
-                              <span
-                                style={{ backgroundColor: syncPill.dotColor }}
-                                className="h-1.5 w-1.5 rounded-full"
-                              />
-                              {syncState.badgeLabel}
-                            </span>
+                            <SyncStateBadge syncState={syncState} variant="row" />
 
                             <span className="console-well inline-block rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold">
                               {identity.modeLabel}
