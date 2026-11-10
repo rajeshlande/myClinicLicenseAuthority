@@ -2,6 +2,23 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [2.3.1] - 2026-11-10
+
+### Changed
+- **The 2,026-line `EntitlementsPage.jsx` god component is split (Level 2 of the SOLID remediation plan).** 548 lines of render logic moved into five focused modules under a new `src/components/entitlements/` folder; the page keeps the record, the filters, the CSV export and the drawers, and is now 1,478 lines:
+  - `SyncStateBadge.jsx` — the Client Sync pill, one source for both the 375px card and the 1440px row (`card` / `row` variants keep the exact shipped dot gaps).
+  - `RefusalEvidenceCard.jsx` — the schema-v3 evidence: error card with the masked claim the client sent, the pinned values and the fix; neutral 24h well otherwise.
+  - `FleetMetricTiles.jsx` — the 4-metric zone strip; the three filter tiles stay buttons, the sync gauge stays read-only, through one internal `MetricTile`.
+  - `ClinicCardMobile.jsx` / `ClinicRowDesktop.jsx` — the two registry renderings; each derives its own standing / identity / sync verdict / seat spec from the pure lib layer and takes exactly three verbs (inspect, client SDK, kill-switch).
+- **Palette policy left the page.** `src/lib/status-palette.mjs` now owns `buildSyncPillStyle()` / `buildStandingPillStyle()` behind a closed `STATUS_BADGE_CLASSES` vocabulary, so the UI Component Mapping Guide is written down once and a status can never invent a surface class.
+
+### Added
+- `tests/status-palette.test.mjs` (5 suites): exact tone→surface mapping, neutral fallback for any unrecognised tone, the closed-vocabulary fuzz, standing tones, and a contract test that every surface class and every `var(--token)` the palettes reference is actually declared in `src/index.css`.
+- **A deterministic browser gate for refactors**: a scratch harness mounts the real page against a mock Supabase client (fixed-offset fixtures so every relative label is byte-stable) and a fingerprint of the painted DOM — tags, classes, inline styles, resolved computed colours, integer geometry, overflow — is captured before and after each slice at 375×812 and 1440×900, list and drawer. All four slices committed with **0 fingerprint diffs and pixel-identical screenshots**; the gate caught one real `tabular-nums` class drift during slice 3 and blocked the commit until fixed. Harness noise floor measured on identical code: ≤32 glyph-edge pixels.
+
+### Notes
+- Pure refactor: no behaviour, markup, palette, layout, schema, RPC or client-contract change. `SCHEMA_VERSION` stays 3. Proven by the fingerprint gate (0 diffs across all four slices), 49/49 unit tests (44 + 5 new), 26/26 contribution rules, clean build + `check:pages`.
+
 ## [2.3.0] - 2026-11-09
 
 ### Added
