@@ -30,6 +30,7 @@ import ErrorAlert from '../components/ErrorAlert.jsx';
 import RichNotesField from '../components/RichNotesField.jsx';
 import RichNotesView from '../components/RichNotesView.jsx';
 import SlideOverDrawer from '../components/SlideOverDrawer.jsx';
+import RefusalEvidenceCard from '../components/entitlements/RefusalEvidenceCard.jsx';
 import SyncStateBadge from '../components/entitlements/SyncStateBadge.jsx';
 import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import {
@@ -1556,9 +1557,6 @@ export default function EntitlementsPage({
             {(() => {
               const syncState = describeClientSyncState(inspectedRow);
               const syncPill = buildSyncPillStyle(syncState);
-              const refusal = syncState.refusal;
-              const isRefused = syncState.state === 'refused';
-              const pinned = describeClinicIdentity(inspectedRow);
               return (
                 <div className="space-y-2.5">
                   <div
@@ -1589,42 +1587,11 @@ export default function EntitlementsPage({
 
                   {/* Schema v3 refused-attempt evidence: what the client actually
                       sent, and the one action that clears it. */}
-                  {isRefused && refusal ? (
-                    <div className="badge-error space-y-1 rounded-xl px-4 py-3">
-                      <div className="font-mono text-[10px] font-bold tracking-wider uppercase">
-                        Refused {refusal.ago} · {refusal.code}
-                        {refusal.count24h > 1
-                          ? ` · ${refusal.count24h} attempts in 24h`
-                          : ''}
-                      </div>
-                      {refusal.claim ? (
-                        <p className="break-words font-mono text-[11px]">
-                          Client sent {refusal.claim}
-                        </p>
-                      ) : null}
-                      <p
-                        style={{ color: 'var(--danger-text)' }}
-                        className="break-words font-mono text-[11px] opacity-95"
-                      >
-                        Pinned here: {pinned.primary}
-                        {pinned.secondary ? ` · ${pinned.secondary}` : ''}
-                      </p>
-                      <p className="text-[11px] leading-relaxed">
-                        {refusal.hint}
-                      </p>
-                    </div>
-                  ) : refusal && refusal.count24h > 0 ? (
-                    <div className="console-well rounded-xl px-4 py-2.5">
-                      <p
-                        style={{ color: 'var(--text-secondary)' }}
-                        className="break-words font-mono text-[10.5px]"
-                      >
-                        {refusal.count24h} refused attempt
-                        {refusal.count24h === 1 ? '' : 's'} in the last 24h ·
-                        latest {refusal.code} {refusal.ago}
-                      </p>
-                    </div>
-                  ) : null}
+                  <RefusalEvidenceCard
+                    refused={syncState.state === 'refused'}
+                    refusal={syncState.refusal}
+                    pinned={describeClinicIdentity(inspectedRow)}
+                  />
                 </div>
               );
             })()}
