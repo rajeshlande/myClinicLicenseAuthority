@@ -1,7 +1,7 @@
 {
   "name": "myclinic-license-authority",
   "private": true,
-  "version": "2.3.1",
+  "version": "2.4.0",
   "type": "module",
   "description": "Hunter Green & Vanilla Cream Editorial Control Plane for Keyless myClinic Subscription Auto-Sync.",
   "engines": {

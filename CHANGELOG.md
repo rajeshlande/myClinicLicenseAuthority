@@ -2,6 +2,21 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [2.4.0] - 2026-11-10
+
+### Added
+- **`contract/tier-contract.json` — one versioned source of the cross-repo vocabulary (Level 3 of the SOLID remediation plan).** Contract v1, published against schema 3, holds: the five tier ids with their myClinic plan, seat limits, label and hint; the fallback the SQL `case` falls through to; the validator's no-lease / local-mode defaults; and all ten refusal codes `sync_clinic_subscription()` can answer with, each with its operator label and fix hint. Generated verbatim from the shipped v2.3.1 maps and published with each release plus its sha256 (`36c6af2b…` for v1).
+- **`src/lib/tier-contract.mjs`** derives `MYCLINIC_TIER_ENTITLEMENTS`, `TIER_CATALOG`, `VALID_TIERS`, `SYNC_REFUSAL_HINTS` and `VALIDATOR_DEFAULTS` from the contract as deep-frozen views; `entitlements.mjs` re-exports them so every import site is untouched. The dead Tailwind `badgeClass` field of the old catalog is gone.
+- **`tests/tier-contract.test.mjs`** drifts in three directions: derived views deep-equal v2.3.1 mirrors; `supabase/schema.sql`'s `case v_sub.tier` is parsed branch-by-branch (explicit branches *and* the `else` fallback) and compared per tier against the contract; and a definition-site scan over `git ls-files` fails if a seat limit, tier→plan literal or refusal-code object reappears anywhere except the contract and the test mirrors.
+- **Client companion** (workspace deliverables, not Central code): `myclinic-tier-contract-v1.json` + `.sha256`, and `CLIENT-CONTRACT-PATCH.md` — the agent-ready patch that vendors the contract into `rajeshlande/myClinic`, derives `CENTRAL_TIER_TO_PLAN` from it, and adds the client-side drift test.
+
+### Changed
+- **Two more duplicate definition sites found and collapsed.** The definition-site scan immediately caught what the original SOLID audit missed: five identical no-lease `{tier:'solo', plan:'solo'}` triplets in `src/lib/auto-sync-client.mjs` and two degraded-license `plan:'solo'` literals in `src/lib/pages-client-validator.mjs`. Both now read `VALIDATOR_DEFAULTS` from the contract.
+- **`tests/myclinic-compat.test.mjs`** reads the contract and pins the myClinic **v1.35.6** wire mirrors (`plans.mjs:115`, `central-sync.mjs:96-120`): tier→plan and seats parity, code coverage, and the two gaps the companion patch closes — v1.35.6 can neither decode nor explain `SUBSCRIPTION_INACTIVE` (`CENTRAL_CODES` lacks the code entirely, not just its note).
+
+### Notes
+- No wire, schema, RPC or rendering change: the browser fingerprint at 375×812 and 1440×900 is identical to v2.3.1 (0 diffs), and the contract's values are byte-identical to the v2.3.1 maps by construction. `SCHEMA_VERSION` stays 3; `contract_version` is the new axis for vocabulary changes. Gates: 54/54 unit tests, 26/26 contribution rules, clean build + `check:pages`, PostgreSQL suite re-run.
+
 ## [2.3.1] - 2026-11-10
 
 ### Changed
