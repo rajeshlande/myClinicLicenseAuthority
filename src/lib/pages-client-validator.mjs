@@ -1,4 +1,5 @@
 import { verifyCapabilityJwt } from './crypto-rs256.mjs';
+import { VALIDATOR_DEFAULTS } from './tier-contract.mjs';
 import { MYCLINIC_TIER_ENTITLEMENTS } from './entitlements.mjs';
 
 export const DEFAULT_PAGES_CACHE_KEY = 'myclinic.authority.rs256.jwt';
@@ -80,7 +81,7 @@ export async function verifyCachedPagesLicense({
       reason: 'No cached RS256 capability token in browser storage.',
       myClinicLicense: {
         status: 'expired',
-        plan: 'solo',
+        plan: VALIDATOR_DEFAULTS.no_lease.plan,
         interval: 'yearly',
         current_period_end: null,
         collection_ref: 'LICENSE_CACHE_MISSING',
@@ -102,7 +103,7 @@ export async function verifyCachedPagesLicense({
       reason: check.reason,
       myClinicLicense: {
         status: 'expired',
-        plan: 'solo',
+        plan: VALIDATOR_DEFAULTS.no_lease.plan,
         interval: 'yearly',
         current_period_end: null,
         collection_ref: check.code,

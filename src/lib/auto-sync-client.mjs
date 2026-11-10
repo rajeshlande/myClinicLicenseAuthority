@@ -16,6 +16,8 @@
  *     offline grace (`grace_until <= expires_at`) during genuine network outages.
  */
 
+import { VALIDATOR_DEFAULTS } from './tier-contract.mjs';
+
 export const DEFAULT_SYNC_STORAGE_KEY = 'myclinic.central.subscription.v2';
 export const DEFAULT_DEVICE_ID_KEY = 'myclinic.central.device_id.v2';
 export const DEFAULT_AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -187,8 +189,8 @@ export async function readCachedCentralLease({
       source: 'cache_miss',
       status: 'unlicensed',
       code: 'CACHE_EMPTY',
-      tier: 'solo',
-      plan: 'solo',
+      tier: VALIDATOR_DEFAULTS.no_lease.tier,
+      plan: VALIDATOR_DEFAULTS.no_lease.plan,
       reason: 'Clinic has not synced subscription status yet.',
     };
   }
@@ -203,8 +205,8 @@ export async function readCachedCentralLease({
       source: 'cache_corrupt',
       status: 'unlicensed',
       code: 'CACHE_TAMPERED',
-      tier: 'solo',
-      plan: 'solo',
+      tier: VALIDATOR_DEFAULTS.no_lease.tier,
+      plan: VALIDATOR_DEFAULTS.no_lease.plan,
       reason: 'Cached subscription state was corrupted.',
     };
   }
@@ -222,8 +224,8 @@ export async function readCachedCentralLease({
       source: 'cache_tampered',
       status: 'unlicensed',
       code: 'CACHE_TAMPERED',
-      tier: 'solo',
-      plan: 'solo',
+      tier: VALIDATOR_DEFAULTS.no_lease.tier,
+      plan: VALIDATOR_DEFAULTS.no_lease.plan,
       reason: 'Cached subscription seal did not match this clinic identity.',
     };
   }
@@ -239,8 +241,8 @@ export async function readCachedCentralLease({
       source: 'cache_expired',
       status: 'expired',
       code: 'SUBSCRIPTION_EXPIRED',
-      tier: 'solo',
-      plan: 'solo',
+      tier: VALIDATOR_DEFAULTS.no_lease.tier,
+      plan: VALIDATOR_DEFAULTS.no_lease.plan,
       expires_at: parsed.lease.expires_at ?? null,
       reason: 'Subscription expired. Connect to the internet after renewing.',
     };
@@ -252,8 +254,8 @@ export async function readCachedCentralLease({
       source: 'grace_expired',
       status: 'offline_expired',
       code: 'OFFLINE_GRACE_EXPIRED',
-      tier: 'solo',
-      plan: 'solo',
+      tier: VALIDATOR_DEFAULTS.no_lease.tier,
+      plan: VALIDATOR_DEFAULTS.no_lease.plan,
       expires_at: parsed.lease.expires_at ?? null,
       reason: '7-day offline grace window elapsed. Reconnect briefly to auto-sync.',
     };
@@ -576,7 +578,11 @@ async function sealOf(lease, origin, email, deviceId) {
 
 export async function syncMyClinicSubscription(ownerEmail = '') {
   if (!CENTRAL_URL || !CENTRAL_ANON) {
-    return { allowed: true, status: 'local_mode', plan: 'growth' };
+    return {
+      allowed: true,
+      status: 'local_mode',
+      plan: VALIDATOR_DEFAULTS.local_mode.plan,
+    };
   }
   if (CENTRAL_ANON.startsWith('sb_secret_')) {
     throw new Error('Never put sb_secret_ in VITE_CENTRAL_SUPABASE_ANON_KEY');

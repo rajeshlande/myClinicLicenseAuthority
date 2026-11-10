@@ -1,61 +1,23 @@
+import {
+  MYCLINIC_TIER_ENTITLEMENTS,
+  SYNC_REFUSAL_HINTS,
+  TIER_CATALOG,
+  VALID_TIERS,
+} from './tier-contract.mjs';
+
+// Re-exported so every existing import site keeps working; the definitions
+// live in contract/tier-contract.json and are derived by lib/tier-contract.mjs.
+export {
+  MYCLINIC_TIER_ENTITLEMENTS,
+  SYNC_REFUSAL_HINTS,
+  TIER_CATALOG,
+  VALID_TIERS,
+};
+
 const DAY_MS = 86_400_000;
 
 export const EXPECTED_TOKEN_ISSUER = 'myclinic-license-authority';
 export const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7; // 7-day offline capability window
-
-export const TIER_CATALOG = Object.freeze([
-  {
-    value: 'standard',
-    label: 'Standard · Default Node',
-    badgeClass: 'bg-slate-100 text-slate-800 ring-slate-300',
-    hint: 'Baseline single-site self-hosted installation (5 doctors · 3 front-desk)',
-  },
-  {
-    value: 'solo',
-    label: 'myClinic Solo · 1 Doctor',
-    badgeClass: 'bg-sky-50 text-sky-800 ring-sky-200',
-    hint: '1 doctor · 1 front-desk seat · 1 branch',
-  },
-  {
-    value: 'growth',
-    label: 'myClinic Growth · 5 Doctors',
-    badgeClass: 'bg-indigo-50 text-indigo-800 ring-indigo-200',
-    hint: '5 doctors · 3 front-desk seats · 1 branch',
-  },
-  {
-    value: 'chain',
-    label: 'myClinic Chain · Multi-Branch',
-    badgeClass: 'bg-violet-50 text-violet-800 ring-violet-200',
-    hint: 'Unlimited doctors, front-desk seats & branches',
-  },
-  {
-    value: 'enterprise',
-    label: 'Enterprise · Dedicated SLA',
-    badgeClass: 'bg-amber-50 text-amber-900 ring-amber-300',
-    hint: 'Unlimited seats, multi-cluster HA & priority SLA',
-  },
-]);
-
-export const MYCLINIC_TIER_ENTITLEMENTS = Object.freeze({
-  solo: { plan: 'solo', doctors: 1, frontdesk: 1, branches: 1 },
-  standard: { plan: 'growth', doctors: 5, frontdesk: 3, branches: 1 },
-  growth: { plan: 'growth', doctors: 5, frontdesk: 3, branches: 1 },
-  chain: { plan: 'chain', doctors: null, frontdesk: null, branches: null },
-  enterprise: { plan: 'chain', doctors: null, frontdesk: null, branches: null },
-});
-
-export const VALID_TIERS = new Set(TIER_CATALOG.map((t) => t.value));
-
-export function getTierMeta(tierValue) {
-  return (
-    TIER_CATALOG.find((item) => item.value === tierValue) ?? {
-      value: String(tierValue ?? 'standard'),
-      label: String(tierValue ?? 'standard'),
-      badgeClass: 'bg-slate-100 text-slate-800 ring-slate-300',
-      hint: 'Custom tier',
-    }
-  );
-}
 
 export function getDaysRemaining(isoString, now = new Date()) {
   if (!isoString) return null;
@@ -335,48 +297,6 @@ export function computeStanding(row, now = new Date()) {
  * refused every time". These hints are the operator-facing half of that: the code
  * alone (`SUBSCRIPTION_NOT_FOUND`) says what happened, the hint says what to do.
  */
-export const SYNC_REFUSAL_HINTS = Object.freeze({
-  SUBSCRIPTION_NOT_FOUND: {
-    label: 'No match',
-    hint: 'The client called but nothing matched. Compare the email and Clinic URL it claimed with the pinned values — on a dual-pinned row BOTH must match exactly.',
-  },
-  ORIGIN_MISMATCH: {
-    label: 'Origin blocked',
-    hint: 'The browser Origin header disagreed with the claimed Clinic URL. Open the app from its real deployed address, not a proxy, tunnel or preview host.',
-  },
-  INVALID_ORIGIN: {
-    label: 'Bad Clinic URL',
-    hint: 'The claimed Clinic URL is not scheme + host. It must look like https://clinic.github.io — no path, no trailing slash.',
-  },
-  INVALID_EMAIL: {
-    label: 'Bad owner email',
-    hint: 'The claimed owner email is malformed. Fix the owner row in the clinic app, then let it re-sync.',
-  },
-  MISSING_IDENTITY: {
-    label: 'No identity sent',
-    hint: 'The client sent neither an owner email nor a Clinic URL. Sign in as the clinic owner, or pin a URL-only subscription.',
-  },
-  RATE_LIMITED: {
-    label: 'Rate limited',
-    hint: 'Too many calls from this network: Central allows 60/min and 15 unmatched lookups per 5 min. Wait, then re-check.',
-  },
-  SEAT_LIMIT_REACHED: {
-    label: 'Seats full',
-    hint: 'Every deployment seat is taken. Raise the device limit or revoke a stale node.',
-  },
-  SUBSCRIPTION_PAUSED: {
-    label: 'Paused',
-    hint: 'The kill-switch is on for this subscription. Resume it and the client writes again on its next sync.',
-  },
-  SUBSCRIPTION_EXPIRED: {
-    label: 'Expired',
-    hint: 'The contract end date has passed. Renew the subscription.',
-  },
-  SUBSCRIPTION_INACTIVE: {
-    label: 'Not active',
-    hint: 'The subscription status is not active. Set the status back to active.',
-  },
-});
 
 /**
  * The latest refusal Central recorded for this subscription, or `null`.
