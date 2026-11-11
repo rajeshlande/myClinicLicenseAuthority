@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import ActivityTimeline from '../components/entitlements/ActivityTimeline.jsx';
 import { fetchFleetActivity } from '../lib/activity.mjs';
+import { readSubscriptionsLite } from '../lib/reads.mjs';
 import { rememberError } from '../lib/errors.mjs';
 
 /**
@@ -24,9 +25,7 @@ export default function ActivityPage({ backend }) {
       try {
         const [activity, subs] = await Promise.all([
           fetchFleetActivity(supabase, 100),
-          supabase
-            .from('subscriptions')
-            .select('id, customer_email, allowed_origin'),
+          readSubscriptionsLite(supabase),
         ]);
         if (activity.error) throw activity.error;
         const map = {};

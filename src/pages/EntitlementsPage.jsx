@@ -53,6 +53,7 @@ import {
   validateRoutingUpdateInput,
 } from '../lib/entitlements.mjs';
 import { errorLine, rememberError } from '../lib/errors.mjs';
+import { readAllLicenses } from '../lib/reads.mjs';
 import {
   buildStandingPillStyle,
   buildSyncPillStyle,
@@ -181,10 +182,7 @@ export default function EntitlementsPage({
       setErrorBanner(null);
 
       try {
-        const { data, error } = await supabase
-          .from('admin_license_view')
-          .select('*')
-          .order('created_at', { ascending: false });
+        const { data, error } = await readAllLicenses(supabase);
 
         if (error) throw error;
         setRecords(Array.isArray(data) ? data : []);

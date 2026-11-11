@@ -12,6 +12,7 @@ import {
 import { logClinicActivity } from '../lib/activity.mjs';
 import { buildInvoicePdfBytes } from '../lib/invoice-pdf.mjs';
 import { rememberError } from '../lib/errors.mjs';
+import { readSubscriptionsLite } from '../lib/reads.mjs';
 
 const STATUS_META = {
   draft: { label: 'Draft', badge: 'badge-info' },
@@ -57,7 +58,7 @@ export default function InvoicesPage({ backend, operatorEmail = '' }) {
       try {
         const [inv, subs] = await Promise.all([
           supabase.from('invoices').select('*').order('created_at', { ascending: false }).limit(200),
-          supabase.from('subscriptions').select('id, customer_email, allowed_origin'),
+          readSubscriptionsLite(supabase),
         ]);
         if (inv.error) throw inv.error;
         const map = {};

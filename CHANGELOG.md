@@ -2,6 +2,41 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [3.1.0] - 2026-11-11
+
+### Added
+- **Operator Profile page** (`#/profile`, nav group *Operator*, tappable topbar
+  avatar on every breakpoint): identity card with copy-email, console version
+  / schema contract / origin rows, theme switch, **shell-cache control**
+  (service-worker status pill plus "Clear shell cache & reload" — unregister +
+  purge caches, the in-app cure for a stale UI / the Level-1 gate), security
+  posture checklist, and sign-out.
+- `src/lib/coalesce.mjs` + `src/lib/reads.mjs`: in-flight read coalescing.
+  Concurrent callers of the same read (subscription identity map, fleet
+  registry, fleet/clinic activity timelines) now share ONE PostgREST round
+  trip; keys drop on settle, so sequential navigations still refetch fresh —
+  no TTL, no stale reads. 8 new unit tests (5 coalesce + 3 reads).
+
+### Changed
+- **Mobile bottom bar: 7 icon cells -> 4.** Clinics / Activity / Invoices stay
+  on the bar; Guide, Client SDK, Sync Lab, Settings and Profile fold behind a
+  single *More* cell that opens the grouped sheet (and lights up cyan whenever
+  a sheet-only route is active). Measured 4 cells at 375x812 with zero
+  horizontal overflow on dashboard, sheet, profile and invoices.
+- **Service worker v8: hashed `/assets/` output is now cache-first.** v7 ran
+  network-first for everything same-origin, so every route change re-downloaded
+  each lazy chunk (visible in DevTools as a wall of `Fetch finished loading`
+  lines attributed to sw.js). Immutable hashed assets are served from cache
+  after first visit; shell + navigations stay network-first with offline
+  fallback; the zero-trust exclusion of REST/Auth/Edge is untouched.
+
+### Notes
+- Gates: 84/84 tests, 26/26 contribution rules, security 20/20, clean build +
+  check:pages; browser harness asserts the 4-cell bar and zero overflow at
+  375x812 and 1440x900 on every touched route, zero pageerrors.
+- Sync wire shape, tier contract and schema v4 are unchanged — no client
+  release and no migration needed for this slice.
+
 ## [3.0.0] - 2026-11-11
 
 ### Added

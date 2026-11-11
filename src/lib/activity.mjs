@@ -13,6 +13,8 @@
 // "done, but the log is unavailable" instead of pretending history exists.
 // -----------------------------------------------------------------------------
 
+import { coalesce } from './coalesce.mjs';
+
 export const ACTIVITY_EVENT_KINDS = Object.freeze([
   'onboarded',
   'activated',
@@ -91,22 +93,26 @@ export async function logClinicActivity(supabase, entry) {
 }
 
 /** One clinic's timeline, newest first. */
-export async function fetchClinicActivity(supabase, subscriptionId, limit = 50) {
-  const { data, error } = await supabase
-    .from('clinic_activity_log')
-    .select('*')
-    .eq('subscription_id', subscriptionId)
-    .order('at', { ascending: false })
-    .limit(limit);
-  return { rows: data ?? [], error: error ?? null };
+export function fetchClinicActivity(supabase, subscriptionId, limit = 50) {
+  return coalesce(`clinic-activity-${subscriptionId}-${limit}`, async () => {
+    const { data, error } = await supabase
+      .from('clinic_activity_log')
+      .select('*')
+      .eq('subscription_id', subscriptionId)
+      .order('at', { ascending: false })
+      .limit(limit);
+    return { rows: data ?? [], error: error ?? null };
+  });
 }
 
 /** Fleet-wide timeline, newest first (fleet activity page). */
-export async function fetchFleetActivity(supabase, limit = 100) {
-  const { data, error } = await supabase
-    .from('clinic_activity_log')
-    .select('*')
-    .order('at', { ascending: false })
-    .limit(limit);
-  return { rows: data ?? [], error: error ?? null };
+export function fetchFleetActivity(supabase, limit = 100) {
+  return coalesce(`fleet-activity-${limit}`, async () => {
+    const { data, error } = await supabase
+      .from('clinic_activity_log')
+      .select('*')
+      .order('at', { ascending: false })
+      .limit(limit);
+    return { rows: data ?? [], error: error ?? null };
+  });
 }

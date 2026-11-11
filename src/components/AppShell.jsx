@@ -10,10 +10,12 @@ import {
   LogOut,
   Menu,
   Moon,
+  MoreHorizontal,
   Receipt,
   Search,
   Settings,
   Sun,
+  UserRound,
   WifiOff,
   X,
 } from 'lucide-react';
@@ -74,6 +76,13 @@ const NAV_ITEMS = [
     icon: Settings,
     section: 'System',
   },
+  {
+    id: 'profile',
+    label: 'Operator Profile',
+    shortLabel: 'Profile',
+    icon: UserRound,
+    section: 'Operator',
+  },
 ];
 
 // Grouped in first-appearance order so the sidebar reads like the reference
@@ -117,7 +126,17 @@ const ROUTE_TITLES = {
     crumb: 'Account / Endpoint & Diagnostics',
     title: 'Settings & 3-Point Health',
   },
+  profile: {
+    crumb: 'Account / Operator Profile',
+    title: 'Operator Profile',
+  },
 };
+
+// The floating mobile bar used to mirror ALL seven nav items, which crowded
+// six icon+label cells into 375px. Slice 9 keeps the three daily destinations
+// on the bar and folds everything else (Guide, SDK, Lab, Settings, Profile)
+// into the sheet behind a single "More" cell.
+const MOBILE_TAB_IDS = ['dashboard', 'activity', 'invoices'];
 
 function NavGroupList({ activeRoute, onNavigate }) {
   return (
@@ -410,18 +429,24 @@ export function AppShell({
                 )}
               </button>
 
-              {operatorEmail ? (
-                <span
-                  title={operatorEmail}
-                  style={{
-                    backgroundColor: 'var(--accent-badge-bg)',
-                    color: 'var(--accent-badge-text)',
-                  }}
-                  className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold lg:flex"
-                >
-                  {operatorEmail.replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'CA'}
-                </span>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => onNavigate('profile')}
+                aria-label="Open operator profile"
+                title={operatorEmail || 'Operator profile'}
+                style={{
+                  backgroundColor: 'var(--accent-badge-bg)',
+                  color: 'var(--accent-badge-text)',
+                }}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+              >
+                {operatorEmail
+                  ? (
+                      operatorEmail.replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() ||
+                      'CA'
+                    )
+                  : <UserRound className="h-4 w-4" />}
+              </button>
             </div>
           </header>
 
@@ -495,16 +520,17 @@ export function AppShell({
       {/* Floating Mobile Bottom Navigation Bar */}
       <nav
         aria-label="Mobile navigation"
-        className="console-shell fixed inset-x-3 bottom-3 z-30 grid grid-cols-6 gap-1 rounded-2xl p-1 lg:hidden"
+        className="console-shell fixed inset-x-3 bottom-3 z-30 grid grid-cols-4 gap-1 rounded-2xl p-1 lg:hidden"
       >
-        {NAV_ITEMS.map((item) => {
+        {MOBILE_TAB_IDS.map((id) => {
+          const item = NAV_ITEMS.find((entry) => entry.id === id);
           const Icon = item.icon;
-          const active = activeRoute === item.id;
+          const active = activeRoute === id;
           return (
             <button
-              key={item.id}
+              key={id}
               type="button"
-              onClick={() => onNavigate(item.id)}
+              onClick={() => onNavigate(id)}
               aria-current={active ? 'page' : undefined}
               style={
                 active
@@ -523,6 +549,26 @@ export function AppShell({
             </button>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen(true)}
+          aria-label="More navigation"
+          aria-current={
+            MOBILE_TAB_IDS.includes(activeRoute) ? undefined : 'page'
+          }
+          style={
+            MOBILE_TAB_IDS.includes(activeRoute)
+              ? { color: 'var(--text-secondary)' }
+              : {
+                  backgroundColor: 'var(--accent-badge-bg)',
+                  color: 'var(--accent-badge-text)',
+                }
+          }
+          className="flex flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[10px] font-semibold"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+          <span className="max-w-[64px] truncate">More</span>
+        </button>
       </nav>
     </div>
   );

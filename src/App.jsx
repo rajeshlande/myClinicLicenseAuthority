@@ -21,6 +21,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
 const NodeAgentPage = lazy(() => import('./pages/NodeAgentPage.jsx'));
 const SetupPage = lazy(() => import('./pages/SetupPage.jsx'));
 const ValidatorLabPage = lazy(() => import('./pages/ValidatorLabPage.jsx'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage.jsx'));
 
 const ROUTE_META = {
   dashboard: {
@@ -48,6 +49,11 @@ const ROUTE_META = {
     subtitle:
       'Central Supabase endpoint, 3-point health check, operator password, and sanitized diagnostics.',
   },
+  profile: {
+    title: 'Operator Profile',
+    subtitle:
+      'Session identity, console version, shell-cache control, and sign-out.',
+  },
 };
 
 function parseHashRoute(hash) {
@@ -62,6 +68,9 @@ function parseHashRoute(hash) {
   if (cleaned === 'node-agent' || cleaned === 'sdk') return 'node-agent';
   if (cleaned === 'simulator' || cleaned === 'validator-lab') return 'simulator';
   if (cleaned === 'setup' || cleaned === 'settings') return 'setup';
+  if (cleaned === 'profile' || cleaned === 'account' || cleaned === 'operator') {
+    return 'profile';
+  }
   return 'dashboard';
 }
 
@@ -350,6 +359,15 @@ export default function App() {
               session={session}
               onBackendChanged={refreshBackend}
               onSignOut={handleSignOut}
+            />
+          )}
+          {activeRoute === 'profile' && (
+            <ProfilePage
+              operatorEmail={session?.user?.email ?? ''}
+              theme={theme}
+              onToggleTheme={handleToggleTheme}
+              onSignOut={handleSignOut}
+              isOnline={isOnline}
             />
           )}
         </Suspense>
