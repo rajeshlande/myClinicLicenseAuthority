@@ -72,8 +72,15 @@ const LEGACY_HINT_LABELS = {
 test('the tier contract is internally consistent and versioned against the live schema', () => {
   assert.equal(TIER_CONTRACT.contract, 'myclinic.central.tier-contract');
   assert.equal(TIER_CONTRACT_VERSION, 1);
-  assert.equal(CONTRACT_CENTRAL_SCHEMA_VERSION, SCHEMA_VERSION);
+  // Contract v1 was published against Central schema 3 and is byte-pinned by
+  // myClinic v1.43.0. Schema v4 is purely additive (activity log + invoices;
+  // the tier case and the sync wire shape are untouched), so a published
+  // contract stays valid: the live schema may only move FORWARD of it.
   assert.equal(CONTRACT_CENTRAL_SCHEMA_VERSION, 3);
+  assert.ok(
+    SCHEMA_VERSION >= CONTRACT_CENTRAL_SCHEMA_VERSION,
+    'additive Central migrations must never invalidate a published contract',
+  );
 
   const tierIds = Object.keys(TIER_CONTRACT.tiers);
   assert.ok(tierIds.length >= 5, `expected the five shipped tiers, got ${tierIds}`);

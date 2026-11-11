@@ -1,5 +1,5 @@
 -- =============================================================================
--- myClinic License Authority — Single Source-of-Truth Database Schema (v3)
+-- myClinic License Authority — Single Source-of-Truth Database Schema (v4)
 --
 --   ██  THIS IS THE ONLY SQL FILE CENTRAL SUPABASE NEEDS.
 --   ██  NO EDGE FUNCTIONS OR RSA KEYS REQUIRED FOR KEYLESS AUTO-SYNC.
@@ -24,6 +24,10 @@
 --                                        sync_clinic_subscription()
 --   §5  zero-trust row-level security    FORCE RLS; anon has ZERO table access
 --                                        and can ONLY execute sync_clinic_subscription()
+--   §6  schema v4 additions              clinic_activity_log (append-only operational
+--                                        timeline), invoices (billing documents),
+--                                        admin_license_view latest-invoice columns,
+--                                        admin-only RLS for both new tables
 -- =============================================================================
 
 begin;
@@ -55,13 +59,14 @@ where not exists (select 1 from public.app_meta);
 insert into public.schema_migrations (version, name, app_version, summary) values
   (1, 'license-authority-core', '1.0.0', 'subscriptions, licenses, activated_machines hardware lock, admin_license_view, transactional provisioning RPC, admin RLS'),
   (2, 'keyless-auto-sync-core', '1.6.0', 'email + clinic URL dual routing, TOFU origin lock, per-IP SHA-256 rate limiter, hardened sync_clinic_subscription RPC, FORCE RLS'),
-  (3, 'refused-attempt-audit', '2.3.0', 'public.sync_attempts privacy-preserving refusal log (hashed IP + email, 30-day retention, admin-only), near-miss subscription attribution, admin_license_view last_refusal_* columns')
+  (3, 'refused-attempt-audit', '2.3.0', 'public.sync_attempts privacy-preserving refusal log (hashed IP + email, 30-day retention, admin-only), near-miss subscription attribution, admin_license_view last_refusal_* columns'),
+  (4, 'activity-log-and-invoices', '3.0.0', 'public.clinic_activity_log append-only per-clinic operational timeline (onboarded/paused/renewed/tier/routing/payment/invoice/notes events, admin-only), public.invoices billing documents (draft/issued/paid/void, jsonb line items, numeric totals), admin_license_view latest-invoice columns')
 on conflict (version) do nothing;
 
 update public.app_meta
-   set schema_version = greatest(schema_version, 3),
+   set schema_version = greatest(schema_version, 4),
        applied_at = now(),
-       notes = 'keyless auto-sync + dual email/origin routing + refused-attempt audit enabled';
+       notes = 'keyless auto-sync + dual email/origin routing + refused-attempt audit + activity log & invoices';
 
 create or replace function public.app_schema_version()
 returns integer
@@ -393,6 +398,19 @@ create trigger trg_enforce_max_machines_limit
 -- Note: v2 columns (`allowed_origin`, `lock_first_origin`) and the v3 refusal-audit
 -- columns are appended at the end so `CREATE OR REPLACE VIEW` upgrades live v1/v2
 -- installations cleanly in place.
+--
+-- Created only when absent: on a re-run the live view already carries the v4
+-- invoice columns appended by §6, and CREATE OR REPLACE VIEW may never drop
+-- columns — so §3 stands aside and §6 owns the definition from then on.
+do $viewbase$
+begin
+  if not exists (
+    select 1
+    from information_schema.views
+    where table_schema = 'public'
+      and table_name = 'admin_license_view'
+  ) then
+    execute $viewdef$
 create or replace view public.admin_license_view
 with (security_invoker = true)
 as
@@ -490,6 +508,9 @@ select
 from public.licenses l
 join public.subscriptions s
   on s.id = l.subscription_id;
+$viewdef$;
+  end if;
+end $viewbase$;
 
 -- =============================================================================
 -- §4 · ADMIN PROVISIONING, ROUTING & KEYLESS AUTO-SYNC RPCs
@@ -883,7 +904,7 @@ begin
     return jsonb_build_object(
       'ok', true,
       'sync_ready', true,
-      'schema_version', 3,
+      'schema_version', 4,
       'server_time', v_now
     );
   end if;
@@ -1435,5 +1456,265 @@ drop policy if exists sync_attempts_admin_read on public.sync_attempts;
 create policy sync_attempts_admin_read
   on public.sync_attempts for select to authenticated
   using (public.is_license_admin());
+
+-- =============================================================================
+-- §6 · SCHEMA v4 ADDITIONS — ACTIVITY LOG + INVOICES (additive, same transaction)
+--
+-- `clinic_activity_log` is the per-clinic operational timeline the Enrolliq
+-- console renders (onboarding, kill-switch flips, renewals, tier & routing
+-- changes, payments, invoice lifecycle, note edits). It is APPEND-ONLY by
+-- grant surface: authenticated admins receive SELECT + INSERT and nothing
+-- else, so neither a compromised operator token nor a console bug can rewrite
+-- or erase history. Corrections are new events, never edits — the same
+-- evidence-over-mutation stance as `sync_attempts`.
+--
+-- `invoices` holds billing documents (jsonb line items, numeric totals, a
+-- GST-style tax rate) behind full admin RLS: drafts become issued, paid or
+-- void through the console, and every transition is ALSO written to the
+-- activity log by the console writer (src/lib/activity.mjs, slice 5).
+-- =============================================================================
+
+create table if not exists public.clinic_activity_log (
+  id              uuid primary key default gen_random_uuid(),
+  subscription_id uuid not null
+                  references public.subscriptions(id) on delete cascade,
+  license_id      uuid
+                  references public.licenses(id) on delete set null,
+  event_kind      text not null
+                  check (
+                    event_kind in (
+                      'onboarded', 'activated', 'paused', 'resumed', 'renewed',
+                      'tier_changed', 'routing_changed', 'payment_received',
+                      'invoice_issued', 'invoice_paid', 'invoice_void',
+                      'notes_changed'
+                    )
+                  ),
+  actor           text not null default ''
+                  check (char_length(actor) <= 254),
+  payload         jsonb not null default '{}'::jsonb,
+  at              timestamptz not null default now()
+);
+
+create index if not exists idx_clinic_activity_log_subscription
+  on public.clinic_activity_log (subscription_id, at desc);
+
+create index if not exists idx_clinic_activity_log_license
+  on public.clinic_activity_log (license_id, at desc)
+  where license_id is not null;
+
+create index if not exists idx_clinic_activity_log_kind
+  on public.clinic_activity_log (event_kind, at desc);
+
+create table if not exists public.invoices (
+  id             uuid primary key default gen_random_uuid(),
+  invoice_number text not null unique
+                 check (char_length(btrim(invoice_number)) between 3 and 40),
+  subscription_id uuid not null
+                  references public.subscriptions(id) on delete cascade,
+  license_id     uuid
+                 references public.licenses(id) on delete set null,
+  status         text not null default 'draft'
+                 check (status in ('draft', 'issued', 'paid', 'void')),
+  currency       text not null default 'INR'
+                 check (currency ~ '^[A-Z]{3}$'),
+  line_items     jsonb not null default '[]'::jsonb,
+  tax_rate       numeric(5, 4) not null default 0
+                 check (tax_rate >= 0 and tax_rate <= 1),
+  subtotal       numeric(12, 2) not null default 0 check (subtotal >= 0),
+  tax_amount     numeric(12, 2) not null default 0 check (tax_amount >= 0),
+  total          numeric(12, 2) not null default 0 check (total >= 0),
+  issued_at      timestamptz,
+  due_at         timestamptz,
+  paid_at        timestamptz,
+  notes          text not null default ''
+                 check (char_length(notes) <= 4000),
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+create index if not exists idx_invoices_subscription
+  on public.invoices (subscription_id, created_at desc);
+
+create index if not exists idx_invoices_status
+  on public.invoices (status)
+  where status in ('draft', 'issued');
+
+drop trigger if exists trg_invoices_updated_at on public.invoices;
+create trigger trg_invoices_updated_at
+  before update on public.invoices
+  for each row execute function public.touch_updated_at();
+
+-- Extended flattened view: the v4 billing columns are appended LAST so live
+-- v1/v2/v3 installations upgrade in place (CREATE OR REPLACE VIEW may only add
+-- columns at the end). Declared here — not in §3 — because it references
+-- `invoices`, which does not exist until this section runs.
+create or replace view public.admin_license_view
+with (security_invoker = true)
+as
+select
+  l.id as license_id,
+  s.id as subscription_id,
+  s.customer_email,
+  l.license_key,
+  l.is_active,
+  s.status,
+  s.tier,
+  s.max_machines,
+  (
+    select count(*)::integer
+    from public.activated_machines am
+    where am.license_id = l.id
+  ) as registered_machines,
+  (
+    select max(am.last_heartbeat)
+    from public.activated_machines am
+    where am.license_id = l.id
+  ) as last_heartbeat,
+  s.expires_at,
+  s.notes,
+  s.created_at,
+  s.updated_at,
+  s.allowed_origin,
+  s.lock_first_origin,
+  (
+    select am.last_synced_tier
+    from public.activated_machines am
+    where am.license_id = l.id
+    order by am.last_heartbeat desc nulls last
+    limit 1
+  ) as last_synced_tier,
+  (
+    select am.last_synced_status
+    from public.activated_machines am
+    where am.license_id = l.id
+    order by am.last_heartbeat desc nulls last
+    limit 1
+  ) as last_synced_status,
+  (
+    select am.last_synced_expires_at
+    from public.activated_machines am
+    where am.license_id = l.id
+    order by am.last_heartbeat desc nulls last
+    limit 1
+  ) as last_synced_expires_at,
+  (
+    select sa.code
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_code,
+  (
+    select max(sa.attempted_at)
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+  ) as last_refusal_at,
+  (
+    select count(*)::integer
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+      and sa.attempted_at > (now() - interval '24 hours')
+  ) as refusals_24h,
+  (
+    select sa.claimed_email_hint
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_email_hint,
+  (
+    select sa.claimed_origin
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_origin,
+  (
+    select sa.browser_origin
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_browser_origin,
+  (
+    select i.invoice_number
+    from public.invoices i
+    where i.subscription_id = s.id
+    order by i.created_at desc, i.id desc
+    limit 1
+  ) as latest_invoice_number,
+  (
+    select i.status
+    from public.invoices i
+    where i.subscription_id = s.id
+    order by i.created_at desc, i.id desc
+    limit 1
+  ) as latest_invoice_status,
+  (
+    select i.total
+    from public.invoices i
+    where i.subscription_id = s.id
+    order by i.created_at desc, i.id desc
+    limit 1
+  ) as latest_invoice_total,
+  (
+    select count(*)::integer
+    from public.invoices i
+    where i.subscription_id = s.id
+      and i.status in ('draft', 'issued')
+  ) as open_invoice_count
+from public.licenses l
+join public.subscriptions s
+  on s.id = l.subscription_id;
+
+-- Zero-trust RLS for the v4 tables: FORCE everywhere, anon revoked entirely,
+-- authenticated admins gated by is_license_admin() policies. The activity log
+-- deliberately receives NO update/delete grant and NO update/delete policy:
+-- history is append-only for every role except the database owner.
+alter table public.clinic_activity_log enable row level security;
+alter table public.invoices enable row level security;
+
+alter table public.clinic_activity_log force row level security;
+alter table public.invoices force row level security;
+
+revoke all on public.clinic_activity_log from public, anon;
+revoke all on public.invoices from public, anon;
+
+grant select, insert on public.clinic_activity_log to authenticated;
+grant select, insert, update on public.invoices to authenticated;
+
+-- Real Supabase projects (and the scratch harness) carry ALTER DEFAULT
+-- PRIVILEGES that pre-grant ALL on every newly created table to the API
+-- roles. Close that hole explicitly: the append-only stance must be enforced
+-- by the ACL itself (a hard insufficient_privilege error), because RLS alone
+-- would merely filter an UPDATE/DELETE down to zero rows silently.
+revoke update, delete on public.clinic_activity_log from authenticated;
+revoke delete on public.invoices from authenticated;
+
+drop policy if exists clinic_activity_log_admin_read on public.clinic_activity_log;
+create policy clinic_activity_log_admin_read
+  on public.clinic_activity_log for select to authenticated
+  using (public.is_license_admin());
+
+drop policy if exists clinic_activity_log_admin_append on public.clinic_activity_log;
+create policy clinic_activity_log_admin_append
+  on public.clinic_activity_log for insert to authenticated
+  with check (public.is_license_admin());
+
+drop policy if exists invoices_admin_read on public.invoices;
+create policy invoices_admin_read
+  on public.invoices for select to authenticated
+  using (public.is_license_admin());
+
+drop policy if exists invoices_admin_insert on public.invoices;
+create policy invoices_admin_insert
+  on public.invoices for insert to authenticated
+  with check (public.is_license_admin());
+
+drop policy if exists invoices_admin_update on public.invoices;
+create policy invoices_admin_update
+  on public.invoices for update to authenticated
+  using (public.is_license_admin())
+  with check (public.is_license_admin());
 
 commit;

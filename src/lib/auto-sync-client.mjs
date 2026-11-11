@@ -17,6 +17,7 @@
  */
 
 import { VALIDATOR_DEFAULTS } from './tier-contract.mjs';
+import { SCHEMA_VERSION } from './version.js';
 
 export const DEFAULT_SYNC_STORAGE_KEY = 'myclinic.central.subscription.v2';
 export const DEFAULT_DEVICE_ID_KEY = 'myclinic.central.device_id.v2';
@@ -323,7 +324,7 @@ export async function probeCentralAutoSync(
 
     return {
       ok: true,
-      schemaVersion: Number(payload.schema_version ?? 3),
+      schemaVersion: Number(payload.schema_version ?? SCHEMA_VERSION),
       serverTime: payload.server_time ?? null,
     };
   } finally {

@@ -1,5 +1,5 @@
 -- =============================================================================
--- myClinic License Authority — Scratch Database Security & Auto-Sync Suite (v3)
+-- myClinic License Authority — Scratch Database Security & Auto-Sync Suite (v4)
 -- DEV / SCRATCH ONLY · NEVER RUN ON PRODUCTION
 --
 -- Everything runs inside a single transaction and rolls back at the end, leaving
@@ -369,6 +369,139 @@ begin
 end $$;
 reset role;
 
+-- 8. Schema v4 — clinic_activity_log + invoices: admin-only, append-only history.
+-- 8a. `anon` has zero read access to either v4 table.
+set local role anon;
+do $$
+begin
+  begin
+    perform count(*) from public.clinic_activity_log;
+    raise exception 'FAIL: anon was able to read public.clinic_activity_log';
+  exception when insufficient_privilege then
+    raise notice 'PASS: anon denied read on public.clinic_activity_log';
+  end;
+
+  begin
+    perform count(*) from public.invoices;
+    raise exception 'FAIL: anon was able to read public.invoices';
+  exception when insufficient_privilege then
+    raise notice 'PASS: anon denied read on public.invoices';
+  end;
+end $$;
+reset role;
+
+-- 8b. Admin: append timeline events, issue + pay an invoice, read the new
+--     admin_license_view billing columns — and STILL cannot rewrite history.
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare
+  v_sub    public.admin_license_view;
+  v_act_id uuid;
+  v_inv_id uuid;
+  v_view   public.admin_license_view;
+begin
+  v_sub := public.create_subscription_with_license(
+    'activity@v4clinic.in', 'growth', 2, now() + interval '365 days',
+    'v4 activity probe', null, false
+  );
+
+  insert into public.clinic_activity_log (subscription_id, license_id, event_kind, actor, payload)
+  values (v_sub.subscription_id, v_sub.license_id, 'onboarded', 'ops@v4.test', '{"tier":"growth"}'::jsonb)
+  returning id into v_act_id;
+
+  insert into public.clinic_activity_log (subscription_id, license_id, event_kind, actor, payload)
+  values (v_sub.subscription_id, v_sub.license_id, 'invoice_issued', 'ops@v4.test', '{"number":"INV-2026-0001"}'::jsonb)
+  returning id into v_act_id;
+
+  insert into public.invoices (
+    invoice_number, subscription_id, license_id, status, currency,
+    line_items, tax_rate, subtotal, tax_amount, total, issued_at, due_at
+  ) values (
+    'INV-2026-0001', v_sub.subscription_id, v_sub.license_id, 'issued', 'INR',
+    '[{"description":"Growth plan - annual","qty":1,"unit":12000.00}]'::jsonb,
+    0.18, 12000.00, 2160.00, 14160.00, now(), now() + interval '30 days'
+  )
+  returning id into v_inv_id;
+
+  select * into v_view
+    from public.admin_license_view
+   where license_id = v_sub.license_id;
+
+  if v_view.latest_invoice_number <> 'INV-2026-0001'
+     or v_view.latest_invoice_status <> 'issued'
+     or v_view.latest_invoice_total <> 14160.00
+     or v_view.open_invoice_count <> 1 then
+    raise exception 'FAIL: admin_license_view invoice columns wrong: % / % / % / %',
+      v_view.latest_invoice_number, v_view.latest_invoice_status,
+      v_view.latest_invoice_total, v_view.open_invoice_count;
+  end if;
+  raise notice 'PASS: admin appended activity + invoice; admin_license_view exposes invoice standing';
+
+  update public.invoices
+     set status = 'paid', paid_at = now()
+   where id = v_inv_id;
+
+  perform 1 from public.invoices where id = v_inv_id and status = 'paid';
+  if not found then
+    raise exception 'FAIL: admin could not move the invoice to paid';
+  end if;
+  raise notice 'PASS: admin moved invoice issued -> paid (lifecycle update granted)';
+
+  -- Append-only: corrections are NEW events, never edits — not even for admins.
+  begin
+    update public.clinic_activity_log
+       set actor = 'tampered'
+     where id = v_act_id;
+    raise exception 'FAIL: admin was able to UPDATE the activity log';
+  exception when insufficient_privilege then
+    raise notice 'PASS: activity log is append-only (admin UPDATE denied)';
+  end;
+
+  begin
+    delete from public.clinic_activity_log where id = v_act_id;
+    raise exception 'FAIL: admin was able to DELETE activity history';
+  exception when insufficient_privilege then
+    raise notice 'PASS: activity log is append-only (admin DELETE denied)';
+  end;
+end $$;
+reset role;
+
+-- 8c. A non-admin `authenticated` token (user_metadata role=admin is ignored):
+--     the rows 8b just wrote are INVISIBLE to it (FORCE RLS + admin policies
+--     filter SELECT silently), and its own writes are refused by WITH CHECK.
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated","app_metadata":{},"user_metadata":{"role":"admin"}}', true);
+do $$
+declare
+  v_activity integer;
+  v_invoices integer;
+begin
+  select count(*) into v_activity from public.clinic_activity_log;
+  select count(*) into v_invoices from public.invoices;
+  if v_activity <> 0 or v_invoices <> 0 then
+    raise exception 'FAIL: non-admin authenticated saw % activity / % invoice rows', v_activity, v_invoices;
+  end if;
+  raise notice 'PASS: non-admin authenticated sees zero activity + invoice rows (FORCE RLS)';
+
+  begin
+    insert into public.invoices (invoice_number, subscription_id)
+    values ('INV-ROGUE-0001', '00000000-0000-0000-0000-000000000000');
+    raise exception 'FAIL: non-admin authenticated inserted an invoice';
+  exception when insufficient_privilege then
+    raise notice 'PASS: non-admin authenticated denied insert on invoices (WITH CHECK)';
+  end;
+
+  begin
+    insert into public.clinic_activity_log (subscription_id, event_kind)
+    values ('00000000-0000-0000-0000-000000000000', 'onboarded');
+    raise exception 'FAIL: non-admin authenticated appended to the activity log';
+  exception when insufficient_privilege then
+    raise notice 'PASS: non-admin authenticated denied insert on clinic_activity_log (WITH CHECK)';
+  end;
+end $$;
+reset role;
+
 -- 7g. 30-day retention: an aged row disappears on the next refusal, once per 24h.
 do $$
 declare
@@ -425,10 +558,10 @@ begin
 
   raise notice 'PASS: refused-attempt audit is admin-only, privacy-preserving and self-pruning';
 
-  if public.app_schema_version() <> 3 then
-    raise exception 'FAIL: app_schema_version() must be 3 after the v3 migration, got %', public.app_schema_version();
+  if public.app_schema_version() <> 4 then
+    raise exception 'FAIL: app_schema_version() must be 4 after the v4 migration, got %', public.app_schema_version();
   end if;
-  raise notice 'PASS: app_schema_version() = 3 (refused-attempt audit applied)';
+  raise notice 'PASS: app_schema_version() = 4 (activity log + invoices applied)';
   raise notice 'ALL CENTRAL DATABASE SECURITY & KEYLESS AUTO-SYNC CHECKS COMPLETED';
 end $$;
 

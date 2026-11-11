@@ -35,7 +35,7 @@ const checks = [
   ],
   [
     new RegExp(`greatest\\(schema_version,\\s*${SCHEMA_VERSION}\\)`).test(schemaSql) &&
-      new RegExp(`\\(${SCHEMA_VERSION},\\s*'refused-attempt-audit'`).test(schemaSql),
+      new RegExp(`\\(${SCHEMA_VERSION},\\s*'activity-log-and-invoices'`).test(schemaSql),
     `schema.sql registers migration ${SCHEMA_VERSION} and lifts app_meta to v${SCHEMA_VERSION}`,
   ],
   [
@@ -116,6 +116,31 @@ const checks = [
       /retention/i.test(schemaTestsSql) &&
       /ip_hash is not the peppered|encode\(digest\('myclinic-sync-v2:/i.test(schemaTestsSql),
     'schema-tests.sql proves the audit is private, attributed, self-pruning and read-only',
+  ],
+  // ── Activity log + invoices (schema v4): history you cannot rewrite ─────────
+  [
+    /alter table public\.clinic_activity_log force row level security/i.test(schemaSql) &&
+      /alter table public\.invoices force row level security/i.test(schemaSql) &&
+      /revoke all on public\.clinic_activity_log from public, anon/i.test(schemaSql) &&
+      /revoke all on public\.invoices from public, anon/i.test(schemaSql),
+    'clinic_activity_log + invoices are FORCE RLS and revoked from public + anon',
+  ],
+  [
+    /grant select, insert on public\.clinic_activity_log to authenticated/i.test(schemaSql) &&
+      /revoke update, delete on public\.clinic_activity_log from authenticated/i.test(schemaSql) &&
+      !/grant\s+[^;\n]*(update|delete)\s+on\s+public\.clinic_activity_log/i.test(schemaSql) &&
+      !/create\s+policy[\s\S]{0,120}clinic_activity_log[\s\S]{0,80}for\s+(update|delete|all)/i.test(schemaSql),
+    'the per-clinic activity log is append-only: SELECT + INSERT for admins, never UPDATE/DELETE',
+  ],
+  [
+    /latest_invoice_number/i.test(schemaSql) &&
+      /open_invoice_count/i.test(schemaSql) &&
+      /check \(status in \('draft', 'issued', 'paid', 'void'\)/i.test(schemaSql),
+    'admin_license_view exposes invoice standing; invoice status is a closed set',
+  ],
+  [
+    /--\s*8\./.test(schemaTestsSql) && /append-only/i.test(schemaTestsSql),
+    'schema-tests.sql §8 proves the v4 tables live (anon/non-admin refusal, append-only, view columns)',
   ],
 ];
 
