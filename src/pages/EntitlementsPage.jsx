@@ -10,8 +10,6 @@ import {
   Download,
   Globe,
   Loader2,
-  Mail,
-  Minus,
   Plus,
   Power,
   RefreshCw,
@@ -24,7 +22,6 @@ import {
   X,
 } from 'lucide-react';
 import ErrorAlert from '../components/ErrorAlert.jsx';
-import RichNotesField from '../components/RichNotesField.jsx';
 import SlideOverDrawer from '../components/SlideOverDrawer.jsx';
 import ClinicCardMobile from '../components/entitlements/ClinicCardMobile.jsx';
 import ClinicRowDesktop from '../components/entitlements/ClinicRowDesktop.jsx';
@@ -42,9 +39,9 @@ import {
   logClinicActivity,
 } from '../lib/activity.mjs';
 import ActivityTimeline from '../components/entitlements/ActivityTimeline.jsx';
+import OnboardingWizard from '../components/entitlements/OnboardingWizard.jsx';
 import {
   MYCLINIC_TIER_ENTITLEMENTS,
-  TIER_CATALOG,
   computeFleetMetrics,
   computeStanding,
   defaultExpirationDate,
@@ -53,7 +50,6 @@ import {
   formatDisplayDate,
   formatSyncTimestamp,
   sanitizeCsvCell,
-  validateProvisionInput,
   validateRoutingUpdateInput,
 } from '../lib/entitlements.mjs';
 import { errorLine, rememberError } from '../lib/errors.mjs';
@@ -112,17 +108,6 @@ export default function EntitlementsPage({
   const [savingRouting, setSavingRouting] = useState(false);
   const [savingTier, setSavingTier] = useState(false);
 
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [allowedOrigin, setAllowedOrigin] = useState('');
-  const [lockFirstOrigin, setLockFirstOrigin] = useState(true);
-  const [tier, setTier] = useState('growth');
-  const [maxMachines, setMaxMachines] = useState(2);
-  const [expiresDate, setExpiresDate] = useState(() =>
-    defaultExpirationDate(365),
-  );
-  const [notes, setNotes] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
   const showToast = useCallback((message, tone = 'success') => {
     setToast({ message, tone });
   }, []);
@@ -147,6 +132,23 @@ export default function EntitlementsPage({
       }
     },
     [supabase, operatorEmail, showToast],
+  );
+
+  const handleProvisioned = useCallback(
+    (row, meta) => {
+      setRecords((prev) => [row, ...prev]);
+      void recordActivity(row, 'onboarded', {
+        tier: meta.tier,
+        seats: meta.seats,
+        invoice: meta.invoice ?? null,
+      });
+      showToast(
+        `Added ${String(meta.tier).toUpperCase()} subscription for ${meta.label}${
+          meta.invoice ? ` · draft ${meta.invoice}` : ''
+        }.`,
+      );
+    },
+    [recordActivity, showToast],
   );
 
   const loadActivity = useCallback(
@@ -383,68 +385,6 @@ export default function EntitlementsPage({
       );
     } finally {
       setSavingTerm(false);
-    }
-  };
-
-  const handleProvisionSubmit = async (event) => {
-    event.preventDefault();
-    const validation = validateProvisionInput({
-      customerEmail,
-      allowedOrigin,
-      lockFirstOrigin,
-      tier,
-      maxMachines,
-      expiresDate,
-      notes,
-    });
-
-    if (!validation.ok) {
-      showToast(validation.error, 'error');
-      return;
-    }
-
-    setSubmitting(true);
-    setErrorBanner(null);
-
-    try {
-      const { data: rpcRecord, error: rpcError } = await supabase.rpc(
-        'create_subscription_with_license',
-        validation.payload,
-      );
-
-      if (rpcError) throw rpcError;
-
-      if (rpcRecord) {
-        const insertedRow = Array.isArray(rpcRecord) ? rpcRecord[0] : rpcRecord;
-        setRecords((prev) => [insertedRow, ...prev]);
-        await recordActivity(insertedRow, 'onboarded', {
-          tier: validation.payload.p_tier,
-          seats: validation.payload.p_max_machines,
-        });
-      } else {
-        await fetchEntitlements({ silent: true });
-      }
-
-      const targetLabel =
-        validation.payload.p_customer_email ||
-        validation.payload.p_allowed_origin ||
-        'clinic';
-      setCustomerEmail('');
-      setAllowedOrigin('');
-      setLockFirstOrigin(true);
-      setMaxMachines(2);
-      setExpiresDate(defaultExpirationDate(365));
-      setNotes('');
-      setIssueOpen(false);
-      showToast(
-        `Added ${validation.payload.p_tier.toUpperCase()} subscription for ${targetLabel}.`,
-      );
-    } catch (err) {
-      const explained = rememberError(err, 'Add clinic subscription');
-      setErrorBanner(explained);
-      showToast(explained.message, 'error');
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -933,254 +873,12 @@ export default function EntitlementsPage({
         title="Add Clinic Subscription"
         subtitle="Keyless Central Auto-Sync — match by Clinic Owner Email, Website URL, or both."
       >
-        <form
-          id="provision-license-form"
-          onSubmit={handleProvisionSubmit}
-          className="space-y-5"
-        >
-          <div className="console-well space-y-3.5 rounded-xl p-4">
-            <p
-              style={{ color: 'var(--text-secondary)' }}
-              className="text-xs leading-relaxed"
-            >
-              Enter <strong>Owner Email</strong>, <strong>Clinic URL</strong>,
-              or <strong>both</strong>. Providing both pins the subscription to
-              that exact owner and domain.
-            </p>
-
-            <div>
-              <label
-                htmlFor="prov-customer-email"
-                style={{ color: 'var(--text-primary)' }}
-                className="flex items-center gap-1.5 text-xs font-semibold"
-              >
-                <Mail className="h-3.5 w-3.5" />
-                Clinic Owner Email{' '}
-                <span
-                  style={{ color: 'var(--text-secondary)' }}
-                  className="font-normal"
-                >
-                  (optional if URL set)
-                </span>
-              </label>
-              <input
-                id="prov-customer-email"
-                type="email"
-                value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
-                placeholder="dr.sharma@sharmaclinic.in"
-                className="console-input mt-1.5 w-full rounded-lg px-3 py-2.5 text-xs"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="prov-allowed-origin"
-                style={{ color: 'var(--text-primary)' }}
-                className="flex items-center gap-1.5 text-xs font-semibold"
-              >
-                <Globe className="h-3.5 w-3.5" />
-                Clinic Website URL{' '}
-                <span
-                  style={{ color: 'var(--text-secondary)' }}
-                  className="font-normal"
-                >
-                  (optional if Email set)
-                </span>
-              </label>
-              <input
-                id="prov-allowed-origin"
-                type="url"
-                value={allowedOrigin}
-                onChange={(e) => setAllowedOrigin(e.target.value)}
-                placeholder="https://sharmaclinic.github.io"
-                className="console-input mt-1.5 w-full rounded-lg px-3 py-2.5 font-mono text-xs"
-              />
-            </div>
-
-            {!allowedOrigin.trim() ? (
-              <label className="flex cursor-pointer items-start gap-2.5 pt-0.5 text-xs">
-                <input
-                  type="checkbox"
-                  checked={lockFirstOrigin}
-                  onChange={(e) => setLockFirstOrigin(e.target.checked)}
-                  className="mt-0.5 rounded"
-                />
-                <span
-                  style={{ color: 'var(--text-secondary)' }}
-                  className="text-[11px] leading-relaxed"
-                >
-                  <strong style={{ color: 'var(--text-primary)' }}>
-                    Auto-lock first cloud URL
-                  </strong>{' '}
-                  — pins their domain automatically the first time they open{' '}
-                  <code className="font-mono">myClinic</code>.
-                </span>
-              </label>
-            ) : null}
-          </div>
-
-          {/* 3-Card Plan Selector */}
-          <div>
-            <span
-              style={{ color: 'var(--text-primary)' }}
-              className="block text-xs font-semibold"
-            >
-              myClinic Plan Tier
-            </span>
-            <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {TIER_CATALOG.filter((t) =>
-                ['solo', 'growth', 'chain'].includes(t.value),
-              ).map((item) => {
-                const selected = tier === item.value;
-                const seats = MYCLINIC_TIER_ENTITLEMENTS[item.value];
-                return (
-                  <button
-                    key={item.value}
-                    type="button"
-                    onClick={() => setTier(item.value)}
-                    style={
-                      selected
-                        ? {
-                            backgroundColor: 'var(--brand-soft)',
-                            border: '1px solid var(--brand-border)',
-                          }
-                        : {
-                            backgroundColor: 'var(--bg-well)',
-                            border: '1px solid var(--border-subtle)',
-                          }
-                    }
-                    className="rounded-xl p-3 text-left transition"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-bold uppercase">
-                        {item.value}
-                      </span>
-                      {selected ? (
-                        <Check
-                          style={{ color: 'var(--brand-text)' }}
-                          className="h-3.5 w-3.5"
-                        />
-                      ) : null}
-                    </div>
-                    <p
-                      style={{ color: 'var(--text-secondary)' }}
-                      className="mt-1 font-mono text-[10px] leading-relaxed"
-                    >
-                      {seats.doctors === null
-                        ? 'Unlimited doctors & branches'
-                        : `${seats.doctors} Doc · ${seats.frontdesk} Desk`}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Max Seats + Paid Term */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label
-                style={{ color: 'var(--text-primary)' }}
-                className="block text-xs font-semibold"
-              >
-                Max Allowed Deployments
-              </label>
-              <div className="mt-1.5 flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setMaxMachines((n) => Math.max(1, Number(n) - 1))
-                  }
-                  className="console-btn-secondary inline-flex h-9 w-9 items-center justify-center rounded-lg"
-                >
-                  <Minus className="h-3.5 w-3.5" />
-                </button>
-                <input
-                  type="number"
-                  min={1}
-                  max={500}
-                  required
-                  value={maxMachines}
-                  onChange={(e) =>
-                    setMaxMachines(Math.max(1, Number(e.target.value) || 1))
-                  }
-                  className="console-input h-9 w-full rounded-lg px-3 text-center font-mono text-xs font-semibold"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setMaxMachines((n) => Math.min(500, Number(n) + 1))
-                  }
-                  className="console-btn-secondary inline-flex h-9 w-9 items-center justify-center rounded-lg"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label
-                htmlFor="prov-expires-date"
-                style={{ color: 'var(--text-primary)' }}
-                className="block text-xs font-semibold"
-              >
-                Subscription End Date
-              </label>
-              <input
-                id="prov-expires-date"
-                type="date"
-                required
-                value={expiresDate}
-                onChange={(e) => setExpiresDate(e.target.value)}
-                className="console-input mt-1.5 h-9 w-full rounded-lg px-3 font-mono text-xs"
-              />
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {[
-                  { label: '+30d', days: 30 },
-                  { label: '+90d', days: 90 },
-                  { label: '+1yr', days: 365 },
-                  { label: '+2yr', days: 730 },
-                ].map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() =>
-                      setExpiresDate(defaultExpirationDate(preset.days))
-                    }
-                    className="console-btn-secondary rounded px-2 py-0.5 font-mono text-[10px] font-semibold"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <RichNotesField value={notes} onChange={setNotes} />
-
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setIssueOpen(false)}
-              className="console-btn-secondary rounded-lg px-4 py-2.5 text-xs font-semibold"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="console-btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold disabled:opacity-50"
-            >
-              {submitting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Plus className="h-3.5 w-3.5 stroke-[2.4]" />
-              )}
-              Save Subscription
-            </button>
-          </div>
-        </form>
+        <OnboardingWizard
+          backend={backend}
+          operatorEmail={operatorEmail}
+          onProvisioned={handleProvisioned}
+          onClose={() => setIssueOpen(false)}
+        />
       </SlideOverDrawer>
 
       {/* Drawer 2: Clinic Dossier & Live Auto-Sync Controls */}
