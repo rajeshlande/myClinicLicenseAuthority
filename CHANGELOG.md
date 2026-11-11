@@ -2,6 +2,25 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [3.0.0] - 2026-11-11
+
+### Added
+- **Enrolliq adaptation — the whole console re-themed to the reference UI's visual language** (tokens sampled pixel-by-pixel from `uploads/image-1.png`): pastel page gradient (#faf4fe -> #fbe6e5 -> #b6d8f1), paper-white floating shell, cyan #c5f1fe nav-active pills, borderless soft status pills, maroon #5d1f24 + amber #eb8114 gauge fills, float shadow 0 24px 60px (slice 1); floating rounded-3xl sidebar with grouped nav + operator card, sticky topbar whose search pill is a REAL global search bound to the registry filter through a tiny pub/sub store (`src/lib/global-search.mjs`), rounded-r-3xl sheet drawer and a floating mobile tab bar (slice 2); registry pill tabs with live counts, toolbar pills, seat bars on border-subtle tracks and free-floating mobile cards (slice 3).
+- **Schema v4 — additive migration `activity-log-and-invoices`.** `public.clinic_activity_log`: per-clinic operational timeline, 12 closed event kinds, **append-only by ACL** (authenticated gets SELECT + INSERT only; the Supabase ALTER DEFAULT PRIVILEGES hole is closed explicitly so tampering raises insufficient_privilege instead of silently filtering zero rows). `public.invoices`: closed status set (draft/issued/paid/void), jsonb line items, numeric(12,2) totals, GST-style tax_rate, issued/due/paid stamps. `admin_license_view` gains latest_invoice_number/status/total + open_invoice_count, appended last per the CREATE OR REPLACE VIEW rule. FORCE RLS + admin-only policies on both; anon's single grant (sync_clinic_subscription) unchanged.
+- **Activity wiring + UI (slice 5):** `src/lib/activity.mjs` writer (vocabulary lockstepped with the SQL CHECK by test) appended from every mutating handler — onboarded, paused/resumed, tier_changed, renewed, routing_changed, invoice lifecycle — with actor + jsonb payload; Controls / Activity (n) tabs in the clinic dossier; Fleet Activity page (newest 100 events, identity-resolved).
+- **Onboarding wizard (slice 6):** Identity -> Plan & Seats -> Term & Notes -> Review & Create -> Handoff checklist, with a cyan/green stepper. Create reuses the EXISTING provisioning RPC and validator (zero new wire shape) and mints the first invoice draft; draft storage degrades with a visible warning on schema-3 Centrals.
+- **Invoices + zero-dependency PDF (slice 7):** `src/pages/InvoicesPage.jsx` (Billing nav group) with Issue / Mark paid / Void verbs — each appended to the activity log — and `src/lib/invoice-pdf.mjs`, a hand-rolled PDF 1.4 writer (byte-accurate xref, Helvetica/Helvetica-Bold WinAnsi, multi-page, brand-blue logo tile and total band). Amounts print "INR 14,160.00" because the rupee glyph is not in Latin-1. Seven structural tests parse every xref offset and stream /Length; Playwright captured a real 3,431-byte download.
+
+### Changed
+- `SCHEMA_VERSION` 3 -> 4 (version.js); the readiness probe and the auto-sync client's probe default follow the constant. **Tier contract v1 stays published against schema 3** — v4 is purely additive and the sync wire shape is untouched — so `tests/tier-contract.test.mjs` now asserts forward-compatibility (live >= published) instead of equality; the myClinic v1.43.0 byte-pin (`36c6af2b…`) is unaffected.
+- Dark theme re-based from Hunter Forest to cool Slate Night with identical semantics; variable NAMES and the semantic class vocabulary (`badge-*`, `console-*`) were preserved so zero JSX colour edits were needed and the status-palette contract test passes by construction.
+- Mobile bottom navigation is six columns (Billing group added); the v2 fixed top stripe and grid background are gone.
+
+### Notes
+- **The UI Component Mapping Guide is SUPERSEDED** by operator decision (2026-11-11): "remove existing colors and layout and adapt given images them" — the Enrolliq token set in `src/index.css` is now the single source of visual truth, everywhere.
+- **schema.sql idempotency fix proven the hard way:** a re-run of the old §3 view statement aborted with "cannot drop columns from view" once §6 had appended invoice columns; §3 now creates the base view only when absent and §6 owns the extended definition. Blank apply AND re-apply verified on PostgreSQL 17.
+- Gates: 76/76 unit tests, 26/26 contribution rules, clean build + check:pages, security-check 20/20; PG 17 harness 34/34 PASS (§1-§8 incl. new §8: anon denial, admin append + invoice lifecycle + view columns, append-only UPDATE/DELETE denial, non-admin invisibility + WITH CHECK refusal); zero horizontal overflow at 375x812 and 1440x900 on every route; wizard walkthrough and PDF download browser-verified.
+
 ## [2.4.0] - 2026-11-10
 
 ### Added
