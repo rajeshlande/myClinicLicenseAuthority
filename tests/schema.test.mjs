@@ -7,15 +7,13 @@ const schemaSql = readFileSync('supabase/schema.sql', 'utf8');
 const schemaTestsSql = readFileSync('supabase/schema-tests.sql', 'utf8');
 
 test('supabase/schema.sql is wrapped in one transaction and matches SCHEMA_VERSION', () => {
-  assert.equal(SCHEMA_VERSION, 4);
+  assert.equal(SCHEMA_VERSION, 5);
   assert.match(schemaSql, /^\s*begin;/im);
   assert.match(schemaSql, /commit;\s*$/im);
   assert.match(schemaSql, /\(2,\s*'keyless-auto-sync-core'/);
   assert.match(schemaSql, /\(3,\s*'refused-attempt-audit'/);
-  assert.match(
-    schemaSql,
-    new RegExp(`\\(${SCHEMA_VERSION},\\s*'activity-log-and-invoices'`),
-  );
+  assert.match(schemaSql, /\(4,\s*'activity-log-and-invoices'/);
+  assert.match(schemaSql, /\(5,\s*'workspace-directory'/);
   assert.match(
     schemaSql,
     new RegExp(`greatest\\(schema_version,\\s*${SCHEMA_VERSION}\\)`),
@@ -61,6 +59,8 @@ test('Central DB enforces FORCE RLS, zero anon table access, and single-RPC surf
     'sync_attempts',
     'clinic_activity_log',
     'invoices',
+    'workspaces',
+    'workspace_members',
   ]) {
     assert.match(
       schemaSql,
@@ -153,4 +153,32 @@ test('schema v4: activity log + invoices are FORCE RLS, admin-only and append-on
   assert.match(schemaTestsSql, /--\s*8\./);
   assert.match(schemaTestsSql, /clinic_activity_log/);
   assert.match(schemaTestsSql, /append-only/i);
+});
+
+test('schema v5: workspace directory is member-read, admin-write, anon-dark', () => {
+  // anon is revoked entirely on both directory tables; the single-anon-RPC
+  // invariant (asserted above) is untouched by v5.
+  assert.match(schemaSql, /revoke\s+all\s+on\s+public\.workspaces\s+from\s+public,\s*anon/i);
+  assert.match(schemaSql, /revoke\s+all\s+on\s+public\.workspace_members\s+from\s+public,\s*anon/i);
+  assert.match(schemaSql, /grant\s+select\s+on\s+public\.workspaces\s+to\s+authenticated/i);
+  assert.match(schemaSql, /grant\s+select\s+on\s+public\.workspace_members\s+to\s+authenticated/i);
+
+  // Discovery is authenticated-only: execute granted to authenticated, never anon.
+  assert.match(schemaSql, /grant\s+execute\s+on\s+function\s+public\.my_workspaces\(\)\s+to\s+authenticated/i);
+  assert.doesNotMatch(
+    schemaSql,
+    /grant\s+execute\s+on\s+function\s+public\.my_workspaces\(\)[^;]*\banon\b/i,
+  );
+
+  // Connection columns carry the same privileged-key CHECK as the contract.
+  assert.match(schemaSql, /supabase_anon_key\s+!~\*\s*'service_role\|sb_secret'/i);
+  assert.match(schemaSql, /check\s*\(role\s+in\s*\('admin',\s*'doctor',\s*'staff'\)\)/i);
+
+  // Membership RLS: members read their own row, writes are admin-only.
+  assert.match(schemaSql, /using\s*\(public\.is_workspace_member\(id\)\s+or\s+public\.is_license_admin\(\)\)/i);
+  assert.match(schemaSql, /using\s*\(user_id\s*=\s*auth\.uid\(\)\s+or\s+public\.is_license_admin\(\)\)/i);
+
+  // The PG suite proves the matrix live (section 9).
+  assert.match(schemaTestsSql, /anon denied read on public\.workspaces/);
+  assert.match(schemaTestsSql, /member discovery returns exactly one active workspace/);
 });

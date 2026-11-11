@@ -558,11 +558,117 @@ begin
 
   raise notice 'PASS: refused-attempt audit is admin-only, privacy-preserving and self-pruning';
 
-  if public.app_schema_version() <> 4 then
-    raise exception 'FAIL: app_schema_version() must be 4 after the v4 migration, got %', public.app_schema_version();
+  if public.app_schema_version() <> 5 then
+    raise exception 'FAIL: app_schema_version() must be 5 after the v4+v5 migrations, got %', public.app_schema_version();
   end if;
-  raise notice 'PASS: app_schema_version() = 4 (activity log + invoices applied)';
+  raise notice 'PASS: app_schema_version() = 5 (activity log + invoices + workspace directory applied)';
   raise notice 'ALL CENTRAL DATABASE SECURITY & KEYLESS AUTO-SYNC CHECKS COMPLETED';
 end $$;
+
+-- =============================================================================
+-- 9. SCHEMA v5 — OPD WORKSPACE DIRECTORY (anon-dark, member-read, admin-write)
+-- =============================================================================
+
+-- 9a. anon is denied reads AND discovery on both directory tables
+set local role anon;
+do $$
+begin
+  begin
+    perform count(*) from public.workspaces;
+    raise exception 'FAIL: anon was able to read public.workspaces';
+  exception when insufficient_privilege then
+    raise notice 'PASS: anon denied read on public.workspaces';
+  end;
+  begin
+    perform count(*) from public.workspace_members;
+    raise exception 'FAIL: anon was able to read public.workspace_members';
+  exception when insufficient_privilege then
+    raise notice 'PASS: anon denied read on public.workspace_members';
+  end;
+  begin
+    perform public.my_workspaces();
+    raise exception 'FAIL: anon executed public.my_workspaces()';
+  exception when insufficient_privilege then
+    raise notice 'PASS: anon denied my_workspaces()';
+  end;
+end $$;
+
+-- 9b. admin seeds a workspace + member; inactive rows stay out of discovery
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare
+  v_ws uuid;
+  v_n  integer;
+begin
+  insert into public.workspaces (clinic_name, slug, supabase_url, supabase_anon_key, is_active)
+  values ('Sunrise OPD', 'sunrise-opd', 'https://sunriseopd.supabase.co', 'sb_publishable_test_123', false)
+  returning id into v_ws;
+  insert into public.workspace_members (workspace_id, user_id, role)
+  values (v_ws, '00000000-0000-0000-0000-000000000003', 'doctor');
+  select count(*) into v_n from public.my_workspaces() where slug = 'sunrise-opd';
+  if v_n <> 0 then
+    raise exception 'FAIL: inactive workspace visible in my_workspaces(): %', v_n;
+  end if;
+  raise notice 'PASS: admin wrote directory; inactive workspace hidden from discovery';
+end $$;
+
+-- 9c. the member sees exactly one ACTIVE workspace, with its connection row
+update public.workspaces
+   set is_active = true, tenant_schema_version = 21
+ where slug = 'sunrise-opd';
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated","app_metadata":{}}', true);
+do $$
+declare
+  v_n   integer;
+  v_key text;
+begin
+  select count(*) into v_n from public.my_workspaces();
+  if v_n <> 1 then
+    raise exception 'FAIL: member discovery returned % rows', v_n;
+  end if;
+  select supabase_anon_key into v_key from public.my_workspaces() where slug = 'sunrise-opd';
+  if v_key is null then
+    raise exception 'FAIL: member did not receive the connection key';
+  end if;
+  raise notice 'PASS: member discovery returns exactly one active workspace with connection';
+end $$;
+
+-- 9d. a non-member authenticated user: zero rows and no write path
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000004","role":"authenticated","app_metadata":{}}', true);
+do $$
+declare
+  v_n integer;
+begin
+  select count(*) into v_n from public.workspaces;
+  if v_n <> 0 then
+    raise exception 'FAIL: non-member read % workspace rows', v_n;
+  end if;
+  select count(*) into v_n from public.my_workspaces();
+  if v_n <> 0 then
+    raise exception 'FAIL: non-member discovery returned % rows', v_n;
+  end if;
+  begin
+    insert into public.workspaces (clinic_name, slug) values ('Evil Clinic', 'evil-clinic');
+    raise exception 'FAIL: non-member inserted a workspace';
+  exception when insufficient_privilege then
+    raise notice 'PASS: non-member denied read and write on the directory';
+  end;
+end $$;
+
+-- 9e. privileged keys are rejected by the CHECK, not by politeness
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+begin
+  begin
+    insert into public.workspaces (clinic_name, slug, supabase_anon_key)
+    values ('Bad Key Clinic', 'bad-key-clinic', 'sb_secret_leaked_value');
+    raise exception 'FAIL: an sb_secret key was accepted';
+  exception when check_violation then
+    raise notice 'PASS: CHECK rejects sb_secret/service_role keys';
+  end;
+end $$;
+reset role;
 
 rollback;

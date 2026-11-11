@@ -272,7 +272,7 @@ export default function GuidePage({ backend, session, onNavigate }) {
               >
                 <li>
                   Open <strong>Central Supabase → SQL Editor → New query</strong>
-                  , click <strong>Copy Full schema.sql (v4)</strong>, paste, and
+                  , click <strong>Copy Full schema.sql (v5)</strong>, paste, and
                   click <strong>Run</strong>.
                 </li>
                 <li>

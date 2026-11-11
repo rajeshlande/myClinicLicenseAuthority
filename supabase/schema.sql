@@ -60,7 +60,8 @@ insert into public.schema_migrations (version, name, app_version, summary) value
   (1, 'license-authority-core', '1.0.0', 'subscriptions, licenses, activated_machines hardware lock, admin_license_view, transactional provisioning RPC, admin RLS'),
   (2, 'keyless-auto-sync-core', '1.6.0', 'email + clinic URL dual routing, TOFU origin lock, per-IP SHA-256 rate limiter, hardened sync_clinic_subscription RPC, FORCE RLS'),
   (3, 'refused-attempt-audit', '2.3.0', 'public.sync_attempts privacy-preserving refusal log (hashed IP + email, 30-day retention, admin-only), near-miss subscription attribution, admin_license_view last_refusal_* columns'),
-  (4, 'activity-log-and-invoices', '3.0.0', 'public.clinic_activity_log append-only per-clinic operational timeline (onboarded/paused/renewed/tier/routing/payment/invoice/notes events, admin-only), public.invoices billing documents (draft/issued/paid/void, jsonb line items, numeric totals), admin_license_view latest-invoice columns')
+  (4, 'activity-log-and-invoices', '3.0.0', 'public.clinic_activity_log append-only per-clinic operational timeline (onboarded/paused/renewed/tier/routing/payment/invoice/notes events, admin-only), public.invoices billing documents (draft/issued/paid/void, jsonb line items, numeric totals), admin_license_view latest-invoice columns'),
+  (5, 'workspace-directory', '3.2.0', 'public.workspaces + public.workspace_members OPD multi-tenant directory (member-role RLS, my_workspaces() discovery, connection columns with sb_secret/service_role CHECK), subscriptions.workspace_id link')
 on conflict (version) do nothing;
 
 update public.app_meta
@@ -904,7 +905,7 @@ begin
     return jsonb_build_object(
       'ok', true,
       'sync_ready', true,
-      'schema_version', 4,
+      'schema_version', 5,
       'server_time', v_now
     );
   end if;
@@ -1716,5 +1717,124 @@ create policy invoices_admin_update
   on public.invoices for update to authenticated
   using (public.is_license_admin())
   with check (public.is_license_admin());
+
+-- =============================================================================
+-- §7 · SCHEMA v5 ADDITIONS — OPD WORKSPACE DIRECTORY (additive, same transaction)
+-- =============================================================================
+-- Decision record: OPD-DECISIONS.md (D6-A, D1', S2/S3, free-tier topology).
+-- Every clinic owns its own Supabase project (free tier = 2 active projects
+-- per org) and hands URL + publishable key through the onboarding Connection
+-- step; the master org holds this project plus one scratch. Purely additive:
+-- nothing is dropped, narrowed or re-typed; blank apply AND re-apply safe.
+
+create table if not exists public.workspaces (
+  id                    uuid primary key default gen_random_uuid(),
+  clinic_name           text not null
+                        check (char_length(clinic_name) between 2 and 120),
+  slug                  text not null
+                        check (slug ~ '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$'),
+  supabase_url          text
+                        check (supabase_url is null
+                               or supabase_url ~ '^https://[a-z0-9-]+\.supabase\.co/?$'),
+  supabase_anon_key     text
+                        check (supabase_anon_key is null
+                               or supabase_anon_key !~* 'service_role|sb_secret'),
+  is_active             boolean not null default false,
+  tenant_schema_version integer not null default 0,
+  keep_warm_at          timestamptz,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now()
+);
+create unique index if not exists workspaces_slug_idx
+  on public.workspaces (lower(slug));
+
+-- user_id is the Master Auth uuid. No FK to auth.users: the directory must
+-- survive auth-row churn and the PG17 harness stubs auth, not owns it.
+create table if not exists public.workspace_members (
+  workspace_id uuid not null
+               references public.workspaces(id) on delete cascade,
+  user_id      uuid not null,
+  role         text not null check (role in ('admin', 'doctor', 'staff')),
+  granted_at   timestamptz not null default now(),
+  primary key (workspace_id, user_id)
+);
+create index if not exists workspace_members_user_idx
+  on public.workspace_members (user_id);
+
+alter table public.subscriptions add column if not exists
+  workspace_id uuid references public.workspaces(id) on delete set null;
+create index if not exists subscriptions_workspace_idx
+  on public.subscriptions (workspace_id);
+
+create or replace function public.is_workspace_member(p_workspace uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from public.workspace_members m
+    where m.workspace_id = p_workspace and m.user_id = auth.uid()
+  );
+$$;
+
+-- Stage-2 discovery: the ONLY client-readable directory data. Members see
+-- exactly their ACTIVE workspaces; the anon key is a public key by design,
+-- the tenant RLS + capability token (D1') is the real boundary.
+create or replace function public.my_workspaces()
+returns table (
+  id uuid, clinic_name text, slug text, supabase_url text,
+  supabase_anon_key text, role text, is_active boolean,
+  tenant_schema_version integer
+) language sql stable security definer set search_path = '' as $$
+  select w.id, w.clinic_name, w.slug, w.supabase_url, w.supabase_anon_key,
+         m.role, w.is_active, w.tenant_schema_version
+  from public.workspaces w
+  join public.workspace_members m on m.workspace_id = w.id
+  where m.user_id = auth.uid()
+    and w.is_active = true
+  order by w.clinic_name;
+$$;
+
+alter table public.workspaces enable row level security;
+alter table public.workspaces force row level security;
+alter table public.workspace_members enable row level security;
+alter table public.workspace_members force row level security;
+
+-- Close the ALTER DEFAULT PRIVILEGES hole back down (same lesson as §6).
+revoke all on public.workspaces from public, anon;
+revoke all on public.workspace_members from public, anon;
+grant select on public.workspaces to authenticated;
+grant select on public.workspace_members to authenticated;
+grant insert, update, delete on public.workspaces to authenticated;
+grant insert, update, delete on public.workspace_members to authenticated;
+
+drop policy if exists workspaces_member_read on public.workspaces;
+create policy workspaces_member_read
+  on public.workspaces for select to authenticated
+  using (public.is_workspace_member(id) or public.is_license_admin());
+
+drop policy if exists workspaces_admin_write on public.workspaces;
+create policy workspaces_admin_write
+  on public.workspaces for all to authenticated
+  using (public.is_license_admin())
+  with check (public.is_license_admin());
+
+drop policy if exists workspace_members_self_read on public.workspace_members;
+create policy workspace_members_self_read
+  on public.workspace_members for select to authenticated
+  using (user_id = auth.uid() or public.is_license_admin());
+
+drop policy if exists workspace_members_admin_write on public.workspace_members;
+create policy workspace_members_admin_write
+  on public.workspace_members for all to authenticated
+  using (public.is_license_admin())
+  with check (public.is_license_admin());
+
+revoke all on function public.is_workspace_member(uuid) from public, anon;
+grant execute on function public.is_workspace_member(uuid) to authenticated;
+revoke all on function public.my_workspaces() from public, anon;
+grant execute on function public.my_workspaces() to authenticated;
+
+update public.app_meta
+   set schema_version = greatest(schema_version, 5),
+       applied_at = now(),
+       notes = 'keyless auto-sync + dual email/origin routing + refused-attempt audit + activity log & invoices + OPD workspace directory';
 
 commit;

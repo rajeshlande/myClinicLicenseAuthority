@@ -34,8 +34,11 @@ const checks = [
     `supabase/schema.sql present (single source of truth, schema v${SCHEMA_VERSION})`,
   ],
   [
+    // Generic on purpose: whichever migration row carries the current
+    // SCHEMA_VERSION is the one that must exist (v4 was activity-log-and-
+    // invoices, v5 is workspace-directory, v6 will be whatever comes next).
     new RegExp(`greatest\\(schema_version,\\s*${SCHEMA_VERSION}\\)`).test(schemaSql) &&
-      new RegExp(`\\(${SCHEMA_VERSION},\\s*'activity-log-and-invoices'`).test(schemaSql),
+      new RegExp(`\\(${SCHEMA_VERSION},\\s*'[a-z0-9-]+'`).test(schemaSql),
     `schema.sql registers migration ${SCHEMA_VERSION} and lifts app_meta to v${SCHEMA_VERSION}`,
   ],
   [
