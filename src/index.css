@@ -4,215 +4,231 @@
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* Brand Primary: Hunter Green */
-  --color-brand: #386641;
-  --color-brand-50: #d2e6d6;
-  --color-brand-100: #a4cdac;
-  --color-brand-200: #77b483;
-  --color-brand-300: #51935e;
-  --color-brand-400: #386641;
-  --color-brand-500: #2d5234;
-  --color-brand-600: #223d27;
-  --color-brand-700: #16291a;
-  --color-brand-800: #0b140d;
+  /* Brand Primary: Enrolliq Sky Blue (sampled #007ce0 from the reference UI) */
+  --color-brand: #0079e0;
+  --color-brand-50: #e3f2ff;
+  --color-brand-100: #bcd9f6;
+  --color-brand-200: #8cc3f0;
+  --color-brand-300: #4ba3e8;
+  --color-brand-400: #0079e0;
+  --color-brand-500: #0068c2;
+  --color-brand-600: #005aa8;
+  --color-brand-700: #073f74;
+  --color-brand-800: #0a2540;
 
-  /* Brand Secondary / Accents: Yellow-Green & Sage Green */
-  --color-accent: #a7c957;
-  --color-accent-light: #6a994e;
+  /* Brand Secondary / Accents: Cyan nav-active + periwinkle progress */
+  --color-accent: #08b3e5;
+  --color-accent-light: #67e8f9;
 
-  /* Neutrals & Surfaces: Warm Editorial Vanilla Cream */
-  --color-neutral-900: #463813;
-  --color-neutral-800: #8d7027;
-  --color-neutral-700: #cba442;
-  --color-neutral-600: #dfc688;
-  --color-neutral-300: #f2e8cf;
-  --color-neutral-200: #f4edd9;
-  --color-neutral-100: #f7f1e2;
-  --color-neutral-50: #faf6ec;
-  --color-neutral-white: #fcfaf5;
+  /* Neutrals & Surfaces: Cool paper-white over a pastel gradient page */
+  --color-neutral-900: #101012;
+  --color-neutral-800: #66666b;
+  --color-neutral-700: #84848c;
+  --color-neutral-600: #d9d9e2;
+  --color-neutral-300: #ececf0;
+  --color-neutral-200: #f2f3f7;
+  --color-neutral-100: #f7f7f9;
+  --color-neutral-50: #fbfbfd;
+  --color-neutral-white: #ffffff;
 
-  /* System State Palettes */
-  --color-error: #bc4749;
-  --color-error-light: #f2dadb;
-  --color-error-dark: #73292b;
+  /* System State Palettes (soft pills sampled from the reference UI) */
+  --color-error: #b4233a;
+  --color-error-light: #fde5e9;
+  --color-error-dark: #7f1d2b;
 
-  --color-success: #6a994e;
-  --color-success-light: #e1ecda;
-  --color-success-dark: #2a3d1f;
+  --color-success: #16a34a;
+  --color-success-light: #c3f5dc;
+  --color-success-dark: #146c43;
 
-  --color-warning: #d97706;
-  --color-warning-light: #fef3c7;
-  --color-warning-dark: #78350f;
+  --color-warning: #eb8114;
+  --color-warning-light: #ffecc1;
+  --color-warning-dark: #8a5a00;
 
   --color-info: #2563eb;
   --color-info-light: #dbeafe;
-  --color-info-dark: #1e3a8a;
+  --color-info-dark: #1e40af;
 }
 
 /* ==========================================================================
-   Vanilla Cream Editorial Light Theme (Default — UI Component Mapping Guide)
+   Enrolliq Pastel Light Theme (default — superseds the Vanilla Cream guide)
+   Page = lavender → peach → soft blue gradient; shell & cards = paper white
    ========================================================================== */
 :root,
 [data-theme="light"] {
   color-scheme: light;
 
   /* Raw Palette Reference */
-  --brand-50: #d2e6d6;
-  --brand-100: #a4cdac;
-  --brand-200: #77b483;
-  --brand-300: #51935e;
-  --brand-400: #386641;
-  --brand-500: #2d5234;
-  --brand-600: #223d27;
-  --brand-700: #16291a;
-  --brand-800: #0b140d;
+  --brand-50: #e3f2ff;
+  --brand-100: #bcd9f6;
+  --brand-200: #8cc3f0;
+  --brand-300: #4ba3e8;
+  --brand-400: #0079e0;
+  --brand-500: #0068c2;
+  --brand-600: #005aa8;
+  --brand-700: #073f74;
+  --brand-800: #0a2540;
 
-  --accent-energy: #a7c957;
-  --accent-sage: #6a994e;
+  --accent-energy: #08b3e5;
+  --accent-sage: #67e8f9;
 
-  /* Mapped Surfaces (App Background = neutral.100, Cards = neutral.white) */
-  --bg-canvas: #f7f1e2;           /* neutral.100 — Clean off-white canvas */
-  --bg-secondary: #faf6ec;        /* neutral.50  — Secondary background */
-  --bg-sidebar: #faf6ec;          /* neutral.50  — Left rail */
-  --bg-header: rgba(250, 246, 236, 0.9);
-  --bg-surface: #fcfaf5;          /* neutral.white — Cards & Panels */
-  --bg-elevated: #f4edd9;         /* neutral.200 — Hover states */
-  --bg-well: #f2e8cf;             /* neutral.300 — Component backgrounds (Tabs, Wells) */
-  --bg-code: #16291a;             /* brand.700   — Rich hunter-forest code blocks */
+  /* Mapped Surfaces */
+  --bg-canvas: #f7f5fb;           /* flat fallback under the page gradient */
+  --bg-secondary: #fbfbfd;
+  --bg-sidebar: #f7f7f9;          /* sampled sidebar / tab strip */
+  --bg-header: rgba(255, 255, 255, 0.86);
+  --bg-surface: #ffffff;          /* shell, cards, search pills */
+  --bg-elevated: #f2f3f7;         /* hover states */
+  --bg-well: #f7f7f9;             /* wells, tab bars, sidebars */
+  --bg-code: #0f172a;             /* slate code blocks */
+
+  /* Page gradient sampled from the four corners of the reference image */
+  --page-gradient: linear-gradient(
+    135deg,
+    #faf4fe 0%,
+    #fbe6e5 45%,
+    #b6d8f1 100%
+  );
 
   /* Mapped Borders & Dividers */
-  --border-subtle: #dfc688;       /* neutral.600 — Muted borders / Dividers */
-  --border-strong: #cba442;       /* neutral.700 — Stronger borders / Placeholders */
+  --border-subtle: #ececf0;
+  --border-strong: #d9d9e2;
 
-  /* Mapped Typography (Headings = neutral.900, Body = neutral.800) */
-  --text-primary: #463813;        /* neutral.900 — Deepest high-contrast text */
-  --text-secondary: #8d7027;      /* neutral.800 — Readable warm body text */
-  --text-muted: #7d6322;          /* Accessible warm muted caption text */
-  --text-placeholder: #a48535;
+  /* Mapped Typography */
+  --text-primary: #101012;
+  --text-secondary: #66666b;
+  --text-muted: #84848c;
+  --text-placeholder: #9b9ba3;
 
   /* Mapped Brand Interactive Tokens */
-  --brand-primary: #386641;       /* brand.400 — Main Primary Buttons & Headers */
-  --brand-primary-hover: #2d5234; /* brand.500 */
-  --brand-primary-active: #223d27;/* brand.600 */
-  --brand-soft: #d2e6d6;          /* brand.50 */
-  --brand-border: #77b483;        /* brand.200 */
-  --brand-text: #223d27;          /* brand.600 */
+  --brand-primary: #0079e0;
+  --brand-primary-hover: #0068c2;
+  --brand-primary-active: #005aa8;
+  --brand-soft: #e3f2ff;
+  --brand-border: #bcd9f6;
+  --brand-text: #0b62b8;
 
-  /* High-Energy Accent (Yellow-Green & Sage) */
-  --accent-badge-bg: rgba(167, 201, 87, 0.24);
-  --accent-badge-border: rgba(106, 153, 78, 0.45);
-  --accent-badge-text: #2a3d1f;
+  /* Cyan nav-active family (sampled #c5f1fe sidebar pill) */
+  --accent-badge-bg: #c5f1fe;
+  --accent-badge-border: rgba(8, 179, 229, 0.35);
+  --accent-badge-text: #075e75;
 
   /* Compatibility aliases */
   --accent-primary: var(--brand-primary);
   --accent-soft: var(--brand-soft);
   --accent-border: var(--brand-border);
 
-  /* System State Palettes (Exact User Spec) */
-  /* Success (Sage Green) */
-  --ok-main: #6a994e;
-  --ok-soft: #e1ecda;
-  --ok-text: #2a3d1f;
-  --ok-border: rgba(106, 153, 78, 0.42);
+  /* System State Palettes (soft pill surfaces, borderless by design) */
+  /* Success — sampled Healthy pill #c3f5dc */
+  --ok-main: #16a34a;
+  --ok-soft: #c3f5dc;
+  --ok-text: #146c43;
+  --ok-border: rgba(22, 163, 74, 0);
 
-  /* Error / Destructive (Blushed Brick) */
-  --danger-main: #bc4749;
-  --danger-soft: #f2dadb;
-  --danger-text: #73292b;
-  --danger-border: rgba(188, 71, 73, 0.38);
+  /* Error / Destructive — sampled At-Risk pill family */
+  --danger-main: #b4233a;
+  --danger-soft: #fde5e9;
+  --danger-text: #7f1d2b;
+  --danger-border: rgba(180, 35, 58, 0);
 
-  /* Warning (Warm Amber/Ochre) */
-  --warn-main: #d97706;
-  --warn-soft: #fef3c7;
-  --warn-text: #78350f;
-  --warn-border: rgba(217, 119, 6, 0.36);
+  /* Warning — sampled Needs-Attention pill #ffecc1 / bar #eb8114 */
+  --warn-main: #eb8114;
+  --warn-soft: #ffecc1;
+  --warn-text: #8a5a00;
+  --warn-border: rgba(235, 129, 20, 0);
 
-  /* Info (Muted Slate-Blue) */
+  /* Info */
   --info-main: #2563eb;
   --info-soft: #dbeafe;
-  --info-text: #1e3a8a;
-  --info-border: rgba(37, 99, 235, 0.3);
+  --info-text: #1e40af;
+  --info-border: rgba(37, 99, 235, 0);
 
-  --shadow-card: 0 1px 3px rgba(70, 56, 19, 0.06), 0 1px 2px rgba(70, 56, 19, 0.04);
-  --shadow-float: 0 20px 44px -12px rgba(70, 56, 19, 0.18);
-  --grid-line: rgba(203, 164, 66, 0.065);
+  /* Deep risk-bar maroon, kept for gauge fills */
+  --gauge-deep: #5d1f24;
+
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05), 0 8px 24px -12px rgba(16, 24, 40, 0.12);
+  --shadow-float: 0 24px 60px rgba(15, 23, 42, 0.1);
+  --grid-line: rgba(16, 24, 40, 0.04);
 }
 
 /* ==========================================================================
-   Deep Hunter Forest Dark Theme (brand.800 -> brand.600 + Vanilla Cream Text)
+   Slate Night Dark Theme (same semantics, cool charcoal surfaces)
    ========================================================================== */
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --brand-50: #d2e6d6;
-  --brand-100: #a4cdac;
-  --brand-200: #77b483;
-  --brand-300: #51935e;
-  --brand-400: #386641;
-  --brand-500: #2d5234;
-  --brand-600: #223d27;
-  --brand-700: #16291a;
-  --brand-800: #0b140d;
+  --brand-50: #0a2540;
+  --brand-100: #073f74;
+  --brand-200: #005aa8;
+  --brand-300: #0068c2;
+  --brand-400: #3b82f6;
+  --brand-500: #60a5fa;
+  --brand-600: #93c5fd;
+  --brand-700: #bfdbfe;
+  --brand-800: #dbeafe;
 
-  --accent-energy: #a7c957;
-  --accent-sage: #6a994e;
+  --accent-energy: #22d3ee;
+  --accent-sage: #67e8f9;
 
-  --bg-canvas: #0b140d;           /* brand.800 */
-  --bg-secondary: #101d13;
-  --bg-sidebar: #0f1b12;
-  --bg-header: rgba(11, 20, 13, 0.88);
-  --bg-surface: #16291a;          /* brand.700 */
-  --bg-elevated: #223d27;         /* brand.600 */
-  --bg-well: #112015;
-  --bg-code: #080f0a;
+  --bg-canvas: #0b1220;
+  --bg-secondary: #0e1626;
+  --bg-sidebar: #0f172a;
+  --bg-header: rgba(11, 18, 32, 0.88);
+  --bg-surface: #101a2c;
+  --bg-elevated: #1a2740;
+  --bg-well: #0f172a;
+  --bg-code: #060b16;
 
-  --border-subtle: #223d27;       /* brand.600 */
-  --border-strong: #386641;       /* brand.400 */
+  --page-gradient: linear-gradient(135deg, #0b1220 0%, #131022 45%, #0a1a2c 100%);
 
-  --text-primary: #fcfaf5;        /* neutral.white */
-  --text-secondary: #f2e8cf;      /* neutral.300 */
-  --text-muted: #a4cdac;          /* brand.100 */
-  --text-placeholder: #77b483;
+  --border-subtle: #1e293b;
+  --border-strong: #334155;
 
-  --brand-primary: #386641;       /* brand.400 */
-  --brand-primary-hover: #51935e; /* brand.300 */
-  --brand-primary-active: #2d5234;/* brand.500 */
-  --brand-soft: rgba(167, 201, 87, 0.14);
-  --brand-border: rgba(167, 201, 87, 0.38);
-  --brand-text: #a7c957;          /* accent.DEFAULT */
+  --text-primary: #e8edf5;
+  --text-secondary: #9aa7ba;
+  --text-muted: #7c8aa0;
+  --text-placeholder: #5d6b81;
 
-  --accent-badge-bg: rgba(167, 201, 87, 0.16);
-  --accent-badge-border: rgba(167, 201, 87, 0.42);
-  --accent-badge-text: #a7c957;
+  --brand-primary: #3b82f6;
+  --brand-primary-hover: #60a5fa;
+  --brand-primary-active: #2563eb;
+  --brand-soft: rgba(59, 130, 246, 0.16);
+  --brand-border: rgba(59, 130, 246, 0.4);
+  --brand-text: #93c5fd;
 
-  --accent-primary: #a7c957;
+  --accent-badge-bg: rgba(34, 211, 238, 0.16);
+  --accent-badge-border: rgba(34, 211, 238, 0.4);
+  --accent-badge-text: #67e8f9;
+
+  --accent-primary: #3b82f6;
   --accent-soft: var(--brand-soft);
   --accent-border: var(--brand-border);
 
-  /* System States in Forest Night */
-  --ok-main: #a7c957;
-  --ok-soft: rgba(106, 153, 78, 0.22);
-  --ok-text: #d2e6d6;
-  --ok-border: rgba(167, 201, 87, 0.4);
+  /* System States in Slate Night */
+  --ok-main: #22c55e;
+  --ok-soft: rgba(34, 197, 94, 0.18);
+  --ok-text: #bbf7d0;
+  --ok-border: rgba(34, 197, 94, 0);
 
-  --danger-main: #bc4749;
-  --danger-soft: rgba(188, 71, 73, 0.22);
-  --danger-text: #f2dadb;
-  --danger-border: rgba(188, 71, 73, 0.48);
+  --danger-main: #f43f5e;
+  --danger-soft: rgba(244, 63, 94, 0.18);
+  --danger-text: #fecdd3;
+  --danger-border: rgba(244, 63, 94, 0);
 
-  --warn-main: #d97706;
-  --warn-soft: rgba(217, 119, 6, 0.2);
-  --warn-text: #fef3c7;
-  --warn-border: rgba(217, 119, 6, 0.42);
+  --warn-main: #f59e0b;
+  --warn-soft: rgba(245, 158, 11, 0.18);
+  --warn-text: #fde68a;
+  --warn-border: rgba(245, 158, 11, 0);
 
   --info-main: #60a5fa;
   --info-soft: rgba(37, 99, 235, 0.2);
   --info-text: #dbeafe;
-  --info-border: rgba(96, 165, 250, 0.38);
+  --info-border: rgba(96, 165, 250, 0);
+
+  --gauge-deep: #fda4af;
 
   --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.34);
   --shadow-float: 0 24px 52px -12px rgba(0, 0, 0, 0.72);
-  --grid-line: rgba(164, 205, 172, 0.06);
+  --grid-line: rgba(148, 163, 184, 0.07);
 }
 
 @layer base {
@@ -225,13 +241,15 @@
 
   body {
     background-color: var(--bg-canvas);
+    background-image: var(--page-gradient);
+    background-attachment: fixed;
     color: var(--text-primary);
     min-height: 100vh;
     overflow-x: hidden;
   }
 }
 
-/* Warm Editorial Grid & Botanical Hero Glow */
+/* Faint cool grid, kept for hero/empty states */
 .cf-grid-bg {
   background-image:
     linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
@@ -241,25 +259,26 @@
 
 .cf-hero-glow {
   background-image:
-    radial-gradient(65% 55% at 82% 8%, rgba(167, 201, 87, 0.16), transparent 70%),
+    radial-gradient(60% 50% at 84% 6%, rgba(251, 230, 229, 0.55), transparent 70%),
+    radial-gradient(55% 45% at 10% 90%, rgba(182, 216, 241, 0.5), transparent 72%),
     linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
     linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
-  background-size: 100% 100%, 40px 40px, 40px 40px;
-  background-repeat: no-repeat, repeat, repeat;
+  background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+  background-repeat: no-repeat, no-repeat, repeat, repeat;
 }
 
-/* Brand Top Accent Stripe (Hunter Green -> Sage -> Yellow-Green) */
+/* Top accent stripe: sky blue → cyan → periwinkle */
 .cf-top-stripe {
-  background: linear-gradient(90deg, #386641 0%, #6a994e 55%, #a7c957 100%);
+  background: linear-gradient(90deg, #0079e0 0%, #08b3e5 55%, #67e8f9 100%);
 }
 
-/* Brand Icon Tile */
+/* Brand icon tile */
 .brand-mark-tile {
-  background: linear-gradient(135deg, #386641 0%, #2d5234 70%, #6a994e 100%);
-  color: #fcfaf5;
+  background: linear-gradient(135deg, #0079e0 0%, #005aa8 70%, #08b3e5 100%);
+  color: #ffffff;
 }
 
-/* Cards & Panels (neutral.white #fcfaf5 on neutral.100 #f7f1e2) */
+/* Cards & Panels: paper white on the pastel page */
 .console-panel {
   background-color: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -290,45 +309,44 @@
 .console-input:focus {
   outline: none;
   border-color: var(--brand-primary);
-  box-shadow: 0 0 0 3px rgba(56, 102, 65, 0.2);
+  box-shadow: 0 0 0 3px rgba(0, 121, 224, 0.18);
 }
 
-/* Primary Buttons: brand.400 (#386641) with crisp neutral.white (#fcfaf5) text */
+/* Primary Buttons: flat Enrolliq blue, white label */
 .console-btn-primary {
-  background: linear-gradient(180deg, #3f7249 0%, #386641 100%);
-  border: 1px solid #2d5234;
-  color: #fcfaf5;
-  text-shadow: 0 1px 1px rgba(11, 20, 13, 0.22);
-  box-shadow: 0 1px 2px rgba(45, 82, 52, 0.22);
+  background: var(--brand-primary);
+  border: 1px solid var(--brand-primary-hover);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 90, 168, 0.25);
   transition: background 140ms ease, transform 80ms ease, box-shadow 140ms ease;
 }
 
 .console-btn-primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, #386641 0%, #2d5234 100%);
-  border-color: #223d27;
+  background: var(--brand-primary-hover);
+  border-color: var(--brand-primary-active);
 }
 
 .console-btn-primary:active:not(:disabled) {
   transform: translateY(0.5px);
 }
 
-/* Secondary Buttons */
+/* Secondary Buttons: white pill, pale-blue border, blue label */
 .console-btn-secondary {
   background-color: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-primary);
+  border: 1px solid var(--brand-border);
+  color: var(--brand-text);
   transition: background-color 140ms ease, border-color 140ms ease;
 }
 
 .console-btn-secondary:hover:not(:disabled) {
-  background-color: var(--bg-elevated);
-  border-color: var(--border-strong);
+  background-color: var(--brand-soft);
+  border-color: var(--brand-primary);
 }
 
-/* Destructive / Blushed Brick Button */
+/* Destructive: soft rose pill */
 .console-btn-danger {
   background-color: var(--danger-soft);
-  border: 1px solid var(--danger-border);
+  border: 1px solid rgba(180, 35, 58, 0.25);
   color: var(--danger-text);
   transition: opacity 140ms ease, border-color 140ms ease;
 }
@@ -344,44 +362,44 @@
 
 .console-code {
   background-color: var(--bg-code);
-  border: 1px solid #223d27;
-  color: #f7f1e2;
+  border: 1px solid var(--border-subtle);
+  color: #e2e8f0;
 }
 
-/* Semantic Badges */
+/* Semantic Badges: soft borderless pills (border kept transparent for metrics) */
 .badge-brand {
   background-color: var(--brand-soft);
-  border: 1px solid var(--brand-border);
+  border: 1px solid transparent;
   color: var(--brand-text);
 }
 
 .badge-accent {
   background-color: var(--accent-badge-bg);
-  border: 1px solid var(--accent-badge-border);
+  border: 1px solid transparent;
   color: var(--accent-badge-text);
 }
 
 .badge-success {
   background-color: var(--ok-soft);
-  border: 1px solid var(--ok-border);
+  border: 1px solid transparent;
   color: var(--ok-text);
 }
 
 .badge-warning {
   background-color: var(--warn-soft);
-  border: 1px solid var(--warn-border);
+  border: 1px solid transparent;
   color: var(--warn-text);
 }
 
 .badge-error {
   background-color: var(--danger-soft);
-  border: 1px solid var(--danger-border);
+  border: 1px solid transparent;
   color: var(--danger-text);
 }
 
 .badge-info {
   background-color: var(--info-soft);
-  border: 1px solid var(--info-border);
+  border: 1px solid transparent;
   color: var(--info-text);
 }
 
