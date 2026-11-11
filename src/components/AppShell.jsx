@@ -10,6 +10,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Receipt,
   Search,
   Settings,
   Sun,
@@ -60,6 +61,13 @@ const NAV_ITEMS = [
     section: 'Client Sync',
   },
   {
+    id: 'invoices',
+    label: 'Invoices',
+    shortLabel: 'Invoices',
+    icon: Receipt,
+    section: 'Billing',
+  },
+  {
     id: 'setup',
     label: 'Settings & Health',
     shortLabel: 'Settings',
@@ -100,6 +108,10 @@ const ROUTE_TITLES = {
   simulator: {
     crumb: 'Security / Live RPC & Firewall',
     title: 'Live Auto-Sync & Security Lab',
+  },
+  invoices: {
+    crumb: 'Billing / Documents',
+    title: 'Invoices',
   },
   setup: {
     crumb: 'Account / Endpoint & Diagnostics',
@@ -483,7 +495,7 @@ export function AppShell({
       {/* Floating Mobile Bottom Navigation Bar */}
       <nav
         aria-label="Mobile navigation"
-        className="console-shell fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 gap-1 rounded-2xl p-1 lg:hidden"
+        className="console-shell fixed inset-x-3 bottom-3 z-30 grid grid-cols-6 gap-1 rounded-2xl p-1 lg:hidden"
       >
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
