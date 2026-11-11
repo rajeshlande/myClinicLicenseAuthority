@@ -14,6 +14,7 @@ import {
 } from './lib/theme.mjs';
 
 const EntitlementsPage = lazy(() => import('./pages/EntitlementsPage.jsx'));
+const ActivityPage = lazy(() => import('./pages/ActivityPage.jsx'));
 const GuidePage = lazy(() => import('./pages/GuidePage.jsx'));
 const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
 const NodeAgentPage = lazy(() => import('./pages/NodeAgentPage.jsx'));
@@ -313,8 +314,10 @@ export default function App() {
               issueDrawerSignal={issueDrawerSignal}
               onSelectLicenseForKit={(row) => setSelectedLicenseForKit(row)}
               onOpenGuide={() => navigate('guide')}
+              operatorEmail={session?.user?.email ?? ''}
             />
           )}
+          {activeRoute === 'activity' && <ActivityPage backend={backend} />}
           {activeRoute === 'guide' && (
             <GuidePage
               backend={backend}

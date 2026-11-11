@@ -6,6 +6,7 @@ import {
   Building2,
   ChevronRight,
   Cloud,
+  History,
   LogOut,
   Menu,
   Moon,
@@ -28,6 +29,13 @@ const NAV_ITEMS = [
     label: 'Clinics & Plans',
     shortLabel: 'Clinics',
     icon: Building2,
+    section: 'Control Plane',
+  },
+  {
+    id: 'activity',
+    label: 'Fleet Activity',
+    shortLabel: 'Activity',
+    icon: History,
     section: 'Control Plane',
   },
   {
@@ -76,6 +84,10 @@ const ROUTE_TITLES = {
   dashboard: {
     crumb: 'Subscriptions / Fleet Registry',
     title: 'Clinics & Subscriptions',
+  },
+  activity: {
+    crumb: 'Operations / Event Timeline',
+    title: 'Fleet Activity',
   },
   guide: {
     crumb: 'Onboarding / 2-Side Setup',

@@ -38,6 +38,11 @@ import {
   subscribeGlobalSearch,
 } from '../lib/global-search.mjs';
 import {
+  fetchClinicActivity,
+  logClinicActivity,
+} from '../lib/activity.mjs';
+import ActivityTimeline from '../components/entitlements/ActivityTimeline.jsx';
+import {
   MYCLINIC_TIER_ENTITLEMENTS,
   TIER_CATALOG,
   computeFleetMetrics,
@@ -62,6 +67,7 @@ export default function EntitlementsPage({
   issueDrawerSignal = 0,
   onSelectLicenseForKit,
   onOpenGuide,
+  operatorEmail = '',
 }) {
   const supabase = backend.supabase;
 
@@ -85,6 +91,11 @@ export default function EntitlementsPage({
   }, []);
 
   useEffect(() => subscribeGlobalSearch(setSearchQuery), []);
+
+  // ── Schema v4 activity log state (callbacks defined below showToast) ──────
+  const [inspectorTab, setInspectorTab] = useState('controls');
+  const [activityRows, setActivityRows] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   const [copiedId, setCopiedId] = useState(null);
   const [togglingIds, setTogglingIds] = useState({});
@@ -115,6 +126,40 @@ export default function EntitlementsPage({
   const showToast = useCallback((message, tone = 'success') => {
     setToast({ message, tone });
   }, []);
+
+  // Best-effort by UX: the mutation already succeeded, so a failed append
+  // (e.g. a Central project still on schema v3) warns instead of rolling back.
+  const recordActivity = useCallback(
+    async (row, eventKind, payload = {}) => {
+      if (!row?.subscription_id) return;
+      const { error } = await logClinicActivity(supabase, {
+        subscriptionId: row.subscription_id,
+        licenseId: row.license_id ?? null,
+        eventKind,
+        actor: operatorEmail,
+        payload,
+      });
+      if (error) {
+        showToast(
+          'Done — but the activity log could not be written (Central needs schema v4).',
+          'warn',
+        );
+      }
+    },
+    [supabase, operatorEmail, showToast],
+  );
+
+  const loadActivity = useCallback(
+    async (row) => {
+      if (!row?.subscription_id) return;
+      setActivityLoading(true);
+      setActivityRows([]);
+      const { rows } = await fetchClinicActivity(supabase, row.subscription_id);
+      setActivityRows(rows);
+      setActivityLoading(false);
+    },
+    [supabase],
+  );
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -185,6 +230,13 @@ export default function EntitlementsPage({
     [records, inspectedLicenseId],
   );
 
+  // Keep the dossier timeline fresh whenever it is the visible tab.
+  useEffect(() => {
+    if (inspectorTab === 'activity' && inspectedRow) {
+      void loadActivity(inspectedRow);
+    }
+  }, [inspectorTab, inspectedRow, loadActivity]);
+
   const openInspector = async (row) => {
     setInspectedLicenseId(row.license_id);
     setRenewDateInput(
@@ -246,6 +298,11 @@ export default function EntitlementsPage({
         await fetchEntitlements({ silent: true });
       }
       showToast('Saved clinic Email / URL auto-sync rules.');
+      await recordActivity(inspectedRow, 'routing_changed', {
+        email: check.payload.p_customer_email ?? null,
+        origin: check.payload.p_allowed_origin ?? null,
+        lock: Boolean(check.payload.p_lock_first_origin),
+      });
     } catch (err) {
       rememberError(err, 'Update clinic routing');
       showToast(
@@ -270,6 +327,10 @@ export default function EntitlementsPage({
       showToast(
         `Updated plan to ${nextTier.toUpperCase()} — auto-syncs on client.`,
       );
+      await recordActivity(inspectedRow, 'tier_changed', {
+        from: inspectedRow.tier,
+        to: nextTier,
+      });
     } catch (err) {
       rememberError(err, 'Change subscription tier');
       showToast(errorLine(err, { context: 'Could not change tier' }), 'error');
@@ -310,6 +371,10 @@ export default function EntitlementsPage({
       setRenewDateInput(nextDateStr);
       await fetchEntitlements({ silent: true });
       showToast(`Extended paid term to ${nextDateStr}.`);
+      await recordActivity(inspectedRow, 'renewed', {
+        expires_at: isoEnd,
+        previous: inspectedRow.expires_at,
+      });
     } catch (err) {
       rememberError(err, 'Extend subscription term');
       showToast(
@@ -352,6 +417,10 @@ export default function EntitlementsPage({
       if (rpcRecord) {
         const insertedRow = Array.isArray(rpcRecord) ? rpcRecord[0] : rpcRecord;
         setRecords((prev) => [insertedRow, ...prev]);
+        await recordActivity(insertedRow, 'onboarded', {
+          tier: validation.payload.p_tier,
+          seats: validation.payload.p_max_machines,
+        });
       } else {
         await fetchEntitlements({ silent: true });
       }
@@ -406,6 +475,9 @@ export default function EntitlementsPage({
           : 'Subscription paused — clinic enters read-only on next sync.',
         nextActiveState ? 'success' : 'warn',
       );
+      await recordActivity(row, nextActiveState ? 'resumed' : 'paused', {
+        is_active: nextActiveState,
+      });
     } catch (err) {
       rememberError(err, 'Toggle pause switch');
       showToast(
@@ -1129,6 +1201,46 @@ export default function EntitlementsPage({
       >
         {inspectedRow ? (
           <div className="space-y-5">
+            {/* Dossier tabs: live controls vs the schema-v4 timeline */}
+            <div className="console-well flex items-center gap-1 rounded-xl p-1">
+              {[
+                { id: 'controls', label: 'Controls' },
+                { id: 'activity', label: `Activity (${activityRows.length})` },
+              ].map((tab) => {
+                const active = inspectorTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      setInspectorTab(tab.id);
+                      if (tab.id === 'activity' && activityRows.length === 0) {
+                        void loadActivity(inspectedRow);
+                      }
+                    }}
+                    style={
+                      active
+                        ? {
+                            backgroundColor: 'var(--bg-surface)',
+                            border: '1px solid var(--border-subtle)',
+                            boxShadow: 'var(--shadow-card)',
+                            color: 'var(--text-primary)',
+                          }
+                        : {
+                            border: '1px solid transparent',
+                            color: 'var(--text-secondary)',
+                          }
+                    }
+                    className="flex-1 rounded-lg px-2.5 py-1.5 text-center font-mono text-[10.5px] font-semibold transition-all"
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {inspectorTab === 'controls' ? (
+              <>
             {/* Live Client Sync Receipt Card */}
             {(() => {
               const syncState = describeClientSyncState(inspectedRow);
@@ -1488,6 +1600,10 @@ export default function EntitlementsPage({
                 )}
               </div>
             </div>
+              </>
+            ) : (
+              <ActivityTimeline rows={activityRows} loading={activityLoading} />
+            )}
           </div>
         ) : null}
       </SlideOverDrawer>
