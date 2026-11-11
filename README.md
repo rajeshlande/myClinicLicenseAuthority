@@ -1,6 +1,6 @@
-# myClinicLicenseAuthority (`v2.3.0` · Schema v3)
+# myClinicLicenseAuthority (`v3.1.0` · Schema v4)
 
-Central subscription management & **Keyless Auto-Sync** server for [`myClinic`](https://github.com/rajeshlande/myClinic) — manage every clinic's plan, seats, expiry, and pause/kill-switch from one Central Supabase dashboard with **zero Edge Functions, zero RSA keys, and zero manual license keys required**.
+Central subscription management & **Keyless Auto-Sync** server for [`myClinic`](https://github.com/rajeshlande/myClinic) — manage every clinic's plan, seats, expiry, and pause/kill-switch from one Central Supabase dashboard with **zero manual license keys required**. Optional RS256 capability signing for on-prem node hosts runs in the `verify-license` Edge Function (the private key lives only in Edge secrets).
 
 ---
 
@@ -8,7 +8,7 @@ Central subscription management & **Keyless Auto-Sync** server for [`myClinic`](
 
 ### Side 1 — Central Server (`myClinicLicenseAuthority` · Do Once)
 
-1. **Paste `supabase/schema.sql` (v3) in Central Supabase → SQL Editor** and click **Run** *(safe & idempotent on new, v1 and v2 projects — the v3 refusal audit is purely additive)*.
+1. **Paste `supabase/schema.sql` (v4) in Central Supabase → SQL Editor** and click **Run** *(safe & idempotent — the v3 refusal audit and the v4 activity-log/invoices tables are purely additive; blank apply AND re-apply proven on PostgreSQL 17)*.
 2. **Grant your operator email Admin standing** (in SQL Editor):
    ```sql
    update auth.users

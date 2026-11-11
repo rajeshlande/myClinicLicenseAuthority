@@ -532,6 +532,34 @@ export function runChecks({
       `${versions.fromPackage} / ${versions.appVersion} / ${versions.changelogHead ?? '—'} · schema ${versions.schemaVersion}`,
     );
 
+    const docDrift = [];
+    const readmeText = at('README.md') || '';
+    const readmeHead = readmeText.split('\n')[0];
+    if (!readmeHead.includes(`v${versions.appVersion}`)) {
+      docDrift.push('README head version');
+    }
+    if (!readmeHead.includes(`Schema v${versions.schemaVersion}`)) {
+      docDrift.push('README head schema');
+    }
+    if (!readmeText.includes(`schema.sql\` (v${versions.schemaVersion})`)) {
+      docDrift.push('README schema paste line');
+    }
+    if (
+      !(at('src/pages/GuidePage.jsx') || '').includes(
+        `schema.sql (v${versions.schemaVersion})`,
+      )
+    ) {
+      docDrift.push('GuidePage copy label');
+    }
+    add(
+      'docs-version',
+      docDrift.length ? FAIL : PASS,
+      'README and Guide version strings match APP_VERSION / SCHEMA_VERSION',
+      docDrift.length
+        ? `stale: ${docDrift.join(', ')}`
+        : `v${versions.appVersion} / schema v${versions.schemaVersion}`,
+    );
+
     const missing = [
       'README.md',
       'AGENTS.md',

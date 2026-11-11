@@ -28,6 +28,20 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '64kb' }));
 
+// Defense-in-depth for the on-prem host (mirrors public/_headers on the CDN):
+// the SPA is served from clinic LAN hardware, so the transport gets the same
+// hardening the cloud deploy declares.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (req.path.startsWith('/assets/')) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  }
+  next();
+});
+
 if (CORS_ORIGIN) {
   app.use((req, res, next) => {
     const allowed =
