@@ -13,17 +13,18 @@ import {
 import { TIER_CONTRACT } from '../src/lib/tier-contract.mjs';
 
 /**
- * `rajeshlande/myClinic` **v1.35.6** mirrors: `src/lib/plans.mjs:115`
- * (`CENTRAL_TIER_TO_PLAN`) and `src/lib/central-sync.mjs` (`CENTRAL_CODES`,
- * `CENTRAL_CODE_NOTES`). The companion patch shipped with contract v1
- * (CLIENT-CONTRACT-PATCH.md, contract sha256 pinned there) moves the client
- * onto the published JSON; until that lands these mirrors ARE the wire, and
- * the test below fails the moment either side drifts.
+ * `rajeshlande/myClinic` **v1.43.0** (`b1e174ee`) mirrors: `src/lib/plans.mjs:140`
+ * (`CENTRAL_TIER_TO_PLAN`, now derived from the vendored contract) and
+ * `src/lib/central-sync.mjs:98-126` (`CENTRAL_CODES`, `CENTRAL_CODE_NOTES`).
+ * v1.43.0 consumed contract v1 byte-for-byte (raw sha256 pinned in their
+ * `tests/tier-contract.test.mjs`) and closed both `SUBSCRIPTION_INACTIVE`
+ * gaps; these mirrors remain the cross-check that neither side drifts.
  */
-const CLIENT_V1_35_6_CENTRAL_CODES = [
+const CLIENT_V1_43_0_CENTRAL_CODES = [
   'ACTIVE',
   'SUBSCRIPTION_PAUSED',
   'SUBSCRIPTION_EXPIRED',
+  'SUBSCRIPTION_INACTIVE',
   'SUBSCRIPTION_NOT_FOUND',
   'SEAT_LIMIT_REACHED',
   'ORIGIN_MISMATCH',
@@ -38,8 +39,9 @@ const CLIENT_V1_35_6_CENTRAL_CODES = [
 // CENTRAL_CODES also carries the success verdict; it is not a refusal code.
 const CLIENT_NON_REFUSAL_CODES = ['ACTIVE', 'FETCH_UNAVAILABLE'];
 
-/** Codes the client's v1.35.6 note card carries a sentence for. */
-const CLIENT_V1_35_6_NOTED_CODES = [
+/** Codes the client's v1.43.0 note card carries a sentence for. */
+const CLIENT_V1_43_0_NOTED_CODES = [
+  'SUBSCRIPTION_INACTIVE',
   'SUBSCRIPTION_NOT_FOUND',
   'ORIGIN_MISMATCH',
   'SEAT_LIMIT_REACHED',
@@ -127,7 +129,7 @@ test('Authority RS256 capability tokens and tier mappings match rajeshlande/myCl
   );
 });
 
-test('the published tier contract agrees with the myClinic v1.35.6 wire mirrors', () => {
+test('the published tier contract agrees with the myClinic v1.43.0 wire mirrors', () => {
   // 1. Every contract tier maps to the plan and seats the client expects.
   for (const [tier, spec] of Object.entries(TIER_CONTRACT.tiers)) {
     assert.ok(MYCLINIC_TIER_TO_PLAN[tier], `client knows no tier ${tier}`);
@@ -149,7 +151,7 @@ test('the published tier contract agrees with the myClinic v1.35.6 wire mirrors'
   // 2. Every refusal code the client can decode is a contract code, and the
   //    client adds exactly one verdict of its own (FETCH_UNAVAILABLE).
   const contractCodes = Object.keys(TIER_CONTRACT.refusal_codes).sort();
-  const clientRefusals = CLIENT_V1_35_6_CENTRAL_CODES.filter(
+  const clientRefusals = CLIENT_V1_43_0_CENTRAL_CODES.filter(
     (c) => !CLIENT_NON_REFUSAL_CODES.includes(c),
   );
   for (const code of clientRefusals) {
@@ -159,13 +161,13 @@ test('the published tier contract agrees with the myClinic v1.35.6 wire mirrors'
     );
   }
 
-  // 3. The documented gaps the companion patch closes, pinned exactly: v1.35.6
-  //    can neither decode nor explain SUBSCRIPTION_INACTIVE. Updating these
-  //    mirrors after the client patch lands must revisit this expectation.
+  // 3. No gaps left: v1.43.0 decodes and explains every contract code. The
+  //    pin stays as an empty-set ratchet — a future contract code that either
+  //    side forgets fails here with the code named.
   const undecoded = contractCodes.filter((c) => !clientRefusals.includes(c));
-  assert.deepEqual(undecoded, ['SUBSCRIPTION_INACTIVE']);
+  assert.deepEqual(undecoded, []);
   const unnoted = contractCodes.filter(
-    (code) => !CLIENT_V1_35_6_NOTED_CODES.includes(code),
+    (code) => !CLIENT_V1_43_0_NOTED_CODES.includes(code),
   );
-  assert.deepEqual(unnoted, ['SUBSCRIPTION_INACTIVE']);
+  assert.deepEqual(unnoted, []);
 });
