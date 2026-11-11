@@ -33,6 +33,11 @@ import RefusalEvidenceCard from '../components/entitlements/RefusalEvidenceCard.
 import SyncStateBadge from '../components/entitlements/SyncStateBadge.jsx';
 import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import {
+  getGlobalSearchQuery,
+  setGlobalSearchQuery,
+  subscribeGlobalSearch,
+} from '../lib/global-search.mjs';
+import {
   MYCLINIC_TIER_ENTITLEMENTS,
   TIER_CATALOG,
   computeFleetMetrics,
@@ -67,9 +72,19 @@ export default function EntitlementsPage({
   const [errorBanner, setErrorBanner] = useState(null);
   const [toast, setToast] = useState(null);
 
-  const [searchQuery, setSearchQuery] = useState('');
+  // The shell topbar's global search pill and this registry filter are ONE
+  // piece of state (Enrolliq slice 2): seed from the store and mirror every
+  // external change back into the local query.
+  const [searchQuery, setSearchQuery] = useState(getGlobalSearchQuery);
   const [statusFilter, setStatusFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
+
+  const pushSearchQuery = useCallback((value) => {
+    setSearchQuery(value);
+    setGlobalSearchQuery(value);
+  }, []);
+
+  useEffect(() => subscribeGlobalSearch(setSearchQuery), []);
 
   const [copiedId, setCopiedId] = useState(null);
   const [togglingIds, setTogglingIds] = useState({});
@@ -672,14 +687,14 @@ export default function EntitlementsPage({
               <input
                 type="search"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => pushSearchQuery(e.target.value)}
                 placeholder="Search by clinic owner email, https:// URL, plan, or billing note..."
                 className="console-input w-full rounded-lg py-2 pr-8 pl-8 text-xs"
               />
               {searchQuery ? (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => pushSearchQuery('')}
                   aria-label="Clear search"
                   style={{ color: 'var(--text-secondary)' }}
                   className="absolute top-1/2 right-2.5 -translate-y-1/2"
@@ -771,7 +786,7 @@ export default function EntitlementsPage({
             <button
               type="button"
               onClick={() => {
-                setSearchQuery('');
+                pushSearchQuery('');
                 setStatusFilter('all');
                 setTierFilter('all');
               }}

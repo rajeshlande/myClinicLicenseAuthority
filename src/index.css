@@ -285,6 +285,33 @@
   box-shadow: var(--shadow-card);
 }
 
+/* Enrolliq floating-shell surface: paper-white card with the sampled float
+   shadow. Radius is applied per use-site (rounded-2xl / rounded-3xl). */
+.console-shell {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-float);
+}
+
+/* Enrolliq topbar search pill: borderless well that lifts on focus. */
+.console-search-pill {
+  background-color: var(--bg-sidebar);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-primary);
+}
+
+.console-search-pill::placeholder {
+  color: var(--text-placeholder);
+}
+
+.console-search-pill:focus {
+  outline: none;
+  border-color: var(--brand-border);
+  background-color: var(--bg-surface);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
 .console-elevated {
   background-color: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
