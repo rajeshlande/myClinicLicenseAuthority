@@ -568,7 +568,7 @@ export default function EntitlementsPage({
           className="space-y-3 p-3.5 sm:p-4"
         >
           <div className="flex flex-wrap items-center justify-between gap-2.5">
-            <div className="console-well grid w-full grid-cols-4 gap-1 rounded-lg p-1 sm:flex sm:w-auto sm:items-center">
+            <div className="console-well grid w-full grid-cols-4 gap-1 rounded-xl p-1 sm:flex sm:w-auto sm:items-center">
               {[
                 {
                   id: 'all',
@@ -601,7 +601,8 @@ export default function EntitlementsPage({
                       active
                         ? {
                             backgroundColor: 'var(--bg-surface)',
-                            border: '1px solid var(--brand-border)',
+                            border: '1px solid var(--border-subtle)',
+                            boxShadow: 'var(--shadow-card)',
                             color: 'var(--text-primary)',
                           }
                         : {
@@ -609,7 +610,7 @@ export default function EntitlementsPage({
                             color: 'var(--text-secondary)',
                           }
                     }
-                    className="truncate rounded-md px-1.5 py-1 text-center font-mono text-[10px] font-semibold transition-all sm:px-2.5 sm:text-[11px]"
+                    className="truncate rounded-lg px-1.5 py-1.5 text-center font-mono text-[10px] font-semibold transition-all sm:px-2.5 sm:text-[11px]"
                   >
                     <span className="sm:hidden">{tab.mobileLabel}</span>
                     <span className="hidden sm:inline">{tab.label}</span>
@@ -629,7 +630,7 @@ export default function EntitlementsPage({
                 }
                 className={`${
                   livePolling ? 'badge-success' : 'console-btn-secondary'
-                } inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 font-mono text-[10.5px] font-bold`}
+                } inline-flex h-9 items-center gap-1.5 rounded-full px-3 font-mono text-[10.5px] font-bold`}
               >
                 <span
                   style={{
@@ -648,7 +649,7 @@ export default function EntitlementsPage({
                 type="button"
                 disabled={filteredRecords.length === 0}
                 onClick={handleExportCsv}
-                className="console-btn-secondary inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold disabled:opacity-40"
+                className="console-btn-secondary inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold disabled:opacity-40"
               >
                 <Download className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Export CSV</span>
@@ -658,7 +659,7 @@ export default function EntitlementsPage({
                 type="button"
                 disabled={refreshing}
                 onClick={() => fetchEntitlements()}
-                className="console-btn-secondary inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold"
+                className="console-btn-secondary inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold"
               >
                 <RefreshCw
                   className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`}
@@ -669,7 +670,7 @@ export default function EntitlementsPage({
               <button
                 type="button"
                 onClick={() => setIssueOpen(true)}
-                className="console-btn-primary inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold"
+                className="console-btn-primary inline-flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold"
               >
                 <Plus className="h-3.5 w-3.5 stroke-[2.4]" />
                 <span>Add Clinic</span>
@@ -689,7 +690,7 @@ export default function EntitlementsPage({
                 value={searchQuery}
                 onChange={(e) => pushSearchQuery(e.target.value)}
                 placeholder="Search by clinic owner email, https:// URL, plan, or billing note..."
-                className="console-input w-full rounded-lg py-2 pr-8 pl-8 text-xs"
+                className="console-search-pill h-9 w-full pr-8 pl-8 text-xs"
               />
               {searchQuery ? (
                 <button
@@ -705,15 +706,17 @@ export default function EntitlementsPage({
             </div>
 
             <div className="flex items-center gap-2 sm:shrink-0">
-              <SlidersHorizontal
-                style={{ color: 'var(--text-secondary)' }}
-                className="hidden h-3.5 w-3.5 shrink-0 sm:block"
-              />
+              <span className="console-well hidden h-9 w-9 shrink-0 items-center justify-center rounded-full sm:flex">
+                <SlidersHorizontal
+                  style={{ color: 'var(--text-secondary)' }}
+                  className="h-3.5 w-3.5"
+                />
+              </span>
               <select
                 aria-label="Filter by myClinic plan"
                 value={tierFilter}
                 onChange={(e) => setTierFilter(e.target.value)}
-                className="console-input w-full rounded-lg px-2.5 py-2 font-mono text-xs sm:w-48"
+                className="console-search-pill h-9 w-full px-3 font-mono text-xs sm:w-44"
               >
                 <option value="all">All Plans</option>
                 <option value="solo">Solo Plan (1 Doc)</option>
@@ -760,7 +763,7 @@ export default function EntitlementsPage({
               <button
                 type="button"
                 onClick={() => setIssueOpen(true)}
-                className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold"
+                className="console-btn-primary inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Add First Clinic
@@ -768,8 +771,8 @@ export default function EntitlementsPage({
               {onOpenGuide ? (
                 <button
                   type="button"
-                  onClick={onOpenGuide}
-                  className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold"
+                    onClick={onOpenGuide}
+                    className="console-btn-secondary inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold"
                 >
                   <BookOpen
                     style={{ color: 'var(--brand-text)' }}
@@ -790,7 +793,7 @@ export default function EntitlementsPage({
                 setStatusFilter('all');
                 setTierFilter('all');
               }}
-              className="console-btn-secondary mt-3 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold"
+                className="console-btn-secondary mt-3 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold"
             >
               Clear filters
             </button>
@@ -798,7 +801,7 @@ export default function EntitlementsPage({
         ) : (
           <>
             {/* Mobile & Tablet Card Stack (< 1024px) */}
-            <div className="divide-y divide-[var(--border-subtle)] lg:hidden">
+            <div className="grid gap-3 p-3 lg:hidden">
               {filteredRecords.map((row) => (
                 <ClinicCardMobile
                   key={row.license_id}

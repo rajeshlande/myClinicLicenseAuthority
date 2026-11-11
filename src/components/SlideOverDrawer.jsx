@@ -42,10 +42,8 @@ export function SlideOverDrawer({
           boxShadow: 'var(--shadow-float)',
           color: 'var(--text-primary)',
         }}
-        className={`relative z-10 flex h-full w-full ${widthClass} flex-col overflow-hidden`}
+        className={`relative z-10 flex h-full w-full ${widthClass} flex-col overflow-hidden rounded-l-3xl`}
       >
-        <div className="cf-top-stripe h-[3px] w-full shrink-0" />
-
         <header
           style={{ borderBottom: '1px solid var(--border-subtle)' }}
           className="flex items-start justify-between gap-4 px-4 py-4 sm:px-6"

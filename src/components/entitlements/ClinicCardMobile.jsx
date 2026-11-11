@@ -44,7 +44,7 @@ export default function ClinicCardMobile({
     MYCLINIC_TIER_ENTITLEMENTS[row.tier] ?? MYCLINIC_TIER_ENTITLEMENTS.standard;
 
   return (
-    <div className="space-y-3 p-4">
+    <div className="console-panel space-y-3 rounded-2xl p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -140,7 +140,7 @@ export default function ClinicCardMobile({
         <button
           type="button"
           onClick={() => onOpenInspector(row)}
-          className="console-btn-secondary inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold"
+          className="console-btn-secondary inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-xs font-semibold"
         >
           <Cpu className="h-3.5 w-3.5" />
           Manage Clinic
@@ -152,7 +152,7 @@ export default function ClinicCardMobile({
           onClick={() => onToggleKillSwitch(row)}
           className={`${
             row.is_active ? 'console-btn-danger' : 'badge-success'
-          } inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold disabled:opacity-50`}
+          } inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-xs font-semibold disabled:opacity-50`}
         >
           <Power className="h-3.5 w-3.5" />
           {row.is_active ? 'Pause Clinic' : 'Resume Clinic'}

@@ -144,8 +144,8 @@ export default function ClinicRowDesktop({
               seats
             </span>
             <div
-              style={{ backgroundColor: 'var(--bg-well)' }}
-              className="h-1.5 w-12 overflow-hidden rounded-full"
+              style={{ backgroundColor: 'var(--border-subtle)' }}
+              className="h-1.5 w-16 overflow-hidden rounded-full"
             >
               <div
                 style={{
@@ -184,7 +184,7 @@ export default function ClinicRowDesktop({
           <button
             type="button"
             onClick={() => onOpenInspector(row)}
-            className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+            className="console-btn-secondary inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-semibold"
           >
             Manage
           </button>
@@ -193,7 +193,7 @@ export default function ClinicRowDesktop({
             type="button"
             onClick={() => onOpenClientSdk(row)}
             title="Open myClinic Client SDK"
-            className="console-btn-secondary inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold"
+            className="console-btn-secondary inline-flex items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-semibold"
           >
             <Blocks className="h-3.5 w-3.5" />
             SDK
@@ -205,7 +205,7 @@ export default function ClinicRowDesktop({
             onClick={() => onToggleKillSwitch(row)}
             className={`${
               row.is_active ? 'console-btn-danger' : 'badge-success'
-            } inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50`}
+            } inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50`}
           >
             <Power className="h-3 w-3" />
             {row.is_active ? 'Pause' : 'Resume'}
