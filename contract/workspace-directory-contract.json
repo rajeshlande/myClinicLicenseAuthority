@@ -1,0 +1,63 @@
+{
+  "contract": "workspace-directory",
+  "version": 1,
+  "owner": "myClinicLicenseAuthority",
+  "consumers": ["myClinic", "tenant-schema"],
+  "roles": {
+    "workspace_member": ["admin", "doctor", "staff"],
+    "central_auth_metadata": ["admin", "clinic_user"]
+  },
+  "tenant": {
+    "schema_version": 21,
+    "members_table": "tenant_members",
+    "member_helper": "is_tenant_member",
+    "slug_claim": "tenant_slug",
+    "slug_pattern": "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$",
+    "url_pattern": "^https://[a-z0-9-]+\\.supabase\\.co/?$",
+    "forbidden_key_pattern": "service_role|sb_secret"
+  },
+  "auth": {
+    "issuer": "myclinic-license-authority",
+    "tenant_token_ttl_seconds": 900,
+    "offline_lease_ttl_seconds": 604800,
+    "claims": [
+      "iss",
+      "sub",
+      "aud",
+      "role",
+      "workspace_id",
+      "tenant_slug",
+      "tenant_schema_version",
+      "tier",
+      "kid",
+      "iat",
+      "exp"
+    ]
+  },
+  "rpc": {
+    "anon_only": ["sync_clinic_subscription"],
+    "authenticated_discovery": "my_workspaces"
+  },
+  "storage_keys": {
+    "active_workspace_session": "opd.active.workspace",
+    "last_workspace_local": "opd.last.workspace",
+    "admin_auth": "opd.admin.master.auth",
+    "clinic_auth": "opd.clinic.master.auth",
+    "offline_namespace": "myclinic.<kind>.v3.<slug>.<userId>"
+  },
+  "pages": {
+    "clinic_app": "/",
+    "admin_console": "/admin/",
+    "service_worker_scopes": {
+      "clinic_app": "/",
+      "admin_console": "/admin/"
+    }
+  },
+  "env": {
+    "clinic_app": [
+      "VITE_CENTRAL_SUPABASE_URL",
+      "VITE_CENTRAL_SUPABASE_ANON_KEY"
+    ],
+    "forbidden_env_pattern": "VITE_.*(TENANT|CLINIC_.{0,10}SUPABASE).*"
+  }
+}
