@@ -1038,11 +1038,19 @@ begin
       when s.customer_email is not null and s.allowed_origin is not null then 'email+url'
       when s.customer_email is not null then 'email'
       else 'url'
-    end as matched_by
+    end as matched_by,
+    w.id as workspace_id,
+    w.slug as ws_slug,
+    w.supabase_url as ws_url,
+    w.supabase_anon_key as ws_key,
+    w.tenant_schema_version as ws_schema,
+    w.is_active as ws_active
   into v_sub
   from public.subscriptions s
   join public.licenses l
     on l.subscription_id = s.id
+  left join public.workspaces w
+    on w.id = s.workspace_id
   where (
     (
       s.customer_email is not null
@@ -1355,6 +1363,19 @@ begin
     'expires_at', v_sub.expires_at,
     'grace_until', v_grace_until,
     'match_mode', v_match_mode,
+    -- OPD D4'/F1/S3: the tenant connection pointer rides the SAME anon RPC
+    -- (no second anon surface). The anon key is public by design; tenant RLS
+    -- plus the D1' capability token are the boundary. Null unless the linked
+    -- workspace exists AND is active, so a deactivated clinic gets no pointer.
+    'workspace', case
+      when v_sub.ws_active is true and v_sub.ws_url is not null
+      then jsonb_build_object(
+        'slug', v_sub.ws_slug,
+        'supabase_url', v_sub.ws_url,
+        'supabase_anon_key', v_sub.ws_key,
+        'tenant_schema_version', v_sub.ws_schema
+      )
+      else null end,
     'server_time', v_now
   );
 end;

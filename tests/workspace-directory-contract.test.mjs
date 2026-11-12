@@ -26,7 +26,7 @@ const CONTRACT = JSON.parse(RAW.toString('utf8'));
 test('the directory contract byte-pin matches the shipped file', () => {
   assert.equal(
     createHash('sha256').update(RAW).digest('hex'),
-    '6bdf09b0b784c062f8738d8299d500e90817863b7958b9bef4da3eadbf5f0497',
+    'c13cd4fbc2b435efbb994ccc9fee223dccbf53724030c33300669d8e842cf7e6',
   );
 });
 

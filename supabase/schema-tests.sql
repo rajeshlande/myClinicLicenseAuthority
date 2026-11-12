@@ -671,4 +671,79 @@ begin
 end $$;
 reset role;
 
+-- =============================================================================
+-- 10. SCHEMA v5 — the workspace pointer rides the single anon RPC (D4'/F1/S3)
+-- =============================================================================
+
+-- 10a. link the §9 workspace to a real subscription (admin provision + link)
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare v_row public.admin_license_view;
+begin
+  select * into v_row from public.create_subscription_with_license(
+    p_customer_email => 'ops@sunriseopd.example',
+    p_allowed_origin => 'https://sunriseopd.github.io',
+    p_tier           => 'growth',
+    p_max_machines   => 2,
+    p_expires_at     => now() + interval '365 days');
+  update public.subscriptions
+     set workspace_id = (select id from public.workspaces where slug = 'sunrise-opd')
+   where id = v_row.subscription_id;
+  raise notice 'PASS: subscription linked to workspace sunrise-opd';
+end $$;
+
+-- 10b. anon sync on a matched clinic returns the active workspace pointer
+set local role anon;
+select set_config('request.headers', '{"origin":"https://sunriseopd.github.io"}', true);
+do $$
+declare v_res jsonb;
+begin
+  v_res := public.sync_clinic_subscription('ops@sunriseopd.example', 'https://sunriseopd.github.io', 'p1b-device');
+  if coalesce((v_res ->> 'allowed')::boolean, false) <> true then
+    raise exception 'FAIL: matched sync refused: %', v_res;
+  end if;
+  if v_res -> 'workspace' ->> 'slug' is distinct from 'sunrise-opd' then
+    raise exception 'FAIL: workspace pointer missing: %', v_res -> 'workspace';
+  end if;
+  if nullif(v_res -> 'workspace' ->> 'supabase_anon_key', '') is null then
+    raise exception 'FAIL: workspace pointer lacks connection key';
+  end if;
+  raise notice 'PASS: anon sync carries the active workspace pointer (slug + connection)';
+end $$;
+
+-- 10c. deactivating the workspace withdraws the pointer without touching the licence
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+update public.workspaces set is_active = false where slug = 'sunrise-opd';
+set local role anon;
+do $$
+declare v_res jsonb;
+begin
+  v_res := public.sync_clinic_subscription('ops@sunriseopd.example', 'https://sunriseopd.github.io', 'p1b-device');
+  if coalesce((v_res ->> 'allowed')::boolean, false) <> true then
+    raise exception 'FAIL: licence verdict changed when workspace deactivated: %', v_res;
+  end if;
+  -- jsonb null is NOT sql NULL: a withdrawn pointer arrives as the json
+  -- literal null, so assert on the payload, not on the key's presence.
+  if v_res -> 'workspace' ->> 'slug' is not null then
+    raise exception 'FAIL: inactive workspace still advertised: %', v_res -> 'workspace';
+  end if;
+  raise notice 'PASS: inactive workspace withdraws the pointer; licence verdict unchanged';
+end $$;
+
+-- 10d. the healthcheck branch stays side-effect free and pointer-free
+do $$
+declare v_res jsonb;
+begin
+  v_res := public.sync_clinic_subscription('', '', 'healthcheck');
+  if v_res ? 'workspace' then
+    raise exception 'FAIL: healthcheck response gained a workspace key';
+  end if;
+  raise notice 'PASS: healthcheck probe stays pointer-free';
+end $$;
+reset role;
+
 rollback;

@@ -1,11 +1,21 @@
 {
   "contract": "workspace-directory",
-  "version": 1,
+  "version": 2,
   "owner": "myClinicLicenseAuthority",
-  "consumers": ["myClinic", "tenant-schema"],
+  "consumers": [
+    "myClinic",
+    "tenant-schema"
+  ],
   "roles": {
-    "workspace_member": ["admin", "doctor", "staff"],
-    "central_auth_metadata": ["admin", "clinic_user"]
+    "workspace_member": [
+      "admin",
+      "doctor",
+      "staff"
+    ],
+    "central_auth_metadata": [
+      "admin",
+      "clinic_user"
+    ]
   },
   "tenant": {
     "schema_version": 21,
@@ -35,8 +45,21 @@
     ]
   },
   "rpc": {
-    "anon_only": ["sync_clinic_subscription"],
-    "authenticated_discovery": "my_workspaces"
+    "anon_only": [
+      "sync_clinic_subscription"
+    ],
+    "authenticated_discovery": "my_workspaces",
+    "sync_response_workspace": {
+      "key": "workspace",
+      "fields": [
+        "slug",
+        "supabase_url",
+        "supabase_anon_key",
+        "tenant_schema_version"
+      ],
+      "null_when": "no workspace linked, or linked workspace is_inactive",
+      "carrier": "sync_clinic_subscription (the single anon RPC)"
+    }
   },
   "storage_keys": {
     "active_workspace_session": "opd.active.workspace",
