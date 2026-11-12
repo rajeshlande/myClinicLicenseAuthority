@@ -1,6 +1,6 @@
 {
   "contract": "workspace-directory",
-  "version": 3,
+  "version": 4,
   "owner": "myClinicLicenseAuthority",
   "consumers": [
     "myClinic",
@@ -18,9 +18,17 @@
     ]
   },
   "tenant": {
-    "schema_version": 21,
+    "schema_version": 22,
     "members_table": "tenant_members",
     "member_helper": "is_tenant_member",
+    "meta_table": "tenant_meta",
+    "gate_policy_suffix": "tenant_gate",
+    "admit_rpc": "tenant_admit_member",
+    "role_map": {
+      "admin": "owner",
+      "doctor": "doctor",
+      "staff": "frontdesk"
+    },
     "slug_claim": "tenant_slug",
     "slug_pattern": "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$",
     "url_pattern": "^https://[a-z0-9-]+\\.supabase\\.co/?$",

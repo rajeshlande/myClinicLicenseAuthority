@@ -13,7 +13,8 @@
  *   1. url-shape            contract `tenant.url_pattern` (https + *.supabase.co)
  *   2. key-publishable      never service_role / sb_secret_ / a secret-shaped JWT
  *   3. rest-reachable       GET  {url}/rest/v1/            → the project answers
- *   4. schema-version       POST {url}/rest/v1/rpc/app_schema_version → == 21
+ *   4. schema-version       POST {url}/rest/v1/rpc/app_schema_version → the
+ *                           contract's tenant.schema_version, never a literal
  *   5. anon-clinical-denied GET  {url}/rest/v1/patients    → refused or 0 rows
  *
  * Points 3–5 use nothing but the clinic's publishable key, exactly like the

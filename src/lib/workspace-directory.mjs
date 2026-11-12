@@ -37,6 +37,29 @@ export const CENTRAL_AUTH_ROLES = deepFreeze([
 
 export const TENANT_SCHEMA_VERSION = raw.tenant.schema_version;
 
+/**
+ * P3: the tenant template's vocabulary. `supabase/tenant/tenant-schema.sql` in
+ * myClinic is the implementation and these names are the promise it has to keep,
+ * so Central can sync an allowlist and mint a capability token without either
+ * side inventing a table, a helper, a policy suffix or a role. `TENANT_ROLE_MAP`
+ * is the contract's directory-role → myClinic-staff-role translation
+ * (admin→owner, doctor→doctor, staff→frontdesk); a token's `role` claim carries
+ * the DIRECTORY side of that pair, never the local one.
+ */
+export const TENANT_MEMBERS_TABLE = raw.tenant.members_table;
+
+export const TENANT_MEMBER_HELPER = raw.tenant.member_helper;
+
+export const TENANT_META_TABLE = raw.tenant.meta_table;
+
+export const TENANT_GATE_POLICY_SUFFIX = raw.tenant.gate_policy_suffix;
+
+export const TENANT_ADMIT_RPC = raw.tenant.admit_rpc;
+
+export const TENANT_ROLE_MAP = deepFreeze({ ...raw.tenant.role_map });
+
+export const TENANT_SLUG_CLAIM = raw.tenant.slug_claim;
+
 export const TENANT_TOKEN_TTL_SECONDS = raw.auth.tenant_token_ttl_seconds;
 
 export const OFFLINE_LEASE_TTL_SECONDS = raw.auth.offline_lease_ttl_seconds;

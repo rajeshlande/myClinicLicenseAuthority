@@ -10,8 +10,15 @@ import {
   DIRECTORY_ROLES,
   FORBIDDEN_TENANT_KEY_PATTERN,
   KEEP_WARM,
+  TENANT_ADMIT_RPC,
   TENANT_CLINICAL_PROBE_TABLE,
+  TENANT_GATE_POLICY_SUFFIX,
+  TENANT_MEMBER_HELPER,
+  TENANT_MEMBERS_TABLE,
+  TENANT_META_TABLE,
   TENANT_REST_ROOT,
+  TENANT_ROLE_MAP,
+  TENANT_SLUG_CLAIM,
   TENANT_VERSION_PROBE,
   OFFLINE_LEASE_TTL_SECONDS,
   OPD_CLINIC_ENV_VARS,
@@ -31,7 +38,7 @@ const CONTRACT = JSON.parse(RAW.toString('utf8'));
 test('the directory contract byte-pin matches the shipped file', () => {
   assert.equal(
     createHash('sha256').update(RAW).digest('hex'),
-    'ef3601ce1a68345f4ca8389790fcb7168640d26dff92b61dfc634c84fab5b59c',
+    'ad6241e926462dfc6bd64236d563afdb48d7360be7bda9e0eac4295a56a8c437',
   );
 });
 
@@ -62,6 +69,13 @@ test('the generated view equals the contract file', () => {
     CONTRACT.tenant.clinical_probe_table,
   );
   assert.deepEqual({ ...KEEP_WARM }, CONTRACT.keep_warm);
+  assert.equal(TENANT_MEMBERS_TABLE, CONTRACT.tenant.members_table);
+  assert.equal(TENANT_MEMBER_HELPER, CONTRACT.tenant.member_helper);
+  assert.equal(TENANT_META_TABLE, CONTRACT.tenant.meta_table);
+  assert.equal(TENANT_GATE_POLICY_SUFFIX, CONTRACT.tenant.gate_policy_suffix);
+  assert.equal(TENANT_ADMIT_RPC, CONTRACT.tenant.admit_rpc);
+  assert.deepEqual({ ...TENANT_ROLE_MAP }, CONTRACT.tenant.role_map);
+  assert.equal(TENANT_SLUG_CLAIM, CONTRACT.tenant.slug_claim);
 });
 
 test('contract invariants: roles, TTLs and the single anon RPC', () => {
@@ -106,6 +120,48 @@ test('contract v3 invariants: the tenant probe and the keep-warm cadence', () =>
   assert.equal(KEEP_WARM.stamp_column, 'keep_warm_at');
   assert.equal(KEEP_WARM.probe_path, '/rest/v1/');
   assert.equal(KEEP_WARM.cron_schedule, '17 */6 * * *');
+});
+
+test('contract v4 invariants: the tenant template vocabulary', () => {
+  // P3. myClinic's supabase/tenant/tenant-schema.sql is the implementation; this
+  // is the pin on the names it must use, so neither repo can drift to its own
+  // spelling of the allowlist, the gate or the admission RPC.
+  assert.equal(DIRECTORY_CONTRACT_VERSION, 4);
+  assert.equal(TENANT_MEMBERS_TABLE, 'tenant_members');
+  assert.equal(TENANT_MEMBER_HELPER, 'is_tenant_member');
+  assert.equal(TENANT_META_TABLE, 'tenant_meta');
+  assert.equal(TENANT_GATE_POLICY_SUFFIX, 'tenant_gate');
+  assert.equal(TENANT_ADMIT_RPC, 'tenant_admit_member');
+  assert.equal(TENANT_SLUG_CLAIM, 'tenant_slug');
+
+  // The tenant template is schema v22: v21 was the plain myClinic schema, v22 is
+  // v21 plus the tenancy layer. Central's Connection step probes this number
+  // through app_schema_version(), so a tenant project that never applied
+  // supabase/tenant/tenant-schema.sql fails the check instead of linking dark.
+  assert.equal(TENANT_SCHEMA_VERSION, 22);
+
+  // The slug claim is what ties a token to one project, so it has to be a claim
+  // Central actually mints.
+  assert.ok(
+    TENANT_TOKEN_CLAIMS.includes(TENANT_SLUG_CLAIM),
+    'the pinned slug claim is in the minted claim set',
+  );
+
+  // Every directory role must translate, and only into roles the myClinic staff
+  // table's own check constraint accepts. A role that maps to nothing would let
+  // Central admit a member the tenant project cannot authorise.
+  assert.deepEqual(Object.keys(TENANT_ROLE_MAP).sort(), [...DIRECTORY_ROLES].sort());
+  for (const localRole of Object.values(TENANT_ROLE_MAP)) {
+    assert.ok(
+      ['owner', 'doctor', 'frontdesk'].includes(localRole),
+      `role_map lands on a real myClinic staff role: ${localRole}`,
+    );
+  }
+  assert.deepEqual({ ...TENANT_ROLE_MAP }, {
+    admin: 'owner',
+    doctor: 'doctor',
+    staff: 'frontdesk',
+  });
 });
 
 test('definition-site scan: storage keys live only in the contract view', () => {
