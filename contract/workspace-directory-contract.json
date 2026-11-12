@@ -1,6 +1,6 @@
 {
   "contract": "workspace-directory",
-  "version": 4,
+  "version": 5,
   "owner": "myClinicLicenseAuthority",
   "consumers": [
     "myClinic",
@@ -63,7 +63,8 @@
   },
   "rpc": {
     "anon_only": [
-      "sync_clinic_subscription"
+      "sync_clinic_subscription",
+      "public_workspace_by_slug"
     ],
     "authenticated_discovery": "my_workspaces",
     "sync_response_workspace": {
@@ -75,7 +76,21 @@
         "tenant_schema_version"
       ],
       "null_when": "no workspace linked, or linked workspace is_inactive",
-      "carrier": "sync_clinic_subscription (the single anon RPC)"
+      "carrier": "sync_clinic_subscription (the anon subscription-sync RPC)"
+    },
+    "public_booking_directory": {
+      "rpc": "public_workspace_by_slug",
+      "caller": "anon",
+      "argument": "p_slug",
+      "returns": [
+        "clinic_name",
+        "slug",
+        "supabase_url",
+        "supabase_anon_key"
+      ],
+      "filter": "is_active = true",
+      "fail_closed": "an unknown or inactive slug returns no rows",
+      "purpose": "D4-a: the no-session public booking page (/#/book/<slug>) resolves the tenant project, then calls that tenant's own anon-safe SECURITY DEFINER booking RPCs. The anon key is publishable (C1); the tenant's RLS is the boundary."
     }
   },
   "keep_warm": {

@@ -62,7 +62,8 @@ insert into public.schema_migrations (version, name, app_version, summary) value
   (3, 'refused-attempt-audit', '2.3.0', 'public.sync_attempts privacy-preserving refusal log (hashed IP + email, 30-day retention, admin-only), near-miss subscription attribution, admin_license_view last_refusal_* columns'),
   (4, 'activity-log-and-invoices', '3.0.0', 'public.clinic_activity_log append-only per-clinic operational timeline (onboarded/paused/renewed/tier/routing/payment/invoice/notes events, admin-only), public.invoices billing documents (draft/issued/paid/void, jsonb line items, numeric totals), admin_license_view latest-invoice columns'),
   (5, 'workspace-directory', '3.2.0', 'public.workspaces + public.workspace_members OPD multi-tenant directory (member-role RLS, my_workspaces() discovery, connection columns with sb_secret/service_role CHECK), subscriptions.workspace_id link'),
-(6, 'tenant-connection-and-keep-warm', '3.2.0', 'admin_license_view workspace columns, due_keep_warm_workspaces() + stamp_keep_warm() admin keep-warm surface, run_keep_warm_cycle() scheduled by pg_cron + pg_net so free-tier tenant projects never idle into the 7-day pause')
+(6, 'tenant-connection-and-keep-warm', '3.2.0', 'admin_license_view workspace columns, due_keep_warm_workspaces() + stamp_keep_warm() admin keep-warm surface, run_keep_warm_cycle() scheduled by pg_cron + pg_net so free-tier tenant projects never idle into the 7-day pause'),
+(7, 'anonymous-booking-directory', '3.2.0', 'public.public_workspace_by_slug(p_slug) anon-readable SECURITY DEFINER booking directory (D4-a): resolves an ACTIVE workspace slug to clinic_name + supabase_url + publishable anon key so the no-session public booking page can reach the right tenant project; fail-closed on unknown or inactive slugs')
 on conflict (version) do nothing;
 
 update public.app_meta
@@ -906,7 +907,7 @@ begin
     return jsonb_build_object(
       'ok', true,
       'sync_ready', true,
-      'schema_version', 6,
+      'schema_version', 7,
       'server_time', v_now
     );
   end if;
@@ -2212,5 +2213,37 @@ update public.app_meta
    set schema_version = greatest(schema_version, 6),
        applied_at = now(),
        notes = 'keyless auto-sync + dual email/origin routing + refused-attempt audit + activity log & invoices + OPD workspace directory + tenant connection & free-tier keep-warm';
+
+commit;
+
+-- =============================================================================
+-- §9 · SCHEMA v7 ADDITIONS — ANONYMOUS BOOKING DIRECTORY (D4-a)
+-- =============================================================================
+-- Decision record: OPD-DECISIONS.md D4-a. The public booking page (/#/book/<slug>)
+-- has no session, so it cannot call my_workspaces() (authenticated-only) to find the
+-- clinic's project; in a directory build it fell back to the demo workspace and every
+-- online booking was lost (risk R7). This is the anon-readable half of the directory:
+-- given a slug, return ONLY the connection fields a stranger needs to reach that one
+-- clinic's own project. Fail closed — an unknown or inactive slug returns no rows, so a
+-- deactivated clinic's link goes dark instead of resolving (C6: is_active=false stops
+-- both my_workspaces() and this). The anon key is a PUBLISHABLE key (C1): the
+-- workspaces.supabase_anon_key CHECK already rejects service_role|sb_secret, the id,
+-- role, schema version and member rows stay hidden, and the tenant's own RLS plus its
+-- anon-safe SECURITY DEFINER booking RPCs are the real boundary.
+create or replace function public.public_workspace_by_slug(p_slug text)
+returns table (clinic_name text, slug text, supabase_url text, supabase_anon_key text)
+language sql stable security definer set search_path = '' as $$
+  select w.clinic_name, w.slug, w.supabase_url, w.supabase_anon_key
+  from public.workspaces w
+  where w.slug = p_slug and w.is_active = true;
+$$;
+
+revoke all on function public.public_workspace_by_slug(text) from public, authenticated;
+grant execute on function public.public_workspace_by_slug(text) to anon;
+
+update public.app_meta
+   set schema_version = greatest(schema_version, 7),
+       applied_at = now(),
+       notes = 'keyless auto-sync + dual email/origin routing + refused-attempt audit + activity log & invoices + OPD workspace directory + tenant connection & free-tier keep-warm + anonymous booking directory';
 
 commit;

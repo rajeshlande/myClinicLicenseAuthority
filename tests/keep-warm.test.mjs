@@ -294,11 +294,14 @@ test('the keep-warm surface is admin-only; the cron body belongs to the database
     schemaSql,
     /revoke all on function public\.run_keep_warm_cycle\(integer\) from public, anon, authenticated/i,
   );
-  // None of the three may widen the anon surface.
+  // None of the three keep-warm functions may widen the anon surface. The only anon
+  // grants in the whole schema are the two directory RPCs: the subscription sync and
+  // the D4-a booking directory (public_workspace_by_slug). Anything else is a leak.
   const anonGrants =
     schemaSql.match(/grant\s+[^\n;]+\bto\b[^\n;]*\banon\b[^;]*;/gi) ?? [];
-  assert.equal(anonGrants.length, 1, 'anon still holds exactly one grant');
-  assert.match(anonGrants[0], /sync_clinic_subscription/i);
+  assert.equal(anonGrants.length, 2, 'anon holds exactly the two directory grants');
+  assert.ok(anonGrants.some((g) => /sync_clinic_subscription/i.test(g)), 'the sync RPC is anon-granted');
+  assert.ok(anonGrants.some((g) => /public_workspace_by_slug/i.test(g)), 'the booking directory is anon-granted');
   // Both admin functions are SECURITY DEFINER, so both pin search_path.
   for (const fn of ['due_keep_warm_workspaces', 'stamp_keep_warm', 'run_keep_warm_cycle']) {
     const block = schemaSql

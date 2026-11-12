@@ -7,7 +7,7 @@ const schemaSql = readFileSync('supabase/schema.sql', 'utf8');
 const schemaTestsSql = readFileSync('supabase/schema-tests.sql', 'utf8');
 
 test('supabase/schema.sql is wrapped in one transaction and matches SCHEMA_VERSION', () => {
-  assert.equal(SCHEMA_VERSION, 6);
+  assert.equal(SCHEMA_VERSION, 7);
   assert.match(schemaSql, /^\s*begin;/im);
   assert.match(schemaSql, /commit;\s*$/im);
   assert.match(schemaSql, /\(2,\s*'keyless-auto-sync-core'/);
@@ -15,6 +15,7 @@ test('supabase/schema.sql is wrapped in one transaction and matches SCHEMA_VERSI
   assert.match(schemaSql, /\(4,\s*'activity-log-and-invoices'/);
   assert.match(schemaSql, /\(5,\s*'workspace-directory'/);
   assert.match(schemaSql, /\(6,\s*'tenant-connection-and-keep-warm'/);
+  assert.match(schemaSql, /\(7,\s*'anonymous-booking-directory'/);
   assert.match(
     schemaSql,
     new RegExp(`greatest\\(schema_version,\\s*${SCHEMA_VERSION}\\)`),
@@ -43,7 +44,7 @@ test('every security definer function pins search_path and avoids dynamic SQL', 
   }
 });
 
-test('Central DB enforces FORCE RLS, zero anon table access, and single-RPC surface', () => {
+test('Central DB enforces FORCE RLS, zero anon table access, and the two-RPC anon surface', () => {
   assert.match(
     schemaSql,
     /create\s+or\s+replace\s+view\s+public\.admin_license_view[\s\S]*?with\s*\(\s*security_invoker\s*=\s*true\s*\)/i,
@@ -79,14 +80,17 @@ test('Central DB enforces FORCE RLS, zero anon table access, and single-RPC surf
   assert.match(schemaSql, /revoke\s+all\s+on\s+public\.sync_rate_limits\s+from\s+public,\s*anon,\s*authenticated/i);
   assert.match(schemaSql, /revoke\s+all\s+on\s+public\.sync_attempts\s+from\s+public,\s*anon/i);
 
-  // anon ONLY receives EXECUTE on sync_clinic_subscription
+  // anon receives EXECUTE on exactly the two directory RPCs: the subscription sync and
+  // the D4-a booking directory (public_workspace_by_slug). Both are fail-closed and
+  // return only publishable fields; nothing else may widen the anon surface.
   const anonGrants = schemaSql.match(/grant\s+[^\n;]+\bto\b[^\n;]*\banon\b[^\n;]*;/gi) ?? [];
   assert.equal(
     anonGrants.length,
-    1,
-    `Expected anon to have exactly 1 GRANT (sync_clinic_subscription), found: ${anonGrants.join(' | ')}`,
+    2,
+    `Expected anon to have exactly 2 GRANTs (sync_clinic_subscription, public_workspace_by_slug), found: ${anonGrants.join(' | ')}`,
   );
-  assert.match(anonGrants[0], /sync_clinic_subscription/i);
+  assert.ok(anonGrants.some((g) => /sync_clinic_subscription/i.test(g)), 'the sync RPC is anon-granted');
+  assert.ok(anonGrants.some((g) => /public_workspace_by_slug/i.test(g)), 'the booking directory is anon-granted');
 
   assert.match(schemaSql, /for\s+update\s+of\s+l/i);
   assert.match(schemaSql, /app_metadata/);

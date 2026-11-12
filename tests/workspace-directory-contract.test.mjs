@@ -38,7 +38,7 @@ const CONTRACT = JSON.parse(RAW.toString('utf8'));
 test('the directory contract byte-pin matches the shipped file', () => {
   assert.equal(
     createHash('sha256').update(RAW).digest('hex'),
-    'ad6241e926462dfc6bd64236d563afdb48d7360be7bda9e0eac4295a56a8c437',
+    '0f6377ad5b1ac8d889b8015d0191549aeae6f1125bc0bc2fc0cf700e2553994a',
   );
 });
 
@@ -78,13 +78,22 @@ test('the generated view equals the contract file', () => {
   assert.equal(TENANT_SLUG_CLAIM, CONTRACT.tenant.slug_claim);
 });
 
-test('contract invariants: roles, TTLs and the single anon RPC', () => {
+test('contract invariants: roles, TTLs and the two anon RPCs', () => {
   assert.deepEqual([...DIRECTORY_ROLES], ['admin', 'doctor', 'staff']);
   assert.deepEqual([...CENTRAL_AUTH_ROLES], ['admin', 'clinic_user']);
   assert.equal(TENANT_TOKEN_TTL_SECONDS, 900);
   assert.ok(TENANT_TOKEN_TTL_SECONDS <= 900, 'D1\' caps tenant tokens at 15 min');
   assert.equal(OFFLINE_LEASE_TTL_SECONDS, 604800, 'the 7-day lease is untouched');
-  assert.deepEqual([...DIRECTORY_ANON_RPCS], ['sync_clinic_subscription']);
+  // D4-a doubled the anon surface: the subscription sync, plus the booking directory
+  // the no-session public page resolves a tenant with. Both are fail-closed and return
+  // only publishable fields (C1) — the tenant's RLS is the real boundary.
+  assert.deepEqual([...DIRECTORY_ANON_RPCS], ['sync_clinic_subscription', 'public_workspace_by_slug']);
+  assert.equal(CONTRACT.rpc.public_booking_directory.rpc, 'public_workspace_by_slug');
+  assert.equal(CONTRACT.rpc.public_booking_directory.caller, 'anon');
+  assert.deepEqual(CONTRACT.rpc.public_booking_directory.returns,
+    ['clinic_name', 'slug', 'supabase_url', 'supabase_anon_key']);
+  assert.equal(CONTRACT.rpc.public_booking_directory.filter, 'is_active = true');
+  assert.match(CONTRACT.rpc.public_booking_directory.fail_closed, /no rows/);
   // The pointer rides the anon RPC and goes dark when the workspace is inactive.
   assert.equal(SYNC_RESPONSE_WORKSPACE.key, 'workspace');
   assert.deepEqual([...SYNC_RESPONSE_WORKSPACE.fields], [
@@ -126,7 +135,7 @@ test('contract v4 invariants: the tenant template vocabulary', () => {
   // P3. myClinic's supabase/tenant/tenant-schema.sql is the implementation; this
   // is the pin on the names it must use, so neither repo can drift to its own
   // spelling of the allowlist, the gate or the admission RPC.
-  assert.equal(DIRECTORY_CONTRACT_VERSION, 4);
+  assert.equal(DIRECTORY_CONTRACT_VERSION, 5);
   assert.equal(TENANT_MEMBERS_TABLE, 'tenant_members');
   assert.equal(TENANT_MEMBER_HELPER, 'is_tenant_member');
   assert.equal(TENANT_META_TABLE, 'tenant_meta');
@@ -180,9 +189,12 @@ test('definition-site scan: storage keys live only in the contract view', () => 
   assert.deepEqual(offenders, [], 'storage-key literals outside the contract view');
 });
 
-test('sync_clinic_subscription is still the only RPC granted to anon', () => {
+test('the anon RPC surface is exactly the subscription sync plus the D4-a booking directory', () => {
   const schema = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8');
   const grants = [...schema.matchAll(/grant execute on function public\.([a-z_]+)\([^)]*\) to anon/gm)]
     .map((m) => m[1]);
-  assert.deepEqual(grants, ['sync_clinic_subscription']);
+  // D4-a doubled the anon surface from one name to two; both are fail-closed and return
+  // only publishable connection fields (C1). A third name here is a leak, not a feature.
+  assert.deepEqual(grants, ['sync_clinic_subscription', 'public_workspace_by_slug']);
+  assert.deepEqual(grants, [...DIRECTORY_ANON_RPCS], 'the SQL grants match the contract vocabulary');
 });

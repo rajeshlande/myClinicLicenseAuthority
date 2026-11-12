@@ -558,10 +558,10 @@ begin
 
   raise notice 'PASS: refused-attempt audit is admin-only, privacy-preserving and self-pruning';
 
-  if public.app_schema_version() <> 6 then
-    raise exception 'FAIL: app_schema_version() must be 6 after the v4+v5+v6 migrations, got %', public.app_schema_version();
+  if public.app_schema_version() <> 7 then
+    raise exception 'FAIL: app_schema_version() must be 7 after the v4+v5+v6+v7 migrations, got %', public.app_schema_version();
   end if;
-  raise notice 'PASS: app_schema_version() = 6 (activity log + invoices + workspace directory + tenant connection/keep-warm applied)';
+  raise notice 'PASS: app_schema_version() = 7 (activity log + invoices + workspace directory + tenant connection/keep-warm + anonymous booking directory applied)';
   raise notice 'ALL CENTRAL DATABASE SECURITY & KEYLESS AUTO-SYNC CHECKS COMPLETED';
 end $$;
 
@@ -667,6 +667,57 @@ begin
     raise exception 'FAIL: an sb_secret key was accepted';
   exception when check_violation then
     raise notice 'PASS: CHECK rejects sb_secret/service_role keys';
+  end;
+end $$;
+reset role;
+
+-- 9f. D4-a: anon resolves an ACTIVE workspace by slug for the no-session booking page.
+--     sunrise-opd was made active in 9c; the public page has only the slug, so this is
+--     the one anon-readable path from a slug to that clinic's own project connection.
+set local role anon;
+do $$
+declare
+  v_n   integer;
+  v_url text;
+  v_key text;
+begin
+  select count(*), min(supabase_url), min(supabase_anon_key) into v_n, v_url, v_key
+  from public.public_workspace_by_slug('sunrise-opd');
+  if v_n <> 1 then
+    raise exception 'FAIL: anon booking directory returned % rows for an active slug', v_n;
+  end if;
+  if v_url is null or v_key is null then
+    raise exception 'FAIL: booking directory omitted the connection fields';
+  end if;
+  select count(*) into v_n from public.public_workspace_by_slug('no-such-clinic');
+  if v_n <> 0 then
+    raise exception 'FAIL: an unknown slug resolved to % rows', v_n;
+  end if;
+  raise notice 'PASS: anon resolves an active workspace by slug; unknown slug returns no rows';
+end $$;
+
+-- 9g. D4-a fail-closed: a DEACTIVATED clinic goes dark for booking (C6 — is_active=false
+--     stops both my_workspaces() and this), and anon still cannot read the directory
+--     table itself — the fail-closed RPC is the only anon surface.
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+insert into public.workspaces (clinic_name, slug, supabase_url, supabase_anon_key, is_active)
+values ('Gone Clinic', 'gone-clinic', 'https://goneclinic.supabase.co', 'sb_publishable_test_gone', false);
+reset role;
+set local role anon;
+do $$
+declare v_n integer;
+begin
+  select count(*) into v_n from public.public_workspace_by_slug('gone-clinic');
+  if v_n <> 0 then
+    raise exception 'FAIL: a deactivated workspace still resolved for booking: % rows', v_n;
+  end if;
+  begin
+    perform count(*) from public.workspaces;
+    raise exception 'FAIL: anon read the directory table directly';
+  exception when insufficient_privilege then
+    raise notice 'PASS: inactive workspace dark for booking; anon still denied the table';
   end;
 end $$;
 reset role;
