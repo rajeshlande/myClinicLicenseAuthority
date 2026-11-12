@@ -1,6 +1,6 @@
 {
   "contract": "workspace-directory",
-  "version": 2,
+  "version": 3,
   "owner": "myClinicLicenseAuthority",
   "consumers": [
     "myClinic",
@@ -24,7 +24,16 @@
     "slug_claim": "tenant_slug",
     "slug_pattern": "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$",
     "url_pattern": "^https://[a-z0-9-]+\\.supabase\\.co/?$",
-    "forbidden_key_pattern": "service_role|sb_secret"
+    "forbidden_key_pattern": "service_role|sb_secret",
+    "rest_root": "/rest/v1/",
+    "version_probe": {
+      "rpc": "app_schema_version",
+      "method": "POST",
+      "path": "/rest/v1/rpc/app_schema_version",
+      "anon_executable": true,
+      "returns": "the tenant schema version as a bare integer"
+    },
+    "clinical_probe_table": "patients"
   },
   "auth": {
     "issuer": "myclinic-license-authority",
@@ -60,6 +69,14 @@
       "null_when": "no workspace linked, or linked workspace is_inactive",
       "carrier": "sync_clinic_subscription (the single anon RPC)"
     }
+  },
+  "keep_warm": {
+    "reason": "Supabase free tier pauses a project after 7 days without activity",
+    "pause_days": 7,
+    "target_days": 5,
+    "cron_schedule": "17 */6 * * *",
+    "probe_path": "/rest/v1/",
+    "stamp_column": "keep_warm_at"
   },
   "storage_keys": {
     "active_workspace_session": "opd.active.workspace",

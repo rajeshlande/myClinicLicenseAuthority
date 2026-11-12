@@ -145,6 +145,44 @@ const checks = [
     /--\s*8\./.test(schemaTestsSql) && /append-only/i.test(schemaTestsSql),
     'schema-tests.sql §8 proves the v4 tables live (anon/non-admin refusal, append-only, view columns)',
   ],
+  // ── Tenant connection + free-tier keep-warm (schema v6) ────────────────────
+  [
+    /revoke all on function public\.run_keep_warm_cycle\(integer\) from public, anon, authenticated/i.test(
+      schemaSql,
+    ) &&
+      !/grant\s+execute\s+on\s+function\s+public\.(run_keep_warm_cycle|due_keep_warm_workspaces|stamp_keep_warm)\([^)]*\)\s+to\s+[^;]*\banon\b/i.test(
+        schemaSql,
+      ),
+    'keep-warm is an admin surface: no API role but authenticated may list or stamp, none may run the fleet cycle',
+  ],
+  [
+    /if not public\.is_license_admin\(\) then\s+raise exception 'not authorized: keep-warm is an admin surface'\s+using errcode = '42501'/i.test(
+      schemaSql,
+    ) &&
+      /p_ok boolean default true/i.test(schemaSql) &&
+      /if v_ok then\s+update public\.workspaces\s+set keep_warm_at = now\(\)/i.test(schemaSql),
+    'keep-warm asserts is_license_admin() inside its SECURITY DEFINER bodies and never stamps a failed probe as warm',
+  ],
+  [
+    /from pg_extension where extname = 'pg_cron'/i.test(schemaSql) &&
+      /from pg_extension where extname = 'pg_net'/i.test(schemaSql) &&
+      /exception when others then\s+raise notice 'keep-warm: schedule not installed/i.test(schemaSql),
+    'the pg_cron keep-warm job is optional by construction: schema.sql still applies without pg_cron/pg_net',
+  ],
+  [
+    existsSync('src/lib/tenant-connection.mjs') &&
+      /FORBIDDEN_TENANT_KEY_PATTERN/.test(read('src/lib/tenant-connection.mjs')) &&
+      /throw new Error\(\s+`Tenant connection kit would emit a forbidden build variable/.test(
+        read('src/lib/tenant-connection.mjs'),
+      ),
+    'the tenant connection ladder refuses secret keys and the copyable kit refuses forbidden build variables',
+  ],
+  [
+    /--\s*11\./.test(schemaTestsSql) &&
+      /a failed probe stamped the workspace warm/.test(schemaTestsSql) &&
+      /run_keep_warm_cycle belongs to the database/.test(schemaTestsSql),
+    'schema-tests.sql §11 proves keep-warm live (due window, admin-only, no fake warmth, view link)',
+  ],
 ];
 
 console.log('\nmyClinic License Authority — security verification\n');

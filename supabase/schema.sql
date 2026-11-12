@@ -61,7 +61,8 @@ insert into public.schema_migrations (version, name, app_version, summary) value
   (2, 'keyless-auto-sync-core', '1.6.0', 'email + clinic URL dual routing, TOFU origin lock, per-IP SHA-256 rate limiter, hardened sync_clinic_subscription RPC, FORCE RLS'),
   (3, 'refused-attempt-audit', '2.3.0', 'public.sync_attempts privacy-preserving refusal log (hashed IP + email, 30-day retention, admin-only), near-miss subscription attribution, admin_license_view last_refusal_* columns'),
   (4, 'activity-log-and-invoices', '3.0.0', 'public.clinic_activity_log append-only per-clinic operational timeline (onboarded/paused/renewed/tier/routing/payment/invoice/notes events, admin-only), public.invoices billing documents (draft/issued/paid/void, jsonb line items, numeric totals), admin_license_view latest-invoice columns'),
-  (5, 'workspace-directory', '3.2.0', 'public.workspaces + public.workspace_members OPD multi-tenant directory (member-role RLS, my_workspaces() discovery, connection columns with sb_secret/service_role CHECK), subscriptions.workspace_id link')
+  (5, 'workspace-directory', '3.2.0', 'public.workspaces + public.workspace_members OPD multi-tenant directory (member-role RLS, my_workspaces() discovery, connection columns with sb_secret/service_role CHECK), subscriptions.workspace_id link'),
+(6, 'tenant-connection-and-keep-warm', '3.2.0', 'admin_license_view workspace columns, due_keep_warm_workspaces() + stamp_keep_warm() admin keep-warm surface, run_keep_warm_cycle() scheduled by pg_cron + pg_net so free-tier tenant projects never idle into the 7-day pause')
 on conflict (version) do nothing;
 
 update public.app_meta
@@ -905,7 +906,7 @@ begin
     return jsonb_build_object(
       'ok', true,
       'sync_ready', true,
-      'schema_version', 5,
+      'schema_version', 6,
       'server_time', v_now
     );
   end if;
@@ -1570,6 +1571,21 @@ create trigger trg_invoices_updated_at
 -- v1/v2/v3 installations upgrade in place (CREATE OR REPLACE VIEW may only add
 -- columns at the end). Declared here — not in §3 — because it references
 -- `invoices`, which does not exist until this section runs.
+--
+-- Created only while the view still lacks the v6 workspace columns: on a re-run
+-- §8 has already appended them and CREATE OR REPLACE VIEW may never DROP
+-- columns, so §6 stands aside and §8 owns the definition from then on (the same
+-- hand-off §3 makes to this section).
+do $viewv4$
+begin
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'admin_license_view'
+      and column_name = 'workspace_id'
+  ) then
+    execute $viewdef$
 create or replace view public.admin_license_view
 with (security_invoker = true)
 as
@@ -1688,6 +1704,10 @@ select
 from public.licenses l
 join public.subscriptions s
   on s.id = l.subscription_id;
+$viewdef$;
+  end if;
+end;
+$viewv4$;
 
 -- Zero-trust RLS for the v4 tables: FORCE everywhere, anon revoked entirely,
 -- authenticated admins gated by is_license_admin() policies. The activity log
@@ -1857,5 +1877,340 @@ update public.app_meta
    set schema_version = greatest(schema_version, 5),
        applied_at = now(),
        notes = 'keyless auto-sync + dual email/origin routing + refused-attempt audit + activity log & invoices + OPD workspace directory';
+
+commit;
+
+-- =============================================================================
+-- §8 · SCHEMA v6 ADDITIONS — TENANT CONNECTION READOUT + FREE-TIER KEEP-WARM
+-- =============================================================================
+-- Decision record: OPD-DECISIONS.md (owner FYI 2026-11-11: every project,
+-- master and clinic, runs on the Supabase FREE tier — 2 active projects per
+-- org, 500 MB, no automatic backups, and a project PAUSES after 7 days without
+-- activity). Data survives a pause but the clinic's app goes dark until someone
+-- restores it by hand: an outage no licence verdict can explain. Central owns
+-- the mitigation, on the cadence pinned in
+-- contract/workspace-directory-contract.json (`keep_warm`): touch every ACTIVE
+-- workspace's REST root at least every 5 days. tests/keep-warm.test.mjs fails
+-- if these two intervals and the schedule below drift from that file.
+--
+-- Two producers, one stamp (`workspaces.keep_warm_at`):
+--   * run_keep_warm_cycle() below, scheduled by pg_cron + pg_net — runs whether
+--     or not anyone has the console open;
+--   * the Settings & Health panel — an operator probes the due tenants from the
+--     browser and stamps them via stamp_keep_warm(), which is also how a freshly
+--     restored project gets back on schedule.
+--
+-- SECURITY DEFINER + FORCE RLS note: these read `workspaces` (FORCE RLS) as the
+-- function owner, exactly like sync_clinic_subscription reads `subscriptions`.
+-- The owner role carries BYPASSRLS in both Supabase and the scratch harness, so
+-- FORCE constrains the API roles and not the definer body. Authorization is
+-- therefore asserted explicitly with is_license_admin() at the top of each one.
+
+-- 8.1 admin_license_view gains the workspace link. CREATE OR REPLACE VIEW may
+--     only APPEND columns, so the four land last and this section owns the
+--     definition from v6 on: §6 above stands aside whenever `workspace_id`
+--     already exists, which is what keeps a re-apply from trying to drop them.
+create or replace view public.admin_license_view
+with (security_invoker = true)
+as
+select
+  l.id as license_id,
+  s.id as subscription_id,
+  s.customer_email,
+  l.license_key,
+  l.is_active,
+  s.status,
+  s.tier,
+  s.max_machines,
+  (
+    select count(*)::integer
+    from public.activated_machines am
+    where am.license_id = l.id
+  ) as registered_machines,
+  (
+    select max(am.last_heartbeat)
+    from public.activated_machines am
+    where am.license_id = l.id
+  ) as last_heartbeat,
+  s.expires_at,
+  s.notes,
+  s.created_at,
+  s.updated_at,
+  s.allowed_origin,
+  s.lock_first_origin,
+  (
+    select am.last_synced_tier
+    from public.activated_machines am
+    where am.license_id = l.id
+    order by am.last_heartbeat desc nulls last
+    limit 1
+  ) as last_synced_tier,
+  (
+    select am.last_synced_status
+    from public.activated_machines am
+    where am.license_id = l.id
+    order by am.last_heartbeat desc nulls last
+    limit 1
+  ) as last_synced_status,
+  (
+    select am.last_synced_expires_at
+    from public.activated_machines am
+    where am.license_id = l.id
+    order by am.last_heartbeat desc nulls last
+    limit 1
+  ) as last_synced_expires_at,
+  (
+    select sa.code
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_code,
+  (
+    select max(sa.attempted_at)
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+  ) as last_refusal_at,
+  (
+    select count(*)::integer
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+      and sa.attempted_at > (now() - interval '24 hours')
+  ) as refusals_24h,
+  (
+    select sa.claimed_email_hint
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_email_hint,
+  (
+    select sa.claimed_origin
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_origin,
+  (
+    select sa.browser_origin
+    from public.sync_attempts sa
+    where sa.license_id = l.id
+    order by sa.attempted_at desc, sa.id desc
+    limit 1
+  ) as last_refusal_browser_origin,
+  (
+    select i.invoice_number
+    from public.invoices i
+    where i.subscription_id = s.id
+    order by i.created_at desc, i.id desc
+    limit 1
+  ) as latest_invoice_number,
+  (
+    select i.status
+    from public.invoices i
+    where i.subscription_id = s.id
+    order by i.created_at desc, i.id desc
+    limit 1
+  ) as latest_invoice_status,
+  (
+    select i.total
+    from public.invoices i
+    where i.subscription_id = s.id
+    order by i.created_at desc, i.id desc
+    limit 1
+  ) as latest_invoice_total,
+  (
+    select count(*)::integer
+    from public.invoices i
+    where i.subscription_id = s.id
+      and i.status in ('draft', 'issued')
+  ) as open_invoice_count,
+  s.workspace_id,
+  w.slug as workspace_slug,
+  w.is_active as workspace_active,
+  w.keep_warm_at as workspace_keep_warm_at
+from public.licenses l
+join public.subscriptions s
+  on s.id = l.subscription_id
+left join public.workspaces w
+  on w.id = s.workspace_id;
+
+-- 8.2 The due list for the console: active, armed with a URL, and idle past the
+--     5-day target. Never-probed first (nulls sort ahead), oldest stamp next.
+create or replace function public.due_keep_warm_workspaces(p_limit integer default 20)
+returns table (
+  id uuid, clinic_name text, slug text, supabase_url text,
+  supabase_anon_key text, keep_warm_at timestamptz,
+  idle_days numeric, keep_warm_state text
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_license_admin() then
+    raise exception 'not authorized: keep-warm is an admin surface'
+      using errcode = '42501';
+  end if;
+
+  return query
+    select w.id,
+           w.clinic_name,
+           w.slug,
+           w.supabase_url,
+           w.supabase_anon_key,
+           w.keep_warm_at,
+           round(extract(epoch from (now() - w.keep_warm_at)) / 86400.0, 2) as idle_days,
+           case
+             when w.keep_warm_at is null then 'unknown'
+             when w.keep_warm_at < now() - interval '7 days' then 'overdue'
+             else 'due'
+           end as keep_warm_state
+    from public.workspaces w
+    where w.is_active = true
+      and w.supabase_url is not null
+      and (w.keep_warm_at is null
+           or w.keep_warm_at < now() - interval '5 days')
+    order by w.keep_warm_at nulls first, w.clinic_name
+    limit greatest(0, coalesce(p_limit, 20));
+end;
+$$;
+
+-- 8.3 The stamp. `p_ok = false` deliberately moves ONLY updated_at: a failed
+--     probe must never be recorded as a warm project, or the console would hide
+--     a paused clinic behind a fresh timestamp.
+create or replace function public.stamp_keep_warm(p_workspace uuid, p_ok boolean default true)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_slug  text;
+  v_stamp timestamptz;
+  v_ok    boolean := coalesce(p_ok, false);
+begin
+  if not public.is_license_admin() then
+    raise exception 'not authorized: keep-warm is an admin surface'
+      using errcode = '42501';
+  end if;
+
+  select w.slug into v_slug from public.workspaces w where w.id = p_workspace;
+  if v_slug is null then
+    raise exception 'unknown workspace: %', p_workspace using errcode = 'P0002';
+  end if;
+
+  if v_ok then
+    update public.workspaces
+       set keep_warm_at = now(),
+           updated_at = now()
+     where id = p_workspace
+    returning keep_warm_at into v_stamp;
+  else
+    update public.workspaces
+       set updated_at = now()
+     where id = p_workspace
+    returning keep_warm_at into v_stamp;
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'slug', v_slug,
+    'stamped', v_ok,
+    'keep_warm_at', v_stamp
+  );
+end;
+$$;
+
+-- 8.4 The cycle pg_cron runs. net.http_get() QUEUES the request and returns its
+--     id (pg_net is asynchronous), so a stamp here means "the touch was sent",
+--     and one unreachable tenant never aborts the rest of the fleet. The key
+--     travels in the request headers, which pg_net stores in net.* inside this
+--     same admin-only database — it is never logged to app-visible tables.
+create or replace function public.run_keep_warm_cycle(p_limit integer default 20)
+returns table (slug text, request_id bigint)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_rec   record;
+  v_req   bigint;
+  v_limit integer := greatest(0, coalesce(p_limit, 20));
+begin
+  for v_rec in
+    select w.id, w.slug, w.supabase_url, w.supabase_anon_key
+    from public.workspaces w
+    where w.is_active = true
+      and w.supabase_url is not null
+      and (w.keep_warm_at is null
+           or w.keep_warm_at < now() - interval '5 days')
+    order by w.keep_warm_at nulls first, w.clinic_name
+    limit v_limit
+  loop
+    begin
+      v_req := net.http_get(
+        url := rtrim(v_rec.supabase_url, '/') || '/rest/v1/',
+        headers := jsonb_build_object(
+          'apikey', v_rec.supabase_anon_key,
+          'Accept', 'application/json'
+        ),
+        timeout_milliseconds := 15000
+      );
+    exception when others then
+      v_req := null;
+    end;
+
+    if v_req is not null then
+      update public.workspaces
+         set keep_warm_at = now(),
+             updated_at = now()
+       where id = v_rec.id;
+    end if;
+
+    slug := v_rec.slug;
+    request_id := v_req;
+    return next;
+  end loop;
+end;
+$$;
+
+-- Console surface: admins list and stamp. The cycle itself belongs to the
+-- database — no API role may trigger a fleet-wide outbound probe from a browser.
+revoke all on function public.due_keep_warm_workspaces(integer) from public, anon;
+grant execute on function public.due_keep_warm_workspaces(integer) to authenticated;
+revoke all on function public.stamp_keep_warm(uuid, boolean) from public, anon;
+grant execute on function public.stamp_keep_warm(uuid, boolean) to authenticated;
+revoke all on function public.run_keep_warm_cycle(integer) from public, anon, authenticated, service_role;
+
+-- 8.5 The schedule. pg_cron and pg_net are OPTIONAL extensions: guard on
+--     pg_extension so this file still applies on a bare Postgres 17 (the
+--     scratch harness) and on a project where an operator has not enabled them.
+--     Scheduling the same job name again replaces it, so re-apply stays safe.
+--     Every 6 hours against a 5-day target leaves two days of margin before the
+--     free tier's 7-day pause, at ~4 rows/day of queue traffic for the fleet.
+do $keep_warm_schedule$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron')
+     and exists (select 1 from pg_extension where extname = 'pg_net') then
+    perform cron.schedule(
+      'opd-keep-warm',
+      '17 */6 * * *',
+      $keep_warm_job$select public.run_keep_warm_cycle(20);$keep_warm_job$
+    );
+    raise notice 'keep-warm: pg_cron job opd-keep-warm scheduled (17 */6 * * *)';
+  else
+    raise notice 'keep-warm: pg_cron/pg_net not enabled — Settings & Health probing only';
+  end if;
+exception when others then
+  raise notice 'keep-warm: schedule not installed (%)', sqlerrm;
+end;
+$keep_warm_schedule$;
+
+update public.app_meta
+   set schema_version = greatest(schema_version, 6),
+       applied_at = now(),
+       notes = 'keyless auto-sync + dual email/origin routing + refused-attempt audit + activity log & invoices + OPD workspace directory + tenant connection & free-tier keep-warm';
 
 commit;

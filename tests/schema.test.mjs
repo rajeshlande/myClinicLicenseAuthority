@@ -7,13 +7,14 @@ const schemaSql = readFileSync('supabase/schema.sql', 'utf8');
 const schemaTestsSql = readFileSync('supabase/schema-tests.sql', 'utf8');
 
 test('supabase/schema.sql is wrapped in one transaction and matches SCHEMA_VERSION', () => {
-  assert.equal(SCHEMA_VERSION, 5);
+  assert.equal(SCHEMA_VERSION, 6);
   assert.match(schemaSql, /^\s*begin;/im);
   assert.match(schemaSql, /commit;\s*$/im);
   assert.match(schemaSql, /\(2,\s*'keyless-auto-sync-core'/);
   assert.match(schemaSql, /\(3,\s*'refused-attempt-audit'/);
   assert.match(schemaSql, /\(4,\s*'activity-log-and-invoices'/);
   assert.match(schemaSql, /\(5,\s*'workspace-directory'/);
+  assert.match(schemaSql, /\(6,\s*'tenant-connection-and-keep-warm'/);
   assert.match(
     schemaSql,
     new RegExp(`greatest\\(schema_version,\\s*${SCHEMA_VERSION}\\)`),
@@ -181,4 +182,43 @@ test('schema v5: workspace directory is member-read, admin-write, anon-dark', ()
   // The PG suite proves the matrix live (section 9).
   assert.match(schemaTestsSql, /anon denied read on public\.workspaces/);
   assert.match(schemaTestsSql, /member discovery returns exactly one active workspace/);
+});
+
+test('schema v6: keep-warm is admin-only, contract-cadenced and cron-guarded', () => {
+  // The console may list and stamp; the fleet-wide cycle belongs to pg_cron.
+  assert.match(
+    schemaSql,
+    /grant\s+execute\s+on\s+function\s+public\.due_keep_warm_workspaces\(integer\)\s+to\s+authenticated/i,
+  );
+  assert.match(
+    schemaSql,
+    /grant\s+execute\s+on\s+function\s+public\.stamp_keep_warm\(uuid,\s*boolean\)\s+to\s+authenticated/i,
+  );
+  assert.match(
+    schemaSql,
+    /revoke\s+all\s+on\s+function\s+public\.run_keep_warm_cycle\(integer\)\s+from\s+public,\s*anon,\s*authenticated/i,
+  );
+
+  // pg_cron + pg_net are OPTIONAL: the file must still apply without them.
+  assert.match(schemaSql, /from pg_extension where extname = 'pg_cron'/i);
+  assert.match(schemaSql, /from pg_extension where extname = 'pg_net'/i);
+  assert.match(schemaSql, /cron\.schedule\(/i);
+
+  // A failed probe must never be recorded as warmth.
+  assert.match(schemaSql, /p_ok boolean default true/i);
+  assert.match(
+    schemaSql,
+    /if v_ok then\s+update public\.workspaces\s+set keep_warm_at = now\(\)/i,
+  );
+
+  // The view hand-off: §6 stands aside once §8 owns the definition, because
+  // CREATE OR REPLACE VIEW may never drop columns (the re-apply trap).
+  assert.match(schemaSql, /do \$viewv4\$/);
+  assert.match(schemaSql, /column_name = 'workspace_id'/);
+  assert.match(schemaSql, /w\.keep_warm_at as workspace_keep_warm_at/i);
+
+  // The PG suite proves the matrix live (section 11).
+  assert.match(schemaTestsSql, /--\s*11\./);
+  assert.match(schemaTestsSql, /run_keep_warm_cycle belongs to the database/);
+  assert.match(schemaTestsSql, /a failed probe stamped the workspace warm/);
 });

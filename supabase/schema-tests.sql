@@ -1,5 +1,5 @@
 -- =============================================================================
--- myClinic License Authority — Scratch Database Security & Auto-Sync Suite (v4)
+-- myClinic License Authority — Scratch Database Security & Auto-Sync Suite (v6)
 -- DEV / SCRATCH ONLY · NEVER RUN ON PRODUCTION
 --
 -- Everything runs inside a single transaction and rolls back at the end, leaving
@@ -558,10 +558,10 @@ begin
 
   raise notice 'PASS: refused-attempt audit is admin-only, privacy-preserving and self-pruning';
 
-  if public.app_schema_version() <> 5 then
-    raise exception 'FAIL: app_schema_version() must be 5 after the v4+v5 migrations, got %', public.app_schema_version();
+  if public.app_schema_version() <> 6 then
+    raise exception 'FAIL: app_schema_version() must be 6 after the v4+v5+v6 migrations, got %', public.app_schema_version();
   end if;
-  raise notice 'PASS: app_schema_version() = 5 (activity log + invoices + workspace directory applied)';
+  raise notice 'PASS: app_schema_version() = 6 (activity log + invoices + workspace directory + tenant connection/keep-warm applied)';
   raise notice 'ALL CENTRAL DATABASE SECURITY & KEYLESS AUTO-SYNC CHECKS COMPLETED';
 end $$;
 
@@ -743,6 +743,178 @@ begin
     raise exception 'FAIL: healthcheck response gained a workspace key';
   end if;
   raise notice 'PASS: healthcheck probe stays pointer-free';
+end $$;
+reset role;
+
+-- =============================================================================
+-- 11. SCHEMA v6 — free-tier keep-warm: who may probe, who may stamp, and what
+--     the console is allowed to see (owner FYI 2026-11-11: a free project
+--     PAUSES after 7 idle days, so the cadence below is an availability control,
+--     not a nicety. tests/keep-warm.test.mjs pins the same numbers to
+--     contract/workspace-directory-contract.json.)
+-- =============================================================================
+
+-- 11a. four workspaces, four keep-warm situations
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+update public.workspaces
+   set is_active = true,
+       keep_warm_at = now() - interval '9 days'
+ where slug = 'sunrise-opd';
+insert into public.workspaces (clinic_name, slug, supabase_url, supabase_anon_key, is_active, keep_warm_at)
+values ('Fresh Clinic', 'fresh-clinic', 'https://freshclinic.supabase.co', 'sb_publishable_fresh_1', true, now()),
+       ('Never Clinic', 'never-clinic', 'https://neverclinic.supabase.co', 'sb_publishable_never_1', true, null),
+       ('Dark Clinic', 'dark-clinic', 'https://darkclinic.supabase.co', 'sb_publishable_dark_1', false, null);
+
+do $$
+declare
+  v_slugs  text;
+  v_states text;
+begin
+  select string_agg(slug, ',' order by keep_warm_at nulls first, clinic_name),
+         string_agg(keep_warm_state, ',' order by keep_warm_at nulls first, clinic_name)
+    into v_slugs, v_states
+  from public.due_keep_warm_workspaces(20);
+
+  -- warm (fresh-clinic) is not due; inactive (dark-clinic) is not armed;
+  -- never-probed sorts ahead of the idle-but-stamped one.
+  if v_slugs is distinct from 'never-clinic,sunrise-opd' then
+    raise exception 'FAIL: due list = %', coalesce(v_slugs, '<null>');
+  end if;
+  if v_states is distinct from 'unknown,overdue' then
+    raise exception 'FAIL: due states = %', coalesce(v_states, '<null>');
+  end if;
+  raise notice 'PASS: only armed, active, idle-past-target workspaces are due (never-probed first)';
+end $$;
+
+-- 11b. the due window is the contract's 5 days, not the 7-day pause itself
+do $$
+declare v_n integer;
+begin
+  update public.workspaces set keep_warm_at = now() - interval '4 days' where slug = 'never-clinic';
+  select count(*) into v_n from public.due_keep_warm_workspaces(20) where slug = 'never-clinic';
+  if v_n <> 0 then
+    raise exception 'FAIL: a workspace idle 4 days was listed as due';
+  end if;
+  update public.workspaces set keep_warm_at = now() - interval '6 days' where slug = 'never-clinic';
+  select count(*) into v_n from public.due_keep_warm_workspaces(20) where slug = 'never-clinic';
+  if v_n <> 1 then
+    raise exception 'FAIL: a workspace idle 6 days was not listed as due';
+  end if;
+  raise notice 'PASS: the SQL due window is 5 days — two days of margin before the pause';
+end $$;
+
+-- 11c. a non-admin authenticated operator gets neither the queue nor the stamp
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000004","role":"authenticated","app_metadata":{}}', true);
+do $$
+begin
+  begin
+    perform public.due_keep_warm_workspaces(5);
+    raise exception 'FAIL: non-admin listed the keep-warm queue';
+  exception when insufficient_privilege then
+    raise notice 'PASS: non-admin denied the keep-warm queue';
+  end;
+
+  begin
+    perform public.stamp_keep_warm(gen_random_uuid(), true);
+    raise exception 'FAIL: non-admin stamped keep-warm';
+  exception when insufficient_privilege then
+    raise notice 'PASS: non-admin denied the keep-warm stamp';
+  end;
+end $$;
+
+-- 11d. anon gets nothing, and NO API role may trigger the fleet-wide cycle
+set local role anon;
+select set_config('request.jwt.claims', '{}', true);
+do $$
+begin
+  begin
+    perform public.due_keep_warm_workspaces(5);
+    raise exception 'FAIL: anon listed the keep-warm queue';
+  exception when insufficient_privilege then
+    raise notice 'PASS: anon denied the keep-warm queue';
+  end;
+
+  begin
+    perform public.run_keep_warm_cycle(5);
+    raise exception 'FAIL: an API role ran the keep-warm cycle';
+  exception when insufficient_privilege then
+    raise notice 'PASS: run_keep_warm_cycle belongs to the database (pg_cron), not to any API role';
+  end;
+end $$;
+
+-- 11e. a failed probe never fakes warmth; a successful one clears the queue
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare
+  v_ws     uuid;
+  v_before timestamptz;
+  v_after  timestamptz;
+  v_n      integer;
+begin
+  select id, keep_warm_at into v_ws, v_before
+  from public.workspaces where slug = 'sunrise-opd';
+
+  perform public.stamp_keep_warm(v_ws, false);
+  select keep_warm_at into v_after from public.workspaces where id = v_ws;
+  if v_after is distinct from v_before then
+    raise exception 'FAIL: a failed probe stamped the workspace warm';
+  end if;
+
+  perform public.stamp_keep_warm(v_ws, true);
+  select keep_warm_at into v_after from public.workspaces where id = v_ws;
+  if v_after is null or v_after <= v_before then
+    raise exception 'FAIL: stamp_keep_warm did not advance keep_warm_at';
+  end if;
+
+  select count(*) into v_n from public.due_keep_warm_workspaces(20) where slug = 'sunrise-opd';
+  if v_n <> 0 then
+    raise exception 'FAIL: a freshly warmed workspace is still listed as due';
+  end if;
+  raise notice 'PASS: p_ok=false leaves the stamp alone; p_ok=true warms it and clears the queue';
+end $$;
+
+-- 11f. the flattened view carries the workspace link for the console
+do $$
+declare
+  v_slug   text;
+  v_active boolean;
+  v_stamp  timestamptz;
+begin
+  select workspace_slug, workspace_active, workspace_keep_warm_at
+    into v_slug, v_active, v_stamp
+  from public.admin_license_view
+  where customer_email = 'ops@sunriseopd.example';
+
+  if v_slug is distinct from 'sunrise-opd' then
+    raise exception 'FAIL: admin_license_view lost the workspace link: %', coalesce(v_slug, '<null>');
+  end if;
+  if v_active is not true then
+    raise exception 'FAIL: admin_license_view does not surface is_active';
+  end if;
+  if v_stamp is null then
+    raise exception 'FAIL: admin_license_view does not surface keep_warm_at';
+  end if;
+  raise notice 'PASS: admin_license_view exposes the workspace link + keep-warm stamp';
+end $$;
+
+-- 11g. an unlinked subscription keeps a NULL pointer (the join is a LEFT one)
+do $$
+declare v_row public.admin_license_view;
+begin
+  select * into v_row from public.create_subscription_with_license(
+    p_customer_email => 'no-workspace@example.com',
+    p_tier           => 'solo',
+    p_max_machines   => 1,
+    p_expires_at     => now() + interval '90 days');
+
+  if v_row.workspace_id is not null or v_row.workspace_slug is not null then
+    raise exception 'FAIL: a fresh subscription arrived pre-linked to a workspace';
+  end if;
+  raise notice 'PASS: unlinked subscriptions keep a NULL workspace pointer';
 end $$;
 reset role;
 

@@ -142,10 +142,18 @@ export default function EntitlementsPage({
         tier: meta.tier,
         seats: meta.seats,
         invoice: meta.invoice ?? null,
+        // OPD P2: the tenant workspace the Connection step linked, if any.
+        // Free-form jsonb evidence on the existing closed event vocabulary —
+        // no new event kind, so the SQL CHECK stays untouched.
+        workspace: meta.workspace ?? null,
       });
       showToast(
         `Added ${String(meta.tier).toUpperCase()} subscription for ${meta.label}${
           meta.invoice ? ` · draft ${meta.invoice}` : ''
+        }${
+          meta.workspace
+            ? ` · tenant ${meta.workspace.slug}${meta.workspace.active ? ' active' : ' inactive'}`
+            : ''
         }.`,
       );
     },

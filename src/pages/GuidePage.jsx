@@ -14,6 +14,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 import schemaSqlRaw from '../../supabase/schema.sql?raw';
 import ErrorAlert from '../components/ErrorAlert.jsx';
@@ -24,6 +25,13 @@ import {
 } from '../lib/auto-sync-client.mjs';
 import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import { buildAdminGrantSql, rememberError } from '../lib/errors.mjs';
+import { buildTenantConnectionKit } from '../lib/tenant-connection.mjs';
+import {
+  KEEP_WARM,
+  TENANT_CLINICAL_PROBE_TABLE,
+  TENANT_SCHEMA_VERSION,
+} from '../lib/workspace-directory.mjs';
+import { SCHEMA_VERSION } from '../lib/version.js';
 
 function CopyButton({
   id,
@@ -92,6 +100,14 @@ export default function GuidePage({ backend, session, onNavigate }) {
         centralAnonKey:
           centralAnonKey || 'sb_publishable_YOUR_CENTRAL_ANON_KEY',
       }),
+    [centralUrl, centralAnonKey],
+  );
+
+  // E4: one button instead of a new document. With no workspace selected this
+  // renders the template kit; the onboarding wizard's Handoff step renders the
+  // same builder with the clinic's own row filled in.
+  const tenantKit = useMemo(
+    () => buildTenantConnectionKit({ centralUrl, centralAnonKey }),
     [centralUrl, centralAnonKey],
   );
 
@@ -272,7 +288,7 @@ export default function GuidePage({ backend, session, onNavigate }) {
               >
                 <li>
                   Open <strong>Central Supabase → SQL Editor → New query</strong>
-                  , click <strong>Copy Full schema.sql (v5)</strong>, paste, and
+                  , click <strong>Copy Full schema.sql (v6)</strong>, paste, and
                   click <strong>Run</strong>.
                 </li>
                 <li>
@@ -288,7 +304,7 @@ export default function GuidePage({ backend, session, onNavigate }) {
                   text={schemaSqlRaw}
                   copiedId={copiedId}
                   onCopy={handleCopy}
-                  label="Copy Full schema.sql (v2)"
+                  label={`Copy Full schema.sql (v${SCHEMA_VERSION})`}
                   primary
                 />
                 <CopyButton
@@ -548,6 +564,57 @@ export default function GuidePage({ backend, session, onNavigate }) {
                     <code className="font-mono">expires_at</code>).
                   </li>
                 </ul>
+              </div>
+            </div>
+
+            {/* Client Step 3 — tenant connection kit (OPD multi-tenant, E4) */}
+            <div className="console-well space-y-2.5 rounded-xl p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-mono text-xs font-bold">
+                  Step 3 — Copy the Tenant Connection Kit
+                </span>
+                <CopyButton
+                  id="copy-tenant-kit"
+                  text={tenantKit.text}
+                  copiedId={copiedId}
+                  onCopy={handleCopy}
+                  label="Copy tenant connection kit"
+                  primary
+                />
+              </div>
+              <p
+                style={{ color: 'var(--text-secondary)' }}
+                className="text-xs leading-relaxed"
+              >
+                One block for the clinic&apos;s own Supabase project: the two
+                Central build variables, the verification SQL that proves tenant
+                schema v{TENANT_SCHEMA_VERSION} and that anon cannot read{' '}
+                <code className="font-mono">{TENANT_CLINICAL_PROBE_TABLE}</code>
+                , and what Central stores for the workspace. The tenant URL and
+                key are deliberately NOT build variables — one clinic build
+                serves every clinic, so they arrive at runtime on the workspace
+                pointer.
+              </p>
+
+              <div className="badge-warning flex items-start gap-2 rounded-lg p-2.5 text-[11px] leading-relaxed">
+                <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  <strong>Free tier pauses an idle project after {KEEP_WARM.pause_days} days.</strong>{' '}
+                  Central&apos;s <code className="font-mono">opd-keep-warm</code>{' '}
+                  pg_cron job touches every active workspace at least every{' '}
+                  {KEEP_WARM.target_days} days. Keep the workspace active in the
+                  directory, and after restoring a paused project press{' '}
+                  <strong>Probe due tenants</strong> in Settings &amp; Health so
+                  the stamp is honest.
+                </span>
+              </div>
+
+              <div className="console-code overflow-hidden rounded-lg">
+                <pre className="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed">
+                  {tenantKit.summary}
+                  {'\n'}
+                  {tenantKit.envVars}
+                </pre>
               </div>
             </div>
           </div>

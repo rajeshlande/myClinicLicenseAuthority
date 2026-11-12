@@ -7,10 +7,13 @@ import {
   Copy,
   Database,
   KeyRound,
+  Loader2,
   LogOut,
+  Play,
   RotateCcw,
   Save,
   Trash2,
+  Zap,
 } from 'lucide-react';
 import ErrorAlert from '../components/ErrorAlert.jsx';
 import {
@@ -22,6 +25,13 @@ import {
 import { probeCentralAutoSync } from '../lib/auto-sync-client.mjs';
 import { copyTextToClipboard } from '../lib/clipboard.mjs';
 import {
+  describeKeepWarmFleet,
+  keepWarmStatus,
+  probeTenantKeepWarm,
+} from '../lib/keep-warm.mjs';
+import { maskTenantKey } from '../lib/tenant-connection.mjs';
+import { KEEP_WARM } from '../lib/workspace-directory.mjs';
+import {
   clearRecentErrors,
   diagnosticsText,
   recentErrors,
@@ -32,6 +42,15 @@ import {
   saveRuntimeSupabaseConfig,
 } from '../lib/supabase.js';
 import { APP_VERSION, SCHEMA_VERSION } from '../lib/version.js';
+
+/** keep-warm state -> the shell's badge classes. */
+const WARM_TONE = {
+  fresh: 'badge-success',
+  due: 'badge-warning',
+  overdue: 'badge-error',
+  unknown: 'badge-accent',
+  unarmed: 'console-well',
+};
 
 export function SetupPage({ backend, session, onBackendChanged, onSignOut }) {
   const client = backend?.supabase ?? null;
@@ -51,6 +70,12 @@ export function SetupPage({ backend, session, onBackendChanged, onSignOut }) {
   const [pwBusy, setPwBusy] = useState(false);
   const [pwError, setPwError] = useState(null);
   const [pwSuccess, setPwSuccess] = useState('');
+
+  const [warmRows, setWarmRows] = useState(null);
+  const [warmBusy, setWarmBusy] = useState(false);
+  const [warmError, setWarmError] = useState(null);
+  const [warmProbing, setWarmProbing] = useState('');
+  const [warmResults, setWarmResults] = useState({});
 
   const [errorLog, setErrorLog] = useState(() => recentErrors());
   const [copiedDiag, setCopiedDiag] = useState(false);
@@ -136,6 +161,82 @@ export function SetupPage({ backend, session, onBackendChanged, onSignOut }) {
       refreshErrorLog();
     } finally {
       setTesting(false);
+    }
+  }
+
+  /**
+   * The manual half of the keep-warm cycle. pg_cron + pg_net run it every six
+   * hours inside the database; this panel is for the two moments a schedule
+   * cannot cover — a project just restored from a free-tier pause, and proving
+   * with your own eyes that a tenant answers.
+   */
+  async function handleLoadKeepWarm() {
+    setWarmBusy(true);
+    setWarmError(null);
+    try {
+      if (!backend?.configured || !client) {
+        throw new Error('Service connection is not configured.');
+      }
+      if (!isAuthorizedAdminUser(session?.user)) {
+        const roleErr = new Error('Operator lacks app_metadata.role = "admin".');
+        roleErr.code = '42501';
+        throw roleErr;
+      }
+      const { data, error } = await client.rpc('due_keep_warm_workspaces', {
+        p_limit: 20,
+      });
+      if (error) throw error;
+      setWarmRows(Array.isArray(data) ? data : []);
+      setWarmResults({});
+    } catch (err) {
+      const explained = rememberError(err, 'Load keep-warm list');
+      setWarmError(explained);
+      refreshErrorLog();
+    } finally {
+      setWarmBusy(false);
+    }
+  }
+
+  async function handleProbeWorkspace(row) {
+    setWarmProbing(row.id);
+    try {
+      const res = await probeTenantKeepWarm({
+        supabaseUrl: row.supabase_url,
+        supabaseAnonKey: row.supabase_anon_key,
+      });
+      setWarmResults((prev) => ({ ...prev, [row.id]: res }));
+      if (client) {
+        // p_ok = false on purpose when the probe failed: stamp_keep_warm then
+        // moves only updated_at, so a paused project never looks warm.
+        const stamp = await client.rpc('stamp_keep_warm', {
+          p_workspace: row.id,
+          p_ok: res.ok,
+        });
+        if (stamp.error) throw stamp.error;
+        if (res.ok) {
+          setWarmRows((prev) =>
+            (prev ?? []).map((r) =>
+              r.id === row.id ? { ...r, keep_warm_at: res.probedAt } : r,
+            ),
+          );
+        }
+      }
+      return res;
+    } catch (err) {
+      const explained = rememberError(err, 'Keep-warm probe');
+      setWarmError(explained);
+      refreshErrorLog();
+      return null;
+    } finally {
+      setWarmProbing('');
+    }
+  }
+
+  async function handleProbeAllDue() {
+    for (const row of warmRows ?? []) {
+      // Sequential on purpose: a fleet-wide parallel burst from one browser tab
+      // is exactly the write amplification the rest of this schema avoids.
+      await handleProbeWorkspace(row); // eslint-disable-line no-await-in-loop
     }
   }
 
@@ -474,7 +575,151 @@ export function SetupPage({ backend, session, onBackendChanged, onSignOut }) {
         </section>
       </div>
 
-      {/* 3. Sanitized Diagnostics & Recent Error Log */}
+      {/* 3. Tenant Keep-Warm (free-tier projects pause when idle) */}
+      <section className="console-panel rounded-2xl p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <span className="badge-brand flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
+              <Zap
+                style={{ color: 'var(--brand-text)' }}
+                className="h-4 w-4"
+              />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold">Tenant Keep-Warm</h2>
+              <p
+                style={{ color: 'var(--text-secondary)' }}
+                className="text-xs leading-relaxed"
+              >
+                {warmRows === null
+                  ? `A free-tier Supabase project pauses after ${KEEP_WARM.pause_days} idle days. Central probes every active workspace at least every ${KEEP_WARM.target_days}.`
+                  : describeKeepWarmFleet({ workspaces: warmRows }).headline}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={warmBusy}
+              onClick={() => void handleLoadKeepWarm()}
+              className="console-btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+            >
+              {warmBusy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Database className="h-3.5 w-3.5" />
+              )}
+              {warmBusy ? 'Loading...' : 'Load due tenants'}
+            </button>
+
+            {warmRows?.length ? (
+              <button
+                type="button"
+                disabled={Boolean(warmProbing)}
+                onClick={() => void handleProbeAllDue()}
+                className="console-btn-primary inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold disabled:opacity-50"
+              >
+                <Play className="h-3.5 w-3.5" />
+                {warmProbing ? 'Probing...' : `Probe all ${warmRows.length}`}
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {warmError ? (
+          <div className="mt-3">
+            <ErrorAlert
+              error={warmError}
+              context="Tenant keep-warm"
+              onRetry={() => void handleLoadKeepWarm()}
+              onDismiss={() => setWarmError(null)}
+            />
+          </div>
+        ) : null}
+
+        {warmRows !== null && warmRows.length === 0 && !warmError ? (
+          <p
+            style={{ color: 'var(--text-secondary)' }}
+            className="console-well mt-4 rounded-xl px-4 py-3 text-xs leading-relaxed"
+          >
+            Nothing due — every active workspace was probed inside the{' '}
+            {KEEP_WARM.target_days}-day target. The{' '}
+            <code className="font-mono">opd-keep-warm</code> pg_cron job (
+            <code className="font-mono">{KEEP_WARM.cron_schedule}</code>) keeps
+            it that way whether or not this console is open.
+          </p>
+        ) : null}
+
+        {warmRows?.length ? (
+          <ul className="mt-4 space-y-2.5">
+            {warmRows.map((row) => {
+              const status = keepWarmStatus(row);
+              const res = warmResults[row.id];
+              const probing = warmProbing === row.id;
+              return (
+                <li key={row.id} className="console-well rounded-xl p-3.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-bold">
+                        {row.clinic_name}
+                      </span>
+                      <span
+                        style={{ color: 'var(--text-secondary)' }}
+                        className="block break-all font-mono text-[10.5px]"
+                      >
+                        {row.slug} · {maskTenantKey(row.supabase_anon_key)} ·{' '}
+                        {String(row.supabase_url ?? '').replace(/^https:\/\//, '')}
+                      </span>
+                    </div>
+                    <span
+                      className={`${WARM_TONE[status.state] ?? 'console-well'} shrink-0 rounded-full px-2.5 py-1 font-mono text-[10px] font-bold`}
+                    >
+                      {status.label}
+                    </span>
+                  </div>
+
+                  <p
+                    style={{ color: 'var(--text-secondary)' }}
+                    className="mt-1.5 text-[11px] leading-relaxed"
+                  >
+                    {status.detail}
+                  </p>
+
+                  {res ? (
+                    <p
+                      className={`${res.ok ? 'badge-success' : 'badge-error'} mt-2 rounded-lg px-3 py-1.5 text-[11px] font-medium leading-relaxed`}
+                    >
+                      {res.ok
+                        ? `Awake — HTTP ${res.status} in ${res.ms} ms; stamped ${res.probedAt}.`
+                        : res.reason}
+                    </p>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    disabled={probing}
+                    onClick={() => void handleProbeWorkspace(row)}
+                    className="console-btn-secondary mt-2.5 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold disabled:opacity-50"
+                  >
+                    {probing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Activity
+                        style={{ color: 'var(--ok-main)' }}
+                        className="h-3.5 w-3.5"
+                      />
+                    )}
+                    {probing ? 'Probing...' : 'Probe now'}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </section>
+
+      {/* 4. Sanitized Diagnostics & Recent Error Log */}
       <section className="console-panel rounded-2xl p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
