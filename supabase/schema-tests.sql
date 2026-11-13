@@ -967,6 +967,182 @@ begin
   end if;
   raise notice 'PASS: unlinked subscriptions keep a NULL workspace pointer';
 end $$;
+
+-- =============================================================================
+-- 12. §14 OPERATOR RUNBOOKS — deactivate a clinic, rotate its publishable key,
+--     revoke a user. None of these needed new SQL: workspaces_admin_write and
+--     workspace_members_admin_write already grant them to a caller whose
+--     app_metadata.role is 'admin', and both directory RPCs already filter on
+--     is_active. What was missing is the OPERATOR SURFACE, so these checks pin the
+--     behaviour that surface has to rely on — above all that RLS refuses a
+--     non-admin SILENTLY: the statement succeeds and touches 0 rows, so "no
+--     exception" is not proof the write landed.
+-- =============================================================================
+
+-- 12a. seed an active clinic with a publishable key, an admin and a staff member
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+insert into public.workspaces (clinic_name, slug, supabase_url, supabase_anon_key, is_active, tenant_schema_version)
+values ('Ops Clinic', 'ops-clinic', 'https://opsclinic.supabase.co', 'sb_publishable_ops_before', true, 22);
+insert into public.workspace_members (workspace_id, user_id, role)
+values ((select id from public.workspaces where slug = 'ops-clinic'), '00000000-0000-0000-0000-000000000002', 'admin'),
+       ((select id from public.workspaces where slug = 'ops-clinic'), '00000000-0000-0000-0000-000000000003', 'staff');
+
+-- 12b. §14 "Deactivate a clinic": one admin write removes it from BOTH discovery
+--      paths at once — the member's directory and the anonymous booking link.
+do $$
+declare v_rows integer; v_n integer;
+begin
+  update public.workspaces
+     set is_active = false, updated_at = now()
+   where slug = 'ops-clinic';
+  get diagnostics v_rows = row_count;
+  if v_rows <> 1 then
+    raise exception 'FAIL: an admin deactivate touched % rows, expected exactly 1', v_rows;
+  end if;
+  select count(*) into v_n from public.my_workspaces() where slug = 'ops-clinic';
+  if v_n <> 0 then
+    raise exception 'FAIL: a deactivated clinic is still listed by my_workspaces()';
+  end if;
+  raise notice 'PASS: an admin deactivates a clinic and it leaves my_workspaces() at once';
+end $$;
+
+reset role;
+set local role anon;
+do $$
+declare v_n integer;
+begin
+  select count(*) into v_n from public.public_workspace_by_slug('ops-clinic');
+  if v_n <> 0 then
+    raise exception 'FAIL: a deactivated clinic still resolved for booking (% rows)', v_n;
+  end if;
+  raise notice 'PASS: the same deactivation darkens the public booking link (C6)';
+end $$;
+
+-- 12c. reactivating restores the member directory
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare v_n integer;
+begin
+  update public.workspaces set is_active = true, updated_at = now() where slug = 'ops-clinic';
+  select count(*) into v_n from public.my_workspaces() where slug = 'ops-clinic';
+  if v_n <> 1 then
+    raise exception 'FAIL: reactivation did not restore the clinic to my_workspaces()';
+  end if;
+  raise notice 'PASS: reactivating restores the clinic to the member directory';
+end $$;
+
+-- 12d. §14 "Rotate an anon key": the new publishable key persists, and a privileged
+--      key is refused even for an admin by the column CHECK.
+do $$
+declare v_key text;
+begin
+  update public.workspaces
+     set supabase_anon_key = 'sb_publishable_ops_after', updated_at = now()
+   where slug = 'ops-clinic';
+  select supabase_anon_key into v_key from public.workspaces where slug = 'ops-clinic';
+  if v_key <> 'sb_publishable_ops_after' then
+    raise exception 'FAIL: the rotated key did not persist: %', coalesce(v_key, '<null>');
+  end if;
+  begin
+    update public.workspaces set supabase_anon_key = 'sb_secret_ops_leaked' where slug = 'ops-clinic';
+    raise exception 'FAIL: a privileged key was accepted into the directory';
+  exception when check_violation then
+    null;
+  end;
+  raise notice 'PASS: an admin rotates the publishable key; a sb_secret/service_role key is refused';
+end $$;
+
+reset role;
+set local role anon;
+do $$
+declare v_key text;
+begin
+  select min(supabase_anon_key) into v_key from public.public_workspace_by_slug('ops-clinic');
+  if v_key is distinct from 'sb_publishable_ops_after' then
+    raise exception 'FAIL: anon booking still serves the pre-rotation key: %', coalesce(v_key, '<null>');
+  end if;
+  raise notice 'PASS: anon booking serves the rotated key at once, so clients revalidate (C6)';
+end $$;
+
+-- 12e. §14 "Revoke a user": the workspace_members row goes, and the revoked person
+--      stops seeing the clinic — which is what makes their cached slug fail
+--      revalidation on their next boot.
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare v_rows integer;
+begin
+  delete from public.workspace_members
+   where workspace_id = (select id from public.workspaces where slug = 'ops-clinic')
+     and user_id = '00000000-0000-0000-0000-000000000003';
+  get diagnostics v_rows = row_count;
+  if v_rows <> 1 then
+    raise exception 'FAIL: an admin revoke deleted % member rows, expected 1', v_rows;
+  end if;
+  raise notice 'PASS: an admin revokes a workspace member';
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated","app_metadata":{"role":"clinic_user"}}', true);
+do $$
+declare v_n integer;
+begin
+  select count(*) into v_n from public.my_workspaces() where slug = 'ops-clinic';
+  if v_n <> 0 then
+    raise exception 'FAIL: a revoked member still sees the clinic in my_workspaces()';
+  end if;
+  raise notice 'PASS: the revoked member loses the clinic, so their cached slug fails revalidation';
+end $$;
+
+-- 12f. THE FINDING THE OPERATOR UI MUST RESPECT: a non-admin is refused SILENTLY.
+--      Both statements succeed and touch 0 rows — there is no exception to catch.
+--      A console that treats "no error" as success would report a deactivation or a
+--      key rotation that never happened, so every operator write has to check its
+--      row count (or re-read the row).
+do $$
+declare v_rows integer;
+begin
+  update public.workspaces
+     set is_active = false, supabase_anon_key = 'sb_publishable_stolen'
+   where slug = 'ops-clinic';
+  get diagnostics v_rows = row_count;
+  if v_rows <> 0 then
+    raise exception 'FAIL: a non-admin updated % workspace rows', v_rows;
+  end if;
+  delete from public.workspace_members
+   where workspace_id = (select id from public.workspaces where slug = 'ops-clinic');
+  get diagnostics v_rows = row_count;
+  if v_rows <> 0 then
+    raise exception 'FAIL: a non-admin deleted % member rows', v_rows;
+  end if;
+  raise notice 'PASS: a non-admin is refused silently — 0 rows, no exception, on both writes';
+end $$;
+
+-- 12g. and the directory really is untouched, re-read as the admin
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare v_active boolean; v_key text; v_n integer;
+begin
+  select is_active, supabase_anon_key into v_active, v_key
+    from public.workspaces where slug = 'ops-clinic';
+  if v_active is not true then
+    raise exception 'FAIL: the refused write actually deactivated the clinic';
+  end if;
+  if v_key <> 'sb_publishable_ops_after' then
+    raise exception 'FAIL: the refused write changed the key to %', coalesce(v_key, '<null>');
+  end if;
+  select count(*) into v_n from public.workspace_members
+   where workspace_id = (select id from public.workspaces where slug = 'ops-clinic');
+  if v_n <> 1 then
+    raise exception 'FAIL: the refused write left % member rows, expected the 1 admin', v_n;
+  end if;
+  raise notice 'PASS: the directory is exactly as the admin left it — active, rotated key, one member';
+end $$;
+
 reset role;
 
 rollback;
