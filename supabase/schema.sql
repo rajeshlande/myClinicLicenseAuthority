@@ -63,7 +63,8 @@ insert into public.schema_migrations (version, name, app_version, summary) value
   (4, 'activity-log-and-invoices', '3.0.0', 'public.clinic_activity_log append-only per-clinic operational timeline (onboarded/paused/renewed/tier/routing/payment/invoice/notes events, admin-only), public.invoices billing documents (draft/issued/paid/void, jsonb line items, numeric totals), admin_license_view latest-invoice columns'),
   (5, 'workspace-directory', '3.2.0', 'public.workspaces + public.workspace_members OPD multi-tenant directory (member-role RLS, my_workspaces() discovery, connection columns with sb_secret/service_role CHECK), subscriptions.workspace_id link'),
 (6, 'tenant-connection-and-keep-warm', '3.2.0', 'admin_license_view workspace columns, due_keep_warm_workspaces() + stamp_keep_warm() admin keep-warm surface, run_keep_warm_cycle() scheduled by pg_cron + pg_net so free-tier tenant projects never idle into the 7-day pause'),
-(7, 'anonymous-booking-directory', '3.2.0', 'public.public_workspace_by_slug(p_slug) anon-readable SECURITY DEFINER booking directory (D4-a): resolves an ACTIVE workspace slug to clinic_name + supabase_url + publishable anon key so the no-session public booking page can reach the right tenant project; fail-closed on unknown or inactive slugs')
+(7, 'anonymous-booking-directory', '3.2.0', 'public.public_workspace_by_slug(p_slug) anon-readable SECURITY DEFINER booking directory (D4-a): resolves an ACTIVE workspace slug to clinic_name + supabase_url + publishable anon key so the no-session public booking page can reach the right tenant project; fail-closed on unknown or inactive slugs'),
+(8, 'workspace-audit-log', '3.2.0', 'public.workspace_audit_log append-only §14 operator attribution (deactivate / reactivate / rotate-key / revoke / member edits): admin-only append, no UPDATE or DELETE grant for anyone, ON DELETE SET NULL + denormalised workspace_slug so a revocation outlives the row it deleted, payload CHECK refuses a publishable-key or JWT literal')
 on conflict (version) do nothing;
 
 update public.app_meta
@@ -907,7 +908,7 @@ begin
     return jsonb_build_object(
       'ok', true,
       'sync_ready', true,
-      'schema_version', 7,
+      'schema_version', 8,
       'server_time', v_now
     );
   end if;
@@ -2245,5 +2246,81 @@ update public.app_meta
    set schema_version = greatest(schema_version, 7),
        applied_at = now(),
        notes = 'keyless auto-sync + dual email/origin routing + refused-attempt audit + activity log & invoices + OPD workspace directory + tenant connection & free-tier keep-warm + anonymous booking directory';
+
+commit;
+
+-- =============================================================================
+-- §10 · SCHEMA v8 ADDITIONS — WORKSPACE AUDIT LOG (§14 operator attribution)
+-- =============================================================================
+-- Decision record: OPD-DECISIONS.md T5. Every §14 runbook ends with "audit log",
+-- but Central had no surface that could hold an OPERATOR action: clinic_activity_log
+-- is subscription-scoped (subscription_id NOT NULL plus a closed 12-value event_kind
+-- CHECK) and a directory row can exist with no subscription at all, while
+-- sync_attempts and activated_machines record client behaviour, not operator intent.
+-- So deactivating a clinic, rotating its publishable key, revoking it, or editing its
+-- members left NO record of who did it. That is the other half of operator honesty:
+-- §14/P8d/T1 made a refused write impossible to report as a success; this makes a
+-- successful one impossible to leave unattributed.
+--
+-- Three properties are deliberate and each is proved in schema-tests.sql §13:
+--   1. APPEND-ONLY. Only select+insert are granted and update/delete are explicitly
+--      revoked, so nobody — including an admin, including a compromised session —
+--      can tidy history after the fact. Insert is gated by a WITH CHECK policy on
+--      is_license_admin(), which refuses a non-admin loudly (42501).
+--   2. IT OUTLIVES THE ROW IT AUDITS. "Revoke a clinic" DELETES the directory row, so
+--      a cascading log would erase the record of the deletion: workspace_id is
+--      ON DELETE SET NULL and the slug is denormalised into workspace_slug.
+--   3. IT CANNOT HOLD A SECRET. §14 standing rule: never log supabase_anon_key or
+--      tokens. The payload CHECK refuses a publishable-key or JWT literal, so the
+--      console stores a 6-character tail — and a UI bug cannot leak a key into the
+--      audit trail even by accident.
+create table if not exists public.workspace_audit_log (
+  id             uuid primary key default gen_random_uuid(),
+  workspace_id   uuid references public.workspaces(id) on delete set null,
+  workspace_slug text not null
+                 check (workspace_slug ~ '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$'),
+  action         text not null
+                 check (
+                   action in (
+                     'workspace_deactivated', 'workspace_reactivated',
+                     'workspace_key_rotated', 'workspace_revoked',
+                     'member_added', 'member_role_changed', 'member_removed'
+                   )
+                 ),
+  actor          text not null default ''
+                 check (char_length(actor) <= 254),
+  payload        jsonb not null default '{}'::jsonb
+                 check (payload::text !~* 'sb_secret|service_role|sb_publishable|eyJ[A-Za-z0-9_-]{10,}'),
+  at             timestamptz not null default now()
+);
+
+create index if not exists workspace_audit_log_workspace_at_idx
+  on public.workspace_audit_log (workspace_id, at desc);
+create index if not exists workspace_audit_log_slug_at_idx
+  on public.workspace_audit_log (workspace_slug, at desc);
+
+alter table public.workspace_audit_log enable row level security;
+alter table public.workspace_audit_log force row level security;
+
+-- Same ALTER DEFAULT PRIVILEGES lesson as §6/§8: revoke first, then grant exactly
+-- the append-only surface. No update/delete for any role, so history is immutable.
+revoke all on public.workspace_audit_log from public, anon;
+grant select, insert on public.workspace_audit_log to authenticated;
+revoke update, delete on public.workspace_audit_log from authenticated;
+
+drop policy if exists workspace_audit_admin_read on public.workspace_audit_log;
+create policy workspace_audit_admin_read
+  on public.workspace_audit_log for select to authenticated
+  using (public.is_license_admin() or public.is_workspace_member(workspace_id));
+
+drop policy if exists workspace_audit_admin_append on public.workspace_audit_log;
+create policy workspace_audit_admin_append
+  on public.workspace_audit_log for insert to authenticated
+  with check (public.is_license_admin());
+
+update public.app_meta
+   set schema_version = greatest(schema_version, 8),
+       applied_at = now(),
+       notes = 'keyless auto-sync + dual email/origin routing + refused-attempt audit + activity log & invoices + OPD workspace directory + anon booking directory + workspace audit log';
 
 commit;

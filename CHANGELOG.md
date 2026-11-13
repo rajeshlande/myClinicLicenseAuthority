@@ -2,6 +2,45 @@
 
 All notable changes to `myClinicLicenseAuthority` are documented in this file.
 
+## [3.2.0] - 2026-11-13
+
+### Added
+- **Workspace Directory operator console** (`#/workspaces`, nav group *Control
+  Plane*): the §14 operator UI that was the last P2/P8 gap — list every clinic in
+  the directory, deactivate/reactivate it, rotate its publishable key, revoke it
+  (deletes the row, slug-confirmed) and edit its member rows (add by Central Auth
+  UUID, change role, remove). ONE page, so the directory-authority allowlist grows
+  by exactly one entry (4 -> 5) instead of three.
+- **`public.workspace_audit_log` (SCHEMA v8)** — append-only operator attribution.
+  Every console action writes a row; an admin reads all of them and a member reads
+  only their own clinic's. No role — not even an admin — can UPDATE or DELETE the
+  trail, because only select+insert are granted. `ON DELETE SET NULL` plus a
+  denormalised `workspace_slug` means a revocation's attribution outlives the
+  directory row it deleted, and the payload CHECK refuses a publishable-key or JWT
+  literal, so the log can never hold a credential (§14 standing rule).
+- `src/lib/workspace-console.mjs`: the console's pure half — the closed audit
+  vocabulary, key masking to a 6-character tail, slug/URL/key/role/UUID validation
+  derived from the directory contract, keep-warm state and revoke confirmation. It
+  names no privileged directory term, so it needs no allowlist entry.
+
+### Changed
+- `SCHEMA_VERSION` 7 -> 8 and `APP_VERSION` 3.1.0 -> 3.2.0. The migration registry
+  has labelled the OPD directory work (v5-v7) as app 3.2.0 since P3; the app
+  version now agrees with it. README head, the schema paste line and the GuidePage
+  copy label follow.
+- `check:write-verify` (T1) now covers `workspace_audit_log`, so the console's
+  privileged writes are ratcheted from the commit that introduces them: 9 -> 16
+  chains, all verified. Table names are literals at every call site, never
+  constants, because the ratchet matches `.from('<table>')` textually.
+
+### Proven
+- `npm run verify` green. Live PostgreSQL 17 suite `supabase/schema-tests.sql`
+  67 -> **73 PASS**, 0 FAIL, including six new §13 blocks: an admin action is
+  recorded while a key literal and an unknown action are refused; a non-admin
+  append is refused loudly (42501); the trail is append-only even against an admin;
+  a member reads only their own clinic; an admin reads all; and revoking a clinic
+  keeps the attribution after the row is gone.
+
 ## [3.1.0] - 2026-11-11
 
 ### Added

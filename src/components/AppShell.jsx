@@ -11,6 +11,7 @@ import {
   Menu,
   Moon,
   MoreHorizontal,
+  Network,
   Receipt,
   Search,
   Settings,
@@ -39,6 +40,13 @@ const NAV_ITEMS = [
     label: 'Fleet Activity',
     shortLabel: 'Activity',
     icon: History,
+    section: 'Control Plane',
+  },
+  {
+    id: 'directory',
+    label: 'Workspace Directory',
+    shortLabel: 'Directory',
+    icon: Network,
     section: 'Control Plane',
   },
   {

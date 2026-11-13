@@ -16,6 +16,11 @@
  * allowlist of Master-side modules. A NEW file carrying those terms fails, which is
  * the ratchet's whole point.
  *
+ * T5 added the fifth entry: the §14 operator console is the one UI that lists and
+ * mutates the directory, so it names these terms by design. Its decisions live in
+ * src/lib/workspace-console.mjs, which names none of them and is NOT allowlisted —
+ * that split is what keeps the privileged surface at one new file.
+ *
  * The four invariants, all mutation-proved in tests/admin-static.test.mjs:
  *   A. exactly ONE `createClient(` in src/ — Central's own Master project client,
  *      fed from `import.meta.env`. A second one means a per-clinic client. (§12.2:
@@ -60,6 +65,7 @@ export const DIRECTORY_AUTHORITY_ALLOWLIST = Object.freeze([
   'src/lib/keep-warm.mjs',
   'src/lib/tenant-connection.mjs',
   'src/pages/SetupPage.jsx',
+  'src/pages/WorkspacesPage.jsx',
 ]);
 
 /** Dynamic per-clinic tenant switching — the exact thing item 1 forbids. */

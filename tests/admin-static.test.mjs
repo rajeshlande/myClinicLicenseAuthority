@@ -100,7 +100,8 @@ test('item 1: the frozen sets are exactly what the owner decision recorded', () 
     'src/lib/keep-warm.mjs',
     'src/lib/tenant-connection.mjs',
     'src/pages/SetupPage.jsx',
-  ].sort(), 'the directory-authority allowlist is the four Master-side modules');
+    'src/pages/WorkspacesPage.jsx',
+  ].sort(), 'the directory-authority allowlist is the five Master-side modules');
   assert.ok(CLINICAL_TABLES.includes('patients') && !CLINICAL_TABLES.includes('invoices'),
     "the clinical list is the PHI surface; Central's billing invoices are not clinical");
   assert.ok(Object.isFrozen(DIRECTORY_AUTHORITY_ALLOWLIST) && Object.isFrozen(CLINICAL_TABLES));

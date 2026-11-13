@@ -558,10 +558,10 @@ begin
 
   raise notice 'PASS: refused-attempt audit is admin-only, privacy-preserving and self-pruning';
 
-  if public.app_schema_version() <> 7 then
-    raise exception 'FAIL: app_schema_version() must be 7 after the v4+v5+v6+v7 migrations, got %', public.app_schema_version();
+  if public.app_schema_version() <> 8 then
+    raise exception 'FAIL: app_schema_version() must be 8 after the v4+v5+v6+v7+v8 migrations, got %', public.app_schema_version();
   end if;
-  raise notice 'PASS: app_schema_version() = 7 (activity log + invoices + workspace directory + tenant connection/keep-warm + anonymous booking directory applied)';
+  raise notice 'PASS: app_schema_version() = 8 (activity log + invoices + workspace directory + tenant connection/keep-warm + anonymous booking directory applied + workspace audit log)';
   raise notice 'ALL CENTRAL DATABASE SECURITY & KEYLESS AUTO-SYNC CHECKS COMPLETED';
 end $$;
 
@@ -1223,6 +1223,159 @@ begin
   raise exception 'FAIL: a non-admin appended to the audit log';
 exception when insufficient_privilege then
   raise notice 'PASS: an audit-log append is refused loudly (42501) where an update is silent';
+end $$;
+
+-- =============================================================================
+-- 13. SCHEMA v8 — public.workspace_audit_log: §14 operator attribution.
+--     The console can deactivate a clinic, rotate its publishable key, revoke it
+--     and edit its members. Every one of those is an admin write the database
+--     already allowed (v5 RLS), and until v8 not one of them left a trace of WHO
+--     did it. These five blocks prove the three properties §10 claims: admin-only
+--     append, immutability for everyone, and attribution that outlives a revocation.
+--     Fixtures use slugs no other section touches: audit-clinic, audit-gone.
+-- =============================================================================
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+
+-- 13a. An admin action is recorded, and the log refuses to hold a secret or an
+--      action outside its vocabulary.
+do $$
+declare v_ws uuid; v_id uuid; v_rows integer;
+begin
+  insert into public.workspaces (clinic_name, slug, supabase_url, supabase_anon_key, is_active, tenant_schema_version)
+  values ('Audit Clinic', 'audit-clinic', 'https://audit-clinic.supabase.co', 'sb_publishable_audit_before', true, 22)
+  returning id into v_ws;
+  insert into public.workspace_members (workspace_id, user_id, role)
+  values (v_ws, '00000000-0000-0000-0000-000000000003', 'staff');
+
+  insert into public.workspace_audit_log (workspace_id, workspace_slug, action, actor, payload)
+  values (v_ws, 'audit-clinic', 'workspace_key_rotated', 'admin@ops.in',
+          '{"key_tail":"before","reason":"scheduled rotation"}'::jsonb)
+  returning id into v_id;
+  if v_id is null then
+    raise exception 'FAIL: the audit append returned no id — the row did not land';
+  end if;
+
+  begin
+    insert into public.workspace_audit_log (workspace_id, workspace_slug, action, actor, payload)
+    values (v_ws, 'audit-clinic', 'workspace_key_rotated', 'admin@ops.in',
+            '{"key":"sb_publishable_audit_after"}'::jsonb);
+    raise exception 'FAIL: the audit log accepted a publishable key literal';
+  exception when check_violation then
+    null;
+  end;
+
+  begin
+    insert into public.workspace_audit_log (workspace_id, workspace_slug, action, actor, payload)
+    values (v_ws, 'audit-clinic', 'clinic_deleted', 'admin@ops.in', '{}'::jsonb);
+    raise exception 'FAIL: the audit log accepted an action outside its vocabulary';
+  exception when check_violation then
+    null;
+  end;
+
+  select count(*) into v_rows from public.workspace_audit_log where workspace_slug = 'audit-clinic';
+  if v_rows <> 1 then
+    raise exception 'FAIL: expected exactly 1 audit row for audit-clinic, got %', v_rows;
+  end if;
+  raise notice 'PASS: an admin action is recorded; a key literal and an unknown action are both refused';
+end $$;
+
+-- 13b. A non-admin cannot write history: the WITH CHECK policy refuses loudly.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated","app_metadata":{"role":"clinic_user"}}', true);
+do $$
+begin
+  insert into public.workspace_audit_log (workspace_id, workspace_slug, action, actor, payload)
+  values ((select id from public.workspaces where slug = 'audit-clinic'),
+          'audit-clinic', 'workspace_revoked', 'staff@clinic.in', '{}'::jsonb);
+  raise exception 'FAIL: a non-admin wrote to the audit log';
+exception when insufficient_privilege then
+  raise notice 'PASS: a non-admin cannot write history — the append policy is admin-only (42501)';
+end $$;
+
+-- 13c. Append-only for EVERYONE: no update/delete grant, so not even an admin can
+--      rewrite or tidy the record after the fact.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare v_rows integer;
+begin
+  begin
+    update public.workspace_audit_log set action = 'member_added' where workspace_slug = 'audit-clinic';
+    raise exception 'FAIL: an admin rewrote an audit row';
+  exception when insufficient_privilege then
+    null;
+  end;
+  begin
+    delete from public.workspace_audit_log where workspace_slug = 'audit-clinic';
+    raise exception 'FAIL: an admin deleted an audit row';
+  exception when insufficient_privilege then
+    null;
+  end;
+  select count(*) into v_rows from public.workspace_audit_log where workspace_slug = 'audit-clinic';
+  if v_rows <> 1 then
+    raise exception 'FAIL: history changed under an admin: % rows', v_rows;
+  end if;
+  raise notice 'PASS: the audit log is append-only — not even an admin can rewrite or delete history';
+end $$;
+
+-- 13d. Read scoping: a member sees only their own clinic trail, an admin sees all.
+do $$
+declare v_ws uuid;
+begin
+  insert into public.workspaces (clinic_name, slug, supabase_url, supabase_anon_key, is_active, tenant_schema_version)
+  values ('Audit Gone Clinic', 'audit-gone', 'https://audit-gone.supabase.co', 'sb_publishable_gone', true, 22)
+  returning id into v_ws;
+  insert into public.workspace_members (workspace_id, user_id, role)
+  values (v_ws, '00000000-0000-0000-0000-000000000004', 'doctor');
+  insert into public.workspace_audit_log (workspace_id, workspace_slug, action, actor, payload)
+  values (v_ws, 'audit-gone', 'workspace_deactivated', 'admin@ops.in', '{"reason":"subscription lapse"}'::jsonb);
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated","app_metadata":{"role":"clinic_user"}}', true);
+do $$
+declare v_mine integer; v_other integer;
+begin
+  select count(*) into v_mine  from public.workspace_audit_log where workspace_slug = 'audit-clinic';
+  select count(*) into v_other from public.workspace_audit_log where workspace_slug = 'audit-gone';
+  if v_mine <> 1 or v_other <> 0 then
+    raise exception 'FAIL: a member saw % own and % foreign audit rows (expected 1 and 0)', v_mine, v_other;
+  end if;
+  raise notice 'PASS: a member reads only their own clinic audit trail; another clinic is invisible';
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare v_all integer;
+begin
+  select count(*) into v_all from public.workspace_audit_log;
+  if v_all <> 2 then
+    raise exception 'FAIL: an admin saw % audit rows, expected 2 across both clinics', v_all;
+  end if;
+  raise notice 'PASS: an admin reads the whole trail — 2 rows across 2 clinics';
+end $$;
+
+-- 13e. The property that decides the FK: revoking a clinic DELETES its directory
+--      row, so a cascading log would erase the record of the revocation itself.
+do $$
+declare v_ws uuid; v_rows integer; v_orphan integer; v_members integer;
+begin
+  select id into v_ws from public.workspaces where slug = 'audit-gone';
+  delete from public.workspaces where id = v_ws;
+  get diagnostics v_rows = row_count;
+  if v_rows <> 1 then
+    raise exception 'FAIL: revoke deleted % directory rows, expected 1', v_rows;
+  end if;
+  select count(*) into v_orphan
+    from public.workspace_audit_log
+   where workspace_slug = 'audit-gone' and workspace_id is null;
+  if v_orphan <> 1 then
+    raise exception 'FAIL: the revocation lost its attribution (% rows kept)', v_orphan;
+  end if;
+  select count(*) into v_members from public.workspace_members where workspace_id = v_ws;
+  if v_members <> 0 then
+    raise exception 'FAIL: revoking left % member rows behind', v_members;
+  end if;
+  raise notice 'PASS: revoking a clinic keeps the attribution — the audit row outlives the deleted directory row';
 end $$;
 
 reset role;

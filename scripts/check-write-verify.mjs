@@ -44,6 +44,7 @@ export const PRIVILEGED_TABLES = Object.freeze([
   'clinic_activity_log',
   'workspaces',
   'workspace_members',
+  'workspace_audit_log',
 ]);
 
 /** Mutating PostgREST verbs. A chain without one is a read and is not audited. */

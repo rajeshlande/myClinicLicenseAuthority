@@ -22,6 +22,7 @@ const NodeAgentPage = lazy(() => import('./pages/NodeAgentPage.jsx'));
 const SetupPage = lazy(() => import('./pages/SetupPage.jsx'));
 const ValidatorLabPage = lazy(() => import('./pages/ValidatorLabPage.jsx'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage.jsx'));
+const WorkspacesPage = lazy(() => import('./pages/WorkspacesPage.jsx'));
 
 const ROUTE_META = {
   dashboard: {
@@ -49,6 +50,11 @@ const ROUTE_META = {
     subtitle:
       'Central Supabase endpoint, 3-point health check, operator password, and sanitized diagnostics.',
   },
+  directory: {
+    title: 'Workspace Directory',
+    subtitle:
+      '§14 operator console — deactivate, rotate the publishable key, revoke, and edit member rows, with every action attributed in the append-only audit trail.',
+  },
   profile: {
     title: 'Operator Profile',
     subtitle:
@@ -68,6 +74,9 @@ function parseHashRoute(hash) {
   if (cleaned === 'node-agent' || cleaned === 'sdk') return 'node-agent';
   if (cleaned === 'simulator' || cleaned === 'validator-lab') return 'simulator';
   if (cleaned === 'setup' || cleaned === 'settings') return 'setup';
+  if (cleaned === 'directory') {
+    return 'directory';
+  }
   if (cleaned === 'profile' || cleaned === 'account' || cleaned === 'operator') {
     return 'profile';
   }
@@ -351,6 +360,12 @@ export default function App() {
             <ValidatorLabPage
               backend={backend}
               selectedLicense={selectedLicenseForKit}
+            />
+          )}
+          {activeRoute === 'directory' && (
+            <WorkspacesPage
+              backend={backend}
+              operatorEmail={session?.user?.email ?? ''}
             />
           )}
           {activeRoute === 'setup' && (

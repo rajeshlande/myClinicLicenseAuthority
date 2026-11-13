@@ -7,7 +7,7 @@ const schemaSql = readFileSync('supabase/schema.sql', 'utf8');
 const schemaTestsSql = readFileSync('supabase/schema-tests.sql', 'utf8');
 
 test('supabase/schema.sql is wrapped in one transaction and matches SCHEMA_VERSION', () => {
-  assert.equal(SCHEMA_VERSION, 7);
+  assert.equal(SCHEMA_VERSION, 8);
   assert.match(schemaSql, /^\s*begin;/im);
   assert.match(schemaSql, /commit;\s*$/im);
   assert.match(schemaSql, /\(2,\s*'keyless-auto-sync-core'/);
@@ -16,6 +16,7 @@ test('supabase/schema.sql is wrapped in one transaction and matches SCHEMA_VERSI
   assert.match(schemaSql, /\(5,\s*'workspace-directory'/);
   assert.match(schemaSql, /\(6,\s*'tenant-connection-and-keep-warm'/);
   assert.match(schemaSql, /\(7,\s*'anonymous-booking-directory'/);
+  assert.match(schemaSql, /\(8,\s*'workspace-audit-log'/);
   assert.match(
     schemaSql,
     new RegExp(`greatest\\(schema_version,\\s*${SCHEMA_VERSION}\\)`),
@@ -63,6 +64,7 @@ test('Central DB enforces FORCE RLS, zero anon table access, and the two-RPC ano
     'invoices',
     'workspaces',
     'workspace_members',
+    'workspace_audit_log',
   ]) {
     assert.match(
       schemaSql,
@@ -225,4 +227,81 @@ test('schema v6: keep-warm is admin-only, contract-cadenced and cron-guarded', (
   assert.match(schemaTestsSql, /--\s*11\./);
   assert.match(schemaTestsSql, /run_keep_warm_cycle belongs to the database/);
   assert.match(schemaTestsSql, /a failed probe stamped the workspace warm/);
+});
+
+test('schema v8: the workspace audit log is append-only, admin-only and outlives a revocation', () => {
+  // Registered in the §0 registry like every other version, and the readiness
+  // probe answers 8 so the app and the database cannot disagree.
+  assert.match(schemaSql, /\(8,\s*'workspace-audit-log'/);
+  assert.match(schemaSql, /greatest\(schema_version,\s*8\)/);
+  assert.match(schemaSql, /'schema_version',\s*8,/);
+
+  // Append-only for EVERY role, including an admin: select+insert granted and
+  // update/delete explicitly revoked, so history cannot be tidied after the fact.
+  assert.match(schemaSql, /revoke\s+all\s+on\s+public\.workspace_audit_log\s+from\s+public,\s*anon/i);
+  assert.match(schemaSql, /grant\s+select,\s*insert\s+on\s+public\.workspace_audit_log\s+to\s+authenticated/i);
+  assert.match(
+    schemaSql,
+    /revoke\s+update,\s*delete\s+on\s+public\.workspace_audit_log\s+from\s+authenticated/i,
+    'default-privilege ALL grants must be closed back down to append-only',
+  );
+  assert.doesNotMatch(
+    schemaSql,
+    /grant\s+[^;\n]*(update|delete)\s+on\s+public\.workspace_audit_log/i,
+    'the operator trail must stay append-only for every role',
+  );
+  assert.doesNotMatch(
+    schemaSql,
+    /create\s+policy\s+\w+\s+on\s+public\.workspace_audit_log\s+for\s+(update|delete|all)/i,
+    'no policy may open the trail to mutation',
+  );
+
+  // Attribution outlives the row: revoking DELETES the directory entry, so a
+  // cascading log would erase the record of the revocation itself. These three are
+  // asserted INSIDE the audit table's own DDL: `on delete set null` also appears on
+  // subscriptions.workspace_id, so an unscoped match proves nothing (mutation E
+  // found that — flipping this table to CASCADE left the test green).
+  const start = schemaSql.indexOf('create table if not exists public.workspace_audit_log');
+  assert.ok(start > -1, 'the v8 audit table is missing');
+  const ddl = schemaSql.slice(start, schemaSql.indexOf('\n);', start));
+  assert.match(
+    ddl,
+    /workspace_id\s+uuid\s+references\s+public\.workspaces\(id\)\s+on\s+delete\s+set\s+null/i,
+    'the trail must outlive a revoked clinic, so the foreign key sets null',
+  );
+  assert.doesNotMatch(ddl, /on\s+delete\s+cascade/i, 'a cascade would delete the evidence of the deletion');
+  assert.match(ddl, /workspace_slug\s+text\s+not\s+null/i, 'the slug is denormalised so a detached row still names the clinic');
+
+  // §14 standing rule, enforced by the database: the trail can never hold a
+  // publishable key or a token, even if the console has a bug.
+  assert.match(
+    ddl,
+    /payload::text\s+!~\*\s+'sb_secret\|service_role\|sb_publishable\|eyJ\[A-Za-z0-9_-\]\{10,\}'/,
+  );
+
+  // Admin-only append (WITH CHECK, so a non-admin is refused LOUDLY), member-scoped read.
+  assert.match(
+    schemaSql,
+    /create\s+policy\s+workspace_audit_admin_append[\s\S]*?with\s+check\s*\(public\.is_license_admin\(\)\)/i,
+  );
+  assert.match(
+    schemaSql,
+    /create\s+policy\s+workspace_audit_admin_read[\s\S]*?using\s*\(public\.is_license_admin\(\)\s+or\s+public\.is_workspace_member\(workspace_id\)\)/i,
+  );
+
+  // The closed vocabulary, and the live PG suite that proves all of it (§13).
+  for (const action of [
+    'workspace_deactivated',
+    'workspace_reactivated',
+    'workspace_key_rotated',
+    'workspace_revoked',
+    'member_added',
+    'member_role_changed',
+    'member_removed',
+  ]) {
+    assert.match(schemaSql, new RegExp(`'${action}'`));
+  }
+  assert.match(schemaTestsSql, /--\s*13\./);
+  assert.match(schemaTestsSql, /not even an admin can rewrite or delete history/);
+  assert.match(schemaTestsSql, /the audit row outlives the deleted directory row/);
 });
