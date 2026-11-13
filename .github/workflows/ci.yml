@@ -42,6 +42,11 @@ jobs:
       - name: GitHub Pages readiness
         run: npm run check:pages
 
+      - name: Admin static ratchet (§12.1 item 1 · §13.3)
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        run: npm run check:admin-static
+
       - name: Build from a repository sub-path
         run: VITE_BASE=/myclinic-license-authority/ npm run build && VITE_BASE=/myclinic-license-authority/ npm run check:pages
 

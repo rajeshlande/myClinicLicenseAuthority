@@ -48,6 +48,16 @@ jobs:
       - name: Check GitHub Pages readiness
         run: npm run check:pages
 
+      - name: Admin static ratchet (§12.1 item 1 · §13.3)
+        # The admin app has exactly one Master client, zero tenant-switching, zero
+        # clinical/PHI reads, and its directory-authority surface allowlisted; it also
+        # scans dist/ for a tenant host or a service_role/sb_secret key. The build bakes
+        # the Central project host into the bundle, so VITE_SUPABASE_URL is passed as the
+        # gate's masterUrl — without it the real host reads as a tenant leak and CI fails.
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        run: npm run check:admin-static
+
       - name: Verify build secret safety
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
@@ -82,6 +92,52 @@ jobs:
           if [ "$status" -ne 0 ]; then
             exit 1
           fi
+
+      - name: Write CNAME (custom domain · §13.1 · §13.5)
+        # Separate-repo topology (owner decision p7_topology=separate_repos): this repo
+        # publishes the admin/directory app to ITS OWN domain — not to /admin/ of a shared
+        # host. A committed public/CNAME ships through Vite into dist/; otherwise fall back
+        # to the PAGES_CNAME repo variable so the domain is set at deploy time, never
+        # hardcoded here. Absent both, this is a default *.github.io deploy (warning).
+        env:
+          PAGES_CNAME: ${{ vars.PAGES_CNAME }}
+        run: |
+          set -euo pipefail
+          if [ -f dist/CNAME ]; then
+            echo "CNAME shipped from public/: $(cat dist/CNAME)"
+          elif [ -n "${PAGES_CNAME:-}" ]; then
+            printf '%s\n' "${PAGES_CNAME}" > dist/CNAME
+            echo "Wrote dist/CNAME from PAGES_CNAME: ${PAGES_CNAME}"
+          else
+            echo "::warning title=No custom domain::Neither public/CNAME nor the PAGES_CNAME variable is set, so this deploys to the default *.github.io domain. Set PAGES_CNAME (Settings -> Secrets and variables -> Actions -> Variables) or commit public/CNAME, then verify the domain in Pages settings and point DNS at it."
+          fi
+
+      - name: Assert CNAME (§13.3)
+        # §13.3's literal `CNAME === 'yoursaas.com'` becomes a format assertion: with two
+        # independent domains (clinic + admin) there is no single shared literal, so the
+        # guard is "a valid custom hostname, not a placeholder".
+        run: |
+          set -euo pipefail
+          if [ ! -f dist/CNAME ]; then
+            echo "No dist/CNAME — default github.io deploy; nothing to assert."
+            exit 0
+          fi
+          cname=$(tr 'A-Z' 'a-z' < dist/CNAME | tr -d ' \t\r')
+          lines=$(grep -c '[^[:space:]]' dist/CNAME || true)
+          if [ "${lines:-0}" -ne 1 ]; then
+            echo "::error title=Bad CNAME::dist/CNAME must hold exactly one domain line (found ${lines:-0})."
+            exit 1
+          fi
+          if ! printf '%s' "$cname" | grep -qE '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'; then
+            echo "::error title=Bad CNAME::'${cname}' is not a valid hostname (no scheme, path or port)."
+            exit 1
+          fi
+          case "$cname" in
+            your-domain*|yourdomain*|your-site*|yoursite*|your-app*|yourapp*|your-repo*|yourrepo*|your-company*|yourcompany*|*example.com|*example.org|*example.net|*.test|*.invalid|*.localhost|changeme*|change-me*|*changeme*|*placeholder*|*todo*|*fixme*)
+              echo "::error title=Placeholder CNAME::'${cname}' looks like a placeholder — set the real verified domain (the spec's canonical example, yoursaas.com, is accepted)."
+              exit 1 ;;
+          esac
+          echo "CNAME OK: ${cname}"
 
       - name: Add 404 fallback
         run: cp dist/index.html dist/404.html
