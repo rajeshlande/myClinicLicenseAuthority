@@ -58,6 +58,7 @@ import {
   buildStandingPillStyle,
   buildSyncPillStyle,
 } from '../lib/status-palette.mjs';
+import { verifyRowsLanded } from '../lib/write-verify.mjs';
 
 export default function EntitlementsPage({
   backend,
@@ -127,7 +128,11 @@ export default function EntitlementsPage({
       });
       if (error) {
         showToast(
-          'Done — but the activity log could not be written (Central needs schema v4).',
+          // A silent RLS refusal carries its own accurate explanation; blaming
+          // the schema version is only right when the table is genuinely absent.
+          error.silent
+            ? `Done — but the activity log was refused: ${error.message}`
+            : 'Done — but the activity log could not be written (Central needs schema v4).',
           'warn',
         );
       }
@@ -326,11 +331,16 @@ export default function EntitlementsPage({
     if (!inspectedRow || !nextTier || inspectedRow.tier === nextTier) return;
     setSavingTier(true);
     try {
-      const { error } = await supabase
+      const tierRes = await supabase
         .from('subscriptions')
         .update({ tier: nextTier })
-        .eq('id', inspectedRow.subscription_id);
-      if (error) throw error;
+        .eq('id', inspectedRow.subscription_id)
+        .select('id');
+      if (tierRes.error) throw tierRes.error;
+      verifyRowsLanded(tierRes, {
+        action: 'Change subscription tier',
+        table: 'subscriptions',
+      });
       await fetchEntitlements({ silent: true });
       showToast(
         `Updated plan to ${nextTier.toUpperCase()} — auto-syncs on client.`,
@@ -370,11 +380,16 @@ export default function EntitlementsPage({
     setSavingTerm(true);
     try {
       const isoEnd = new Date(`${nextDateStr}T23:59:59.000Z`).toISOString();
-      const { error } = await supabase
+      const termRes = await supabase
         .from('subscriptions')
         .update({ expires_at: isoEnd, status: 'active' })
-        .eq('id', inspectedRow.subscription_id);
-      if (error) throw error;
+        .eq('id', inspectedRow.subscription_id)
+        .select('id');
+      if (termRes.error) throw termRes.error;
+      verifyRowsLanded(termRes, {
+        action: 'Extend paid term',
+        table: 'subscriptions',
+      });
 
       setRenewDateInput(nextDateStr);
       await fetchEntitlements({ silent: true });
@@ -399,12 +414,21 @@ export default function EntitlementsPage({
     setTogglingIds((prev) => ({ ...prev, [row.license_id]: true }));
 
     try {
-      const { error } = await supabase
+      const killRes = await supabase
         .from('licenses')
         .update({ is_active: nextActiveState })
-        .eq('id', row.license_id);
+        .eq('id', row.license_id)
+        .select('id');
 
-      if (error) throw error;
+      if (killRes.error) throw killRes.error;
+      // Verify BEFORE the optimistic flip and the toast. `admin_all_licenses` is
+      // a USING policy, so a non-admin's update succeeds against zero rows and
+      // returns no error: without this, the console would announce "Subscription
+      // paused" for a clinic that is still live (schema-tests.sql §12f/§12g).
+      verifyRowsLanded(killRes, {
+        action: nextActiveState ? 'Resume subscription' : 'Pause subscription',
+        table: 'licenses',
+      });
 
       const nowIso = new Date().toISOString();
       setRecords((prev) =>

@@ -37,6 +37,7 @@ import {
   TENANT_CLINICAL_PROBE_TABLE,
   TENANT_SCHEMA_VERSION,
 } from '../../lib/workspace-directory.mjs';
+import { verifyRowsLanded } from '../../lib/write-verify.mjs';
 
 /** Check state -> the shell's badge classes (same tones as the rest of the console). */
 const CHECK_TONE = {
@@ -332,12 +333,21 @@ export default function OnboardingWizard({
           termMonths: months,
           existingCount: countRes.count ?? 0,
         });
-        const invRes = await supabase.from('invoices').insert(draft);
+        const invRes = await supabase.from('invoices').insert(draft).select('id');
         if (invRes.error) throw invRes.error;
+        // `invoices_admin_insert` is a WITH CHECK policy: a refused append
+        // returns no error at all, so without this the wizard would report a
+        // stored draft that the billing history never received.
+        verifyRowsLanded(invRes, {
+          action: 'Store the first invoice draft',
+          table: 'invoices',
+        });
         invoice = draft;
       } catch (invErr) {
         setInvoiceWarning(
-          `Subscription created, but the first invoice draft could not be stored (${invErr.message ?? invErr}). Central needs schema v4.`,
+          invErr?.silent
+            ? `Subscription created, but the first invoice draft was refused: ${invErr.message}`
+            : `Subscription created, but the first invoice draft could not be stored (${invErr.message ?? invErr}). Central needs schema v4.`,
         );
       }
 

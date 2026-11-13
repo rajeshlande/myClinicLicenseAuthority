@@ -13,6 +13,7 @@ import { logClinicActivity } from '../lib/activity.mjs';
 import { buildInvoicePdfBytes } from '../lib/invoice-pdf.mjs';
 import { rememberError } from '../lib/errors.mjs';
 import { readSubscriptionsLite } from '../lib/reads.mjs';
+import { verifyRowsLanded } from '../lib/write-verify.mjs';
 
 const STATUS_META = {
   draft: { label: 'Draft', badge: 'badge-info' },
@@ -97,7 +98,12 @@ export default function InvoicesPage({ backend, operatorEmail = '' }) {
         payload,
       });
       if (error) {
-        showToast('Done — but the activity log could not be written (Central needs schema v4).', 'warn');
+        showToast(
+          error.silent
+            ? `Done — but the activity log was refused: ${error.message}`
+            : 'Done — but the activity log could not be written (Central needs schema v4).',
+          'warn',
+        );
       }
     },
     [supabase, operatorEmail, showToast],
@@ -114,11 +120,19 @@ export default function InvoicesPage({ backend, operatorEmail = '' }) {
             : next === 'void'
               ? { status: 'void' }
               : { status: 'issued', issued_at: stamp };
-        const { error } = await supabase
+        const invRes = await supabase
           .from('invoices')
           .update(patch)
-          .eq('id', row.id);
-        if (error) throw error;
+          .eq('id', row.id)
+          .select('id');
+        if (invRes.error) throw invRes.error;
+        // `invoices_admin_update` is a USING policy, so a non-admin's status
+        // change succeeds against zero rows: verify before mirroring it locally,
+        // otherwise the row looks paid while the database still says issued.
+        verifyRowsLanded(invRes, {
+          action: `Mark invoice ${row.invoice_number} ${next}`,
+          table: 'invoices',
+        });
         setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...patch } : r)));
         await logEvent(row, eventKind, {
           invoice: row.invoice_number,

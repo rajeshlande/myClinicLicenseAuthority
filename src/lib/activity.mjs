@@ -14,6 +14,7 @@
 // -----------------------------------------------------------------------------
 
 import { coalesce } from './coalesce.mjs';
+import { refusalOf } from './write-verify.mjs';
 
 export const ACTIVITY_EVENT_KINDS = Object.freeze([
   'onboarded',
@@ -82,14 +83,27 @@ export async function logClinicActivity(supabase, entry) {
     };
   }
 
-  const { error } = await supabase.from('clinic_activity_log').insert({
-    subscription_id: subscriptionId,
-    license_id: licenseId,
-    event_kind: eventKind,
-    actor: String(actor).slice(0, 254),
-    payload,
-  });
-  return { error: error ?? null };
+  const logged = await supabase
+    .from('clinic_activity_log')
+    .insert({
+      subscription_id: subscriptionId,
+      license_id: licenseId,
+      event_kind: eventKind,
+      actor: String(actor).slice(0, 254),
+      payload,
+    })
+    .select('id');
+  // `error` alone is not enough: `clinic_activity_log_admin_append` is a
+  // WITH CHECK policy, so a non-admin's INSERT succeeds and stores nothing.
+  // Reporting that as a clean write would claim history that does not exist.
+  return {
+    error:
+      logged.error ??
+      refusalOf(logged, {
+        action: 'Append activity log entry',
+        table: 'clinic_activity_log',
+      }),
+  };
 }
 
 /** One clinic's timeline, newest first. */

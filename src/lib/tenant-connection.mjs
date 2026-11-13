@@ -42,6 +42,7 @@ import {
   TENANT_VERSION_PROBE,
   WORKSPACE_SLUG_PATTERN,
 } from './workspace-directory.mjs';
+import { refusalOf } from './write-verify.mjs';
 
 export const TENANT_URL_SHAPE = new RegExp(TENANT_SUPABASE_URL_PATTERN, 'i');
 export const TENANT_SLUG_SHAPE = new RegExp(WORKSPACE_SLUG_PATTERN);
@@ -554,9 +555,18 @@ export async function persistWorkspaceConnection(
     const link = await supabase
       .from('subscriptions')
       .update({ workspace_id: saved.id })
-      .eq('id', subscriptionId);
-    if (link.error) {
-      warnings.push(`Workspace saved, but the subscription could not be linked: ${link.error.message ?? link.error}`);
+      .eq('id', subscriptionId)
+      .select('id');
+    // A silent RLS refusal must NOT set `linked = true`: the row count is the
+    // only proof the subscription really points at the saved directory entry.
+    const linkFailure =
+      link.error ??
+      refusalOf(link, {
+        action: 'Link subscription to its directory entry',
+        table: 'subscriptions',
+      });
+    if (linkFailure) {
+      warnings.push(`Workspace saved, but the subscription could not be linked: ${linkFailure.message ?? linkFailure}`);
     } else {
       linked = true;
     }

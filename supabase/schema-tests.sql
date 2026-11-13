@@ -1143,6 +1143,88 @@ begin
   raise notice 'PASS: the directory is exactly as the admin left it — active, rotated key, one member';
 end $$;
 
+-- 12h. The same trap on the BILLING tables the console writes. `invoices_admin_update`
+--      is `using (is_license_admin())`, so a non-admin's status change succeeds and
+--      changes nothing: the console would show an invoice as void while the database
+--      still says paid. The admin's own update returns exactly one row, which is what
+--      makes a `.select('id')` read-back plus a row count a reliable signal.
+do $$
+declare
+  v_sub  public.admin_license_view;
+  v_inv  uuid;
+  v_rows integer;
+begin
+  create temporary table if not exists ops_billing_fixture (
+    subscription_id uuid, license_id uuid, invoice_id uuid
+  ) on commit drop;
+  delete from ops_billing_fixture;
+
+  v_sub := public.create_subscription_with_license(
+    'ops-billing@clinic.in', 'growth', 2, now() + interval '365 days',
+    'ops billing probe', null, false
+  );
+
+  insert into public.invoices (
+    invoice_number, subscription_id, license_id, status, currency,
+    line_items, tax_rate, subtotal, tax_amount, total, issued_at, due_at
+  ) values (
+    'INV-OPS-0001', v_sub.subscription_id, v_sub.license_id, 'issued', 'INR',
+    '[{"description":"Growth plan - annual","qty":1,"unit":12000.00}]'::jsonb,
+    0.18, 12000.00, 2160.00, 14160.00, now(), now() + interval '30 days'
+  ) returning id into v_inv;
+
+  insert into ops_billing_fixture
+  values (v_sub.subscription_id, v_sub.license_id, v_inv);
+
+  update public.invoices set status = 'paid', paid_at = now() where id = v_inv;
+  get diagnostics v_rows = row_count;
+  if v_rows <> 1 then
+    raise exception 'FAIL: the admin invoice update touched % rows, expected 1', v_rows;
+  end if;
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated","app_metadata":{"role":"clinic_user"}}', true);
+do $$
+declare v_rows integer;
+begin
+  update public.invoices
+     set status = 'void'
+   where id = (select invoice_id from ops_billing_fixture);
+  get diagnostics v_rows = row_count;
+  if v_rows <> 0 then
+    raise exception 'FAIL: a non-admin voided % invoice rows', v_rows;
+  end if;
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","app_metadata":{"role":"admin"}}', true);
+do $$
+declare v_status text;
+begin
+  select status into v_status
+    from public.invoices
+   where id = (select invoice_id from ops_billing_fixture);
+  if v_status <> 'paid' then
+    raise exception 'FAIL: the refused void left the invoice as %', coalesce(v_status, '<null>');
+  end if;
+  raise notice 'PASS: an invoice status change is silently refused for a non-admin — 0 rows, still paid';
+end $$;
+
+-- 12i. The contrast that decides where a row count is load-bearing. An INSERT is
+--      refused LOUDLY: `clinic_activity_log_admin_append` is a WITH CHECK policy and
+--      a rejected new row raises 42501. Only UPDATE and DELETE hide behind a USING
+--      filter, so the silent case is the one an operator surface must count rows for.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated","app_metadata":{"role":"clinic_user"}}', true);
+do $$
+begin
+  insert into public.clinic_activity_log (subscription_id, license_id, event_kind, actor, payload)
+  values ((select subscription_id from ops_billing_fixture),
+          (select license_id from ops_billing_fixture),
+          'onboarded', 'not-admin@ops.in', '{"probe":"12i"}'::jsonb);
+  raise exception 'FAIL: a non-admin appended to the audit log';
+exception when insufficient_privilege then
+  raise notice 'PASS: an audit-log append is refused loudly (42501) where an update is silent';
+end $$;
+
 reset role;
 
 rollback;

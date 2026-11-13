@@ -456,7 +456,11 @@ test('definition-site scan: the tenant probe vocabulary lives in the contract vi
 // ── Writing the verified handover into the directory ──────────────────────────
 
 /** Chainable recording fake: supabase-js builders are thenables, so is this. */
-function fakeSupabaseClient({ existingWorkspace = null, fail = null } = {}) {
+function fakeSupabaseClient({
+  existingWorkspace = null,
+  fail = null,
+  silentRefusal = null,
+} = {}) {
   const calls = [];
   const rpcCalls = [];
   const workspaceRow = {
@@ -477,8 +481,20 @@ function fakeSupabaseClient({ existingWorkspace = null, fail = null } = {}) {
     if (fail === `${state.table}:${state.op}`) {
       return { data: null, error: { message: `refused ${state.table}.${state.op}` } };
     }
+    // RLS refusing a non-admin: the statement succeeds, the USING filter matches
+    // nothing, and there is no error to catch (schema-tests.sql §12f–§12h).
+    if (silentRefusal === `${state.table}:${state.op}`) {
+      return { data: [], error: null };
+    }
     if (state.table === 'workspaces') {
       return { data: { ...workspaceRow, ...(state.payload ?? {}) }, error: null };
+    }
+    // A write that asked for its rows back (`.select('id')`, i.e. PostgREST
+    // `Prefer: return=representation`) returns the rows it changed; a write
+    // without a read-back returns `data: null`, which src/lib/write-verify.mjs
+    // treats as "not proven".
+    if (state.cols && state.op !== 'select') {
+      return { data: [{ id: `${state.table}-row` }], error: null };
     }
     return { data: null, error: null };
   }
@@ -618,6 +634,23 @@ test('persistWorkspaceConnection: a failed link or stamp degrades to a warning',
   assert.equal(b.linked, true);
   assert.equal(b.stamped, false);
   assert.match(b.warnings[0], /keep-warm stamp failed/);
+});
+
+test('persistWorkspaceConnection: a SILENTLY refused link is never reported as linked', async () => {
+  // `subscriptions` is guarded by `using (is_license_admin())`, so a non-admin's
+  // link update succeeds against zero rows with no error. Reading only `.error`
+  // would have set linked = true for a row that never changed.
+  const silent = fakeSupabaseClient({ silentRefusal: 'subscriptions:update' });
+  const res = await persistWorkspaceConnection(silent, {
+    value: LINK_VALUE,
+    subscriptionId: 'sub-5',
+    stampKeepWarm: true,
+  });
+  assert.equal(res.linked, false);
+  assert.equal(res.warnings.length, 1);
+  assert.match(res.warnings[0], /could not be linked/);
+  assert.match(res.warnings[0], /Row-level security refused it silently/);
+  assert.equal(res.id, 'ws-9', 'the directory write itself still landed');
 });
 
 test('persistWorkspaceConnection refuses a bad or skipped handover', async () => {

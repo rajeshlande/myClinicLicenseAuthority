@@ -16,6 +16,8 @@ const schemaSql = readFileSync('supabase/schema.sql', 'utf8');
 function makeMockSupabase() {
   const calls = [];
   let insertError = null;
+  // What a `.select()` read-back returns: the rows PostgREST actually wrote.
+  let insertRows = [{ id: 'act-1' }];
   const chain = {
     select: () => chain,
     eq: (column, value) => {
@@ -32,7 +34,17 @@ function makeMockSupabase() {
     },
     insert: (row) => {
       calls.push(['insert', row]);
-      return { then: (resolve) => resolve({ data: null, error: insertError }) };
+      // The real client chains `.select()` onto a write for its read-back, so the
+      // fake has to as well — otherwise a correct call shape looks like a crash.
+      const inserted = {
+        select: (...cols) => {
+          calls.push(['insert-select', ...cols]);
+          return inserted;
+        },
+        then: (resolve) =>
+          resolve({ data: insertError ? null : insertRows, error: insertError }),
+      };
+      return inserted;
     },
     then: (resolve) => resolve({ data: [], error: null }),
   };
@@ -40,6 +52,10 @@ function makeMockSupabase() {
     calls,
     setInsertError: (err) => {
       insertError = err;
+    },
+    /** Model an RLS refusal: no error at all, and no rows came back. */
+    setInsertRows: (rows) => {
+      insertRows = rows;
     },
     supabase: { from: () => chain },
   };
@@ -107,6 +123,24 @@ test('logClinicActivity surfaces backend errors without throwing', async () => {
     eventKind: 'renewed',
   });
   assert.match(error.message, /does not exist/);
+});
+
+test('logClinicActivity reports a SILENT refusal instead of claiming history exists', async () => {
+  const mock = makeMockSupabase();
+  mock.setInsertRows([]); // PostgREST is happy; the WITH CHECK policy stored nothing
+  const { error } = await logClinicActivity(mock.supabase, {
+    subscriptionId: 'sub_1',
+    eventKind: 'paused',
+  });
+  assert.ok(error, 'a zero-row append must not be returned as a clean write');
+  assert.equal(error.silent, true, 'callers can tell refused from failed');
+  assert.equal(error.code, '42501');
+  assert.match(error.message, /Row-level security refused it silently/);
+  assert.deepEqual(
+    mock.calls.find(([op]) => op === 'insert-select'),
+    ['insert-select', 'id'],
+    'the append asks PostgREST which rows it wrote',
+  );
 });
 
 test('fetch helpers order newest-first and respect limits', async () => {
