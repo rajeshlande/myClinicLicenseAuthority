@@ -47,6 +47,13 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
         run: npm run check:admin-static
 
+      - name: Write-verify ratchet (§14 operator honesty · P8d)
+        # Every privileged write must count the rows it changed: Central's RLS refuses a
+        # non-admin SILENTLY on UPDATE/DELETE (0 rows, no exception), so an unverified
+        # chain reports success for a write that never happened. Scans src/ only, needs
+        # no env and no build output, so it cannot be skipped for want of a secret.
+        run: npm run check:write-verify
+
       - name: Build from a repository sub-path
         run: VITE_BASE=/myclinic-license-authority/ npm run build && VITE_BASE=/myclinic-license-authority/ npm run check:pages
 

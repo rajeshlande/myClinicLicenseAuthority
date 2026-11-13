@@ -321,3 +321,37 @@ test('the helper stays table-agnostic, so it needs no directory-authority allowl
     assert.equal(text.includes(term), false, `write-verify.mjs must not name ${term}`);
   }
 });
+
+/* ------------------------------------------------------------------ wiring */
+
+/**
+ * T1 — a ratchet nobody runs is a ratchet that does not exist. This scanner proved all
+ * nine privileged write chains from the day it was written, yet it sat in `scripts/`
+ * reachable only by hand: not in `verify`, not in `ci.yml`, not in `pages.yml`, not even
+ * an npm script. A new unverified chain would have shipped green. These tests pin the
+ * wiring itself, so unplugging it fails the suite rather than failing silently — the same
+ * trick §12.2 requires of every other ratchet.
+ */
+test('T1: the ratchet is an npm script, and `verify` actually calls it', () => {
+  const pkg = JSON.parse(read('package.json'));
+  assert.equal(pkg.scripts['check:write-verify'], 'node scripts/check-write-verify.mjs');
+  // Present in the string is not enough — it has to be one of the steps that run.
+  const steps = pkg.scripts.verify.split('&&').map((s) => s.trim());
+  assert.ok(steps.includes('npm run check:write-verify'), `verify = ${steps.join(' → ')}`);
+});
+
+test('T1: both workflows run it, so a green local verify cannot be the only green', () => {
+  for (const wf of ['.github/workflows/ci.yml', '.github/workflows/pages.yml']) {
+    assert.match(read(wf), /npm run check:write-verify/, `${wf} must run check:write-verify`);
+  }
+});
+
+test('T1: it needs no env and no build output, so it cannot be skipped for want of a secret', () => {
+  // `check:admin-static` needs VITE_SUPABASE_URL to tell the Master host from a tenant
+  // leak, which is why its workflow step carries an `env:`. This scanner reads src/ only,
+  // so a step with no env still runs it — and "we commented it out until the secret
+  // exists" is not an available excuse.
+  const text = read('scripts/check-write-verify.mjs');
+  assert.equal(/process\.env|import\.meta\.env/.test(text), false, 'the scanner must read no env');
+  assert.match(text, /collectSourceFiles/, 'it walks the source tree, not dist/');
+});
