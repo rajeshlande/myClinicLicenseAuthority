@@ -2,6 +2,9 @@
 # =============================================================================
 # push-groundwork.sh — publish the OPD multi-tenant groundwork (P1 → P8e + T1 + T5 + T6 + CI runtime fixes)
 # =============================================================================
+# NOTE 2026-11-16 — NOT THE CURRENT PATH. The owner chose a BRANCH-ONLY push:
+# use ./push-branches.sh (multi_clinic + central_tenent_mangement), which leaves
+# remote main frozen. This script is retained for the LATER main fast-forward.
 # Supersedes push-v3.0.0.sh, which is stale for this state: it asserts
 # EXPECT_MAIN=da36c7b (Central is now c3d3456), tells you to run Central schema v4
 # (it is v8), and has no path for the myClinic repo at all.

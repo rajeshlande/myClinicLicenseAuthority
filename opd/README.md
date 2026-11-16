@@ -24,7 +24,8 @@ only — no `src/`, no `supabase/`, no workflow, no dependency and no schema cha
 | `OPD-DEPLOYMENT-RUNBOOK.md` | P7 operator runbook: topology, what CI enforces, per-repo domain steps, Auth + CORS, release pattern, rollback, **§8 keep-warm verification** |
 | `OPD-PILOT-MIGRATION-RUNBOOK.md` | P8 pilot: preconditions, provisioning, verification, flipping the flag, the acceptance day, the rollback rehearsal, **§8 operator actions by hand**, §8.5 the offline rehearsal evidence |
 | `OPD-BACKUP-RUNBOOK.md` | Backups and the restore drill: what a dump does and does not cover, `pg_dump` recipes, retention, count/checksum verification, **§7 RS256 signing-key escrow** |
-| `push-groundwork.sh` | The push path for both repos — fast-forward only, never `--force`, refuses a stale bundle or a mismatched `EXPECT_*`. `push-v3.0.0.sh` is **stale and must not be used**; it is deliberately not committed here |
+| `push-groundwork.sh` | The **later** main fast-forward path (ff-only, never `--force`, refuses a stale bundle or a mismatched `EXPECT_*`). Retained, not the current path. `push-v3.0.0.sh` is **stale and must not be used** |
+| `push-branches.sh` | **The current path.** Bundle method, pushes `multi_clinic` + `central_tenent_mangement`, never touches `main` or `v2/account-trust-validation`, no `--force`. `DRY_RUN=1`, `ONLY=`, `COMMANDS=1` supported |
 | `harness/*.cjs` | Ten Playwright harnesses — the only proof of the browser-level guarantees (two-tab isolation, booking tenant resolution, key rotation, the §8.4 operator actions). **T6**: byte-identical to `myclinic/harness/`, where they now run in CI |
 
 ---
@@ -92,8 +93,9 @@ parts: a contiguous `*.supabase.co` literal there trips the ratchet.
 | Central `npm run verify` | **181/181** with this directory committed; contributing 27/27 · 0 warn |
 | Central `main` | `c3d3456` — **T10**: 1 file (+16/−7), `scripts/run-tests.mjs` feature-detects `--test-isolation` so the Node 22 `ci.yml` job no longer aborts |
 | CI Node matrix | **22.22.0 and 26.13.1 both green** — myClinic 988/988 + e2e 8/8, Central 181/181; see **T10** in the tracker |
-| myClinic `main` | `3f18863` — **T10**: 1 file (+17/−1), the storage-resolver test no longer assumes Node has no `sessionStorage`; **T6** (20 files, +2378/−1) is its parent. 988/988 + `test:e2e` 8/8 from a fresh clone; the matching branch was fast-forwarded |
-| Push readiness | `DRY_RUN=1 ./push-groundwork.sh` EXIT 0 on both rails: myClinic `b1e174e → 3f18863` (**23 commits**), Central `da36c7b → c3d3456` (15). Nothing pushed |
+| Push topology | **Branch-only.** `push-branches.sh` is the current path; `push-groundwork.sh` is retained for a later main merge. A branch push fires `ci.yml` but **not** `pages.yml` / `e2e.yml` ⇒ open PRs |
+| myClinic `main` | `3f18863` — **T10**: 1 file (+17/−1), the storage-resolver test no longer assumes Node has no `sessionStorage`; **T6** (20 files, +2378/−1) is its parent. 988/988 + `test:e2e` 8/8 from a fresh clone |
+| Push readiness | `DRY_RUN=1 ./push-branches.sh` EXIT 0 on both rails — myClinic `multi_clinic` (`3f18863`, 23 commits), Central `central_tenent_mangement` (17 commits: 15 code + 2 `opd/`). Remote `main` stays `b1e174e` / `da36c7b`. Nothing pushed |
 
 ---
 

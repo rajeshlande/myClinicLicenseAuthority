@@ -228,3 +228,61 @@ degraded, not equivalent — it depends on a human remembering.
 from Settings & Health (which restamps it), then re-run §3's verification queries. The clinic
 app renders a distinct "clinic database asleep" state rather than a generic failure
 (decisions register, free-tier item 2).
+
+---
+
+## 9. Branch-only push (owner decision 2026-11-16)
+
+The owner changed the release shape: **none of the groundwork commits go to
+`main` yet**. Remote `main` stays frozen at `b1e174e` (myClinic) / `da36c7b`
+(Central); the work is published to new branches and merged by PR later.
+
+| Repo | New branch | Tip | Refuses |
+|---|---|---|---|
+| `myClinic` | `multi_clinic` | `3f18863` (23 commits) | `main`, `v2/account-trust-validation` |
+| `myClinicLicenseAuthority` | `central_tenent_mangement` | `main` + the 20-file `opd/` snapshot (**17 commits**: 15 code + 2 `opd/`) | `main` |
+
+Run `cd /home/user && ./push-branches.sh` (or `COMMANDS=1` for the raw `git
+push` refspecs). It clones from the `--all` bundles, verifies each bundle and
+its pinned `main`, asserts remote `main` is still at the baseline, derives the
+branch tip from the bundle, and pushes
+`refs/heads/<branch>:refs/heads/<branch>` — **no `--force`, no main, no tag**.
+`DRY_RUN=1` verifies both rails without pushing. `push-groundwork.sh` remains
+in the workspace for the eventual main fast-forward.
+
+**Bundle cloning caveat.** When several refs share one tip SHA (myClinic's
+`main`, `central_tenent_mangement` and `multi_clinic` are all `3f18863`), a
+plain `git clone <bundle>` cannot resolve HEAD and may invent a `master` branch
+with no `refs/heads/<branch>`. `push-branches.sh` avoids this with a bare repo
+plus `git fetch <bundle> 'refs/heads/*:refs/heads/*'`. For a manual clone use
+`git clone -b multi_clinic <bundle> <dir>` (and `-b central_tenent_mangement`
+for the Central bundle).
+
+### What a branch push does and does not trigger
+
+| Workflow | Trigger | Branch push |
+|---|---|---|
+| `ci.yml` (both repos) | `pull_request` + `push: branches-ignore: [main]` | **runs** |
+| myClinic `e2e.yml` (T6) | `pull_request` + `push: [main]` | **does not run** — open a PR |
+| `pages.yml` (both repos) | `push: [main]` + `workflow_dispatch` | **does not run** — dispatch manually, selecting the branch |
+
+So the §12.3 item "both CI pipelines green" is satisfied by the branch-push
+`ci.yml` runs **plus a PR per repo** (which also brings in `e2e.yml`). A
+pre-merge Pages build requires `workflow_dispatch` on `pages.yml` with the
+branch selected; set the `PAGES_CNAME` repo variable first or the workflow
+writes no CNAME, warns, and deploys to the default `*.github.io` domain.
+§3 (domains) and §4 (Auth + CORS) are unchanged by this decision, but they
+cannot be *verified* against a live deploy until a Pages build exists.
+
+### Parallel work — do not clobber
+
+myClinic's remote already has **`v2/account-trust-validation`** at `28b71ef`:
+15 commits (2026-11-13 → 11-16) of **separate** work by another agent
+(guarded workspace engine, secretless v2 validation, encrypted Drive backup,
+local backup store, PostgreSQL journal proof), latest CI **failure**. Its merge
+base with `main` is exactly `b1e174e`; it is 15 ahead / 0 behind, and **none**
+of our SHAs (`3f18863`, `99c5ef7`, `2f24930`) are in it. Both lines touch
+`src/`, `scripts/`, `.github/`, `contract/` and `package.json`. Pushing our tip
+to that ref would require `--force` and would delete those 15 commits; a rebase
+would rewrite our SHAs, invalidate both `EXPECT_*` pins and all bundles, and
+need heavy conflict resolution. `push-branches.sh` explicitly refuses that ref.
