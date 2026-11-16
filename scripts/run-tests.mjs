@@ -26,18 +26,27 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-// Run suites in a single test runner process (`--test-isolation=none` on Node >= 22.8,
-// or single-entrypoint dynamic import on Node 20) to avoid Windows Node 22/24 child-worker
-// WebCrypto CppgcMixin / ContextifyScript teardown crashes (nodejs/node#65756).
+// Run suites in a single test runner process (`--test-isolation=none` where the
+// flag exists, or single-entrypoint dynamic import where it does not) to avoid
+// Windows Node 22/24 child-worker WebCrypto CppgcMixin / ContextifyScript
+// teardown crashes (nodejs/node#65756).
 if (process.env.MYCLINIC_SINGLE_PROCESS_TESTS === '1') {
   for (const file of files) {
     await import(pathToFileURL(file).href);
   }
 } else {
-  const [major = 0, minor = 0] = process.versions.node
-    .split('.')
-    .map((part) => Number.parseInt(part, 10));
-  const supportsIsolationNone = major > 22 || (major === 22 && minor >= 8);
+  // `--test-isolation` only shipped stable in Node 24. Node 22 has the
+  // EXPERIMENTAL spelling and Node 20 has neither: passing the stable name to
+  // either aborts with "bad option: --test-isolation=none" before a single test
+  // runs — which is what the Node 22 job in ci.yml did. Probe the binary rather
+  // than guessing from a version number; the npm-distributed and Actions builds
+  // have disagreed on this before.
+  const probe = spawnSync(
+    process.execPath,
+    ['--test-isolation=none', '--version'],
+    { stdio: 'ignore' },
+  );
+  const supportsIsolationNone = probe.status === 0 && !probe.error;
 
   const extra = process.argv.slice(2);
   const hasIsolationFlag = extra.some((arg) =>
